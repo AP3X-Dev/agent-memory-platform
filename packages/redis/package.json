@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@amp/core": "*",
     "ioredis": "^5.4.0"
   },
   "devDependencies": {
