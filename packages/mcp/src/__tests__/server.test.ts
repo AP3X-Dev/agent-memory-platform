@@ -1,0 +1,43 @@
+// packages/mcp/src/__tests__/server.test.ts
+import { describe, it, expect } from 'vitest';
+import { createAMPServer } from '../server.js';
+import { TOOL_NAMES } from '../tools.js';
+
+describe('createAMPServer', () => {
+  it('returns an AMPMCPServer object', () => {
+    const amp = createAMPServer();
+    expect(amp).toBeDefined();
+    expect(amp.server).toBeDefined();
+    expect(typeof amp.startSSE).toBe('function');
+    expect(typeof amp.startStdio).toBe('function');
+  });
+
+  it('exposes toolNames with all 4 AMP tools', () => {
+    const amp = createAMPServer();
+    expect(amp.toolNames).toBeDefined();
+    expect(amp.toolNames).toEqual(TOOL_NAMES);
+    expect(amp.toolNames).toContain('amp_load');
+    expect(amp.toolNames).toContain('amp_store');
+    expect(amp.toolNames).toContain('amp_query');
+    expect(amp.toolNames).toContain('amp_consolidate');
+  });
+
+  it('toolNames has exactly 4 entries', () => {
+    const amp = createAMPServer();
+    expect(amp.toolNames).toHaveLength(4);
+  });
+
+  it('server is a McpServer instance', () => {
+    const amp = createAMPServer();
+    // McpServer has a .server property (the underlying Server) and a .connect method
+    expect(typeof amp.server.connect).toBe('function');
+    expect(typeof amp.server.close).toBe('function');
+  });
+
+  it('can create multiple server instances independently', () => {
+    const amp1 = createAMPServer();
+    const amp2 = createAMPServer();
+    // Each call produces a distinct server object
+    expect(amp1.server).not.toBe(amp2.server);
+  });
+});
