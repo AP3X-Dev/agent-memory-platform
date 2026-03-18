@@ -7,3 +7,7 @@ export { EpisodicStore } from './episodic.js';
 export { SemanticStore } from './semantic.js';
 export { ProvenanceTraversal } from './provenance.js';
 export type { ProvenanceNode } from './provenance.js';
+export { ScopedQuery } from './query.js';
+export type { QueryScope } from './query.js';
+export { GDSAlgorithms } from './gds.js';
+export type { SimilarPair, RankedNode, CommunityNode } from './gds.js';
