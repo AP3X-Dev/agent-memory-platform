@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@amp/core": "*",
     "neo4j-driver": "^5.27.0"
   },
   "devDependencies": {

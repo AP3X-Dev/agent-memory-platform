@@ -3,3 +3,7 @@ export { createNeo4jDriver, healthCheck } from './driver.js';
 export type { Neo4jHealthResult } from './driver.js';
 export { initSchema, verifySchema } from './schema.js';
 export type { SchemaVerification } from './schema.js';
+export { EpisodicStore } from './episodic.js';
+export { SemanticStore } from './semantic.js';
+export { ProvenanceTraversal } from './provenance.js';
+export type { ProvenanceNode } from './provenance.js';
