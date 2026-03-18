@@ -1,0 +1,11 @@
+{
+  "name": "amp",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "dev": "tsx packages/mcp/src/server.ts"
+  },
+  "engines": { "node": ">=20.0.0" }
+}
