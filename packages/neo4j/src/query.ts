@@ -1,5 +1,5 @@
 // packages/neo4j/src/query.ts
-import { type Driver } from 'neo4j-driver';
+import neo4j, { type Driver } from 'neo4j-driver';
 import type { SemanticNode } from '@amp/core';
 
 export interface QueryScope {
@@ -19,7 +19,7 @@ export class ScopedQuery {
          RETURN s
          ORDER BY s.confidence DESC, s.updated_at DESC
          LIMIT $limit`,
-        { entityName, limit },
+        { entityName, limit: neo4j.int(limit) },
       );
       return result.records.map((r) => mapSemanticNode(r.get('s').properties));
     } finally {
@@ -36,7 +36,7 @@ export class ScopedQuery {
          RETURN s
          ORDER BY s.confidence DESC, s.updated_at DESC
          LIMIT $limit`,
-        { tag, limit },
+        { tag, limit: neo4j.int(limit) },
       );
       return result.records.map((r) => mapSemanticNode(r.get('s').properties));
     } finally {
@@ -50,7 +50,7 @@ export class ScopedQuery {
     try {
       // Build query that handles entities and/or tags with DISTINCT results
       let cypher: string;
-      const params: Record<string, unknown> = { limit };
+      const params: Record<string, unknown> = { limit: neo4j.int(limit) };
 
       if (entities.length > 0 && tags.length > 0) {
         params.entities = entities;
@@ -103,7 +103,7 @@ export class ScopedQuery {
         `CALL db.index.vector.queryNodes('semantic_embedding', $limit, $embedding)
          YIELD node, score
          RETURN node, score`,
-        { limit, embedding },
+        { limit: neo4j.int(limit), embedding },
       );
       return result.records.map((r) => ({
         ...mapSemanticNode(r.get('node').properties),
