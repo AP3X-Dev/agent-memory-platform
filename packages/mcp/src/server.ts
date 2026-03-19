@@ -104,18 +104,22 @@ const isMain =
 
 if (isMain) {
   const useStdio = process.argv.includes('--stdio');
-  const amp = createAMPServer();
 
-  if (useStdio) {
-    amp.startStdio().catch((err: unknown) => {
-      console.error('[amp-mcp] stdio error:', err);
+  // Bootstrap: connect Redis + Neo4j, create services, inject into tools
+  import('./bootstrap.js')
+    .then(({ bootstrap }) => bootstrap())
+    .then(() => {
+      const amp = createAMPServer();
+
+      if (useStdio) {
+        return amp.startStdio();
+      } else {
+        const port = parseInt(process.env['PORT'] ?? process.env['MCP_PORT'] ?? '3101', 10);
+        return amp.startSSE(port);
+      }
+    })
+    .catch((err: unknown) => {
+      console.error('[amp-mcp] Fatal startup error:', err);
       process.exit(1);
     });
-  } else {
-    const port = parseInt(process.env['PORT'] ?? '3101', 10);
-    amp.startSSE(port).catch((err: unknown) => {
-      console.error('[amp-mcp] SSE error:', err);
-      process.exit(1);
-    });
-  }
 }

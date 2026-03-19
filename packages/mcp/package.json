@@ -12,6 +12,8 @@
   },
   "dependencies": {
     "@amp/core": "*",
+    "@amp/redis": "*",
+    "@amp/neo4j": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0"
   },
