@@ -2,6 +2,7 @@
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { LoadScope, MemoryContext, EpisodeInput } from '@amp/core';
+import { parseAmpUri, uriToLoadScope } from './uri.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
 
@@ -39,7 +40,7 @@ export function setServiceInstances(services: {
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
-export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidate'] as const;
+export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve'] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -85,6 +86,12 @@ const AmpConsolidateSchema = {
     .describe('Decision for "review" action (approve or reject)'),
 };
 
+const AmpResolveSchema = {
+  uri: z.string().describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
+  max_tokens: z.number().int().positive().optional().default(2000).describe('Max tokens for resolved content'),
+  stage_context: z.string().optional().describe('Current stage description for relevance ranking'),
+};
+
 // ─── Handler implementations ─────────────────────────────────────────────────
 
 export type ToolHandlers = {
@@ -107,6 +114,11 @@ export type ToolHandlers = {
     scope?: string;
     proposal_id?: string;
     decision?: 'approve' | 'reject';
+  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  amp_resolve: (args: {
+    uri: string;
+    max_tokens?: number;
+    stage_context?: string;
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 };
 
@@ -182,6 +194,20 @@ export function buildToolHandlers(): ToolHandlers {
         }
       }
     },
+
+    async amp_resolve(args) {
+      if (!ampService) throw new Error('AMPService not initialised');
+      const parsed = parseAmpUri(args.uri);
+      const scopeParts = uriToLoadScope(parsed);
+      const task = args.stage_context ?? `Resolve ${args.uri}`;
+      const scope: LoadScope = {
+        task,
+        ...scopeParts,
+        max_tokens: args.max_tokens ?? 2000,
+      };
+      const ctx = await ampService.load(scope);
+      return textContent(ctx.markdown);
+    },
   };
 }
 
@@ -216,5 +242,12 @@ export function registerTools(server: McpServer): void {
     'Manage memory consolidation: run a consolidation pass, check status, or review a proposal.',
     AmpConsolidateSchema,
     handlers.amp_consolidate,
+  );
+
+  server.tool(
+    'amp_resolve',
+    'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
+    AmpResolveSchema,
+    handlers.amp_resolve,
   );
 }

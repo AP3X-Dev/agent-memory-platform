@@ -172,6 +172,82 @@ describe('amp_query handler', () => {
   });
 });
 
+describe('amp_resolve handler', () => {
+  it('resolves entity URI correctly (calls load with entities scope)', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_resolve({ uri: 'amp://entity/ClientX' });
+
+    expect(mockAmpService.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        entities: ['ClientX'],
+        max_tokens: 2000,
+      }),
+    );
+    const callArgs = vi.mocked(mockAmpService.load).mock.calls[0][0];
+    expect(callArgs).not.toHaveProperty('tags');
+    expect(result.content[0].type).toBe('text');
+    expect(result.content[0].text).toContain('# Memory Context');
+  });
+
+  it('resolves tag URI correctly (calls load with tags scope)', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_resolve({ uri: 'amp://tag/brand-voice' });
+
+    expect(mockAmpService.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tags: ['brand-voice'],
+        max_tokens: 2000,
+      }),
+    );
+    const callArgs = vi.mocked(mockAmpService.load).mock.calls[0][0];
+    expect(callArgs).not.toHaveProperty('entities');
+  });
+
+  it('uses stage_context as the task parameter', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_resolve({
+      uri: 'amp://entity/ClientX',
+      stage_context: 'Writing brand copy for ClientX landing page',
+    });
+
+    expect(mockAmpService.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Writing brand copy for ClientX landing page',
+      }),
+    );
+  });
+
+  it('synthesizes a default task when stage_context is omitted', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_resolve({ uri: 'amp://entity/ClientX' });
+
+    expect(mockAmpService.load).toHaveBeenCalledWith(
+      expect.objectContaining({
+        task: 'Resolve amp://entity/ClientX',
+      }),
+    );
+  });
+
+  it('throws on invalid URI', async () => {
+    const handlers = buildToolHandlers();
+    await expect(handlers.amp_resolve({ uri: 'not-an-amp-uri' })).rejects.toThrow(
+      'Invalid AMP URI',
+    );
+  });
+
+  it('throws when AMPService is not initialised', async () => {
+    setServiceInstances({
+      ampService: null as unknown as IAMPService,
+      consolidationEngine: mockConsolidationEngine,
+      scopedQuery: mockScopedQuery,
+    });
+    const handlers = buildToolHandlers();
+    await expect(handlers.amp_resolve({ uri: 'amp://entity/ClientX' })).rejects.toThrow(
+      'AMPService not initialised',
+    );
+  });
+});
+
 describe('amp_consolidate handler', () => {
   it('calls run action correctly', async () => {
     const handlers = buildToolHandlers();
