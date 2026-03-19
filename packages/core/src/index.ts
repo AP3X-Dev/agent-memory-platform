@@ -8,3 +8,7 @@ export { ConsolidationEngine } from './consolidation.js';
 export type { ConsolidationRedisLayer, ConsolidationNeo4jLayer, RunResult } from './consolidation.js';
 export { renderToMarkdown, parseFromMarkdown, diffEntries } from './markdown.js';
 export type { DiffResult, MarkdownEntry } from './markdown.js';
+export { exportAll, exportFiltered } from './export.js';
+export type { ExportResult, ExportFilter } from './export.js';
+export { importFromPath } from './import.js';
+export type { ImportOptions, ImportResult, ImportStrategy } from './import.js';

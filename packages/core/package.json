@@ -8,6 +8,9 @@
     "build": "tsc",
     "test": "vitest run"
   },
+  "bin": {
+    "amp": "src/cli.ts"
+  },
   "dependencies": {
     "@amp/redis": "*",
     "@amp/neo4j": "*",
