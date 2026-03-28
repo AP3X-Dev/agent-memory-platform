@@ -1,6 +1,6 @@
 // packages/redis/src/embeddings.ts
 import { createHash } from 'crypto';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 const DEFAULT_TTL = 86400; // 24 hours
 

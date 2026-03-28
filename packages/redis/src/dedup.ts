@@ -1,5 +1,5 @@
 // packages/redis/src/dedup.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { createHash } from 'crypto';
 
 const DEFAULT_TTL = 86400; // 24 hours

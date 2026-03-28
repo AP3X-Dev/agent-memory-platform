@@ -1,5 +1,5 @@
 // packages/redis/src/cache.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { MemoryContext } from '@amp/core';
 
 export class ContextCache {

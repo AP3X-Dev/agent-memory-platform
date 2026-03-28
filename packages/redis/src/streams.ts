@@ -1,5 +1,5 @@
 // packages/redis/src/streams.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { StreamSignal } from '@amp/core';
 
 export interface BufferEvent {

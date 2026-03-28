@@ -1,5 +1,5 @@
 // packages/redis/src/locks.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 const DEFAULT_TTL = 30;
 
