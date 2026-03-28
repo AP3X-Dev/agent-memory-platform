@@ -12,19 +12,18 @@ describe('createAMPServer', () => {
     expect(typeof amp.startStdio).toBe('function');
   });
 
-  it('exposes toolNames with all 4 AMP tools', () => {
+  it('exposes toolNames with all registered tools', () => {
     const amp = createAMPServer();
     expect(amp.toolNames).toBeDefined();
-    expect(amp.toolNames).toEqual(TOOL_NAMES);
+    // Core tools
     expect(amp.toolNames).toContain('amp_load');
     expect(amp.toolNames).toContain('amp_store');
     expect(amp.toolNames).toContain('amp_query');
     expect(amp.toolNames).toContain('amp_consolidate');
-  });
-
-  it('toolNames has exactly 4 entries', () => {
-    const amp = createAMPServer();
-    expect(amp.toolNames).toHaveLength(4);
+    expect(amp.toolNames).toContain('amp_resolve');
+    expect(amp.toolNames).toContain('amp_bootstrap');
+    // Extension tools registered from research, arch, code, retrieval
+    expect(amp.toolNames.length).toBeGreaterThanOrEqual(6);
   });
 
   it('server is a McpServer instance', () => {

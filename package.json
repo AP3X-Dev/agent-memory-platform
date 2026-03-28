@@ -1,10 +1,19 @@
 {
   "name": "amp",
   "private": true,
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/core",
+    "packages/neo4j",
+    "packages/redis",
+    "packages/mcp",
+    "packages/research",
+    "packages/arch",
+    "packages/code",
+    "packages/retrieval"
+  ],
   "scripts": {
-    "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
     "dev": "tsx packages/mcp/src/server.ts"
   },
   "engines": { "node": ">=20.0.0" }

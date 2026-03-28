@@ -2,3 +2,9 @@ node_modules/
 dist/
 .env
 *.tsbuildinfo
+
+# AMP data (cold storage exports — user-specific)
+.amp/
+
+# Claude Code state files
+.claude/

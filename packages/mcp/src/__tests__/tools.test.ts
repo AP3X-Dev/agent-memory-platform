@@ -258,10 +258,10 @@ describe('amp_consolidate handler', () => {
     expect(parsed.proposalCount).toBe(3);
   });
 
-  it('calls run without scope', async () => {
+  it('calls run without scope — defaults to global', async () => {
     const handlers = buildToolHandlers();
     await handlers.amp_consolidate({ action: 'run' });
-    expect(mockConsolidationEngine.run).toHaveBeenCalledWith(undefined);
+    expect(mockConsolidationEngine.run).toHaveBeenCalledWith('global');
   });
 
   it('calls status action correctly', async () => {
