@@ -115,20 +115,38 @@ export class ConsolidationEngine {
     }
   }
 
-  // ─── reviewProposal ───────────────────────────────────────────────────────
+  // ─── review ───────────────────────────────────────────────────────────────
 
-  async reviewProposal(id: string, decision: 'approve' | 'reject'): Promise<void> {
-    const proposal = await this.redis.proposals.get(id);
-    if (!proposal) throw new Error(`Proposal ${id} not found`);
+  async review(proposalId: string): Promise<Record<string, unknown>> {
+    const proposal = await this.redis.proposals.get(proposalId);
+    if (!proposal) throw new Error(`Proposal ${proposalId} not found`);
+    return proposal as unknown as Record<string, unknown>;
+  }
+
+  // ─── apply ───────────────────────────────────────────────────────────────
+
+  async apply(proposalId: string, decision: 'approve' | 'reject'): Promise<{ applied: boolean }> {
+    const proposal = await this.redis.proposals.get(proposalId);
+    if (!proposal) throw new Error(`Proposal ${proposalId} not found`);
 
     if (decision === 'reject') {
-      await this.redis.proposals.remove(id);
-      return;
+      await this.redis.proposals.remove(proposalId);
+      return { applied: false };
     }
 
     // approve: execute the proposal
-    await this._applyProposal(proposal);
-    await this.redis.proposals.remove(id);
+    const ok = await this._applyProposal(proposal);
+    await this.redis.proposals.remove(proposalId);
+    return { applied: ok };
+  }
+
+  // ─── reviewProposal (deprecated — use review + apply) ────────────────────
+
+  async reviewProposal(id: string, decision: 'approve' | 'reject'): Promise<void> {
+    const result = await this.apply(id, decision);
+    if (decision === 'approve' && !result.applied) {
+      throw new Error(`Failed to apply proposal ${id}`);
+    }
   }
 
   // ─── status ───────────────────────────────────────────────────────────────
