@@ -104,7 +104,7 @@ export function normalizeScores(results: RetrievalResult[], collectionSize: numb
  */
 export function computeQueryStats(query: string): QueryStats {
   const tokens = query.split(/\s+/).filter(Boolean);
-  const identifierPattern = /^[A-Z][a-z]+[A-Z]|^[a-z]+_[a-z]+|^[a-z]+\.[a-z]+/;
+  const identifierPattern = /^[A-Z][a-z]+[A-Z]|^[a-z]+[A-Z]|^[a-z]+_[a-z]+|^[a-z]+\.[a-z]+/;
   const identifierCount = tokens.filter((t) => identifierPattern.test(t)).length;
 
   const lower = query.toLowerCase();
