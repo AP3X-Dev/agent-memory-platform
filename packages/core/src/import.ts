@@ -152,7 +152,8 @@ export async function importFromPath(
           tags: $tags
         })
         WITH s
-        CREATE (s)<-[:HUMAN_EDIT { imported_at: $now, strategy: $strategy }]-(s)`,
+        CREATE (h:HumanEdit { action: $action, imported_at: $now, strategy: $strategy, target_id: s.id })
+        CREATE (s)<-[:HUMAN_EDIT]-(h)`,
         {
           id: node.id,
           content: node.content,
@@ -164,6 +165,7 @@ export async function importFromPath(
           tags: node.tags,
           now,
           strategy,
+          action: 'add',
         },
       );
     } catch {
@@ -206,7 +208,8 @@ export async function importFromPath(
              s.decay_class = $decay_class,
              s.tags = $tags
          WITH s
-         CREATE (s)<-[:HUMAN_EDIT { imported_at: $now, strategy: $strategy }]-(s)`,
+         CREATE (h:HumanEdit { action: $action, imported_at: $now, strategy: $strategy, target_id: s.id })
+         CREATE (s)<-[:HUMAN_EDIT]-(h)`,
         {
           id: node.id,
           content: node.content,
@@ -216,6 +219,7 @@ export async function importFromPath(
           decay_class: node.decay_class,
           tags: node.tags,
           strategy,
+          action: 'modify',
         },
       );
     } catch {
