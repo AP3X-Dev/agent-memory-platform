@@ -12,3 +12,5 @@ export { exportAll, exportFiltered } from './export.js';
 export type { ExportResult, ExportFilter } from './export.js';
 export { importFromPath } from './import.js';
 export type { ImportOptions, ImportResult, ImportStrategy } from './import.js';
+export { BootstrapGraphService } from './bootstrap-graph.js';
+export type { BootstrapInput, BootstrapResult, BootstrapEntity, BootstrapSemantic, BootstrapAgent } from './bootstrap-graph.js';

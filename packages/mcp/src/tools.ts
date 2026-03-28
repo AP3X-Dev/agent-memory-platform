@@ -22,25 +22,50 @@ export interface IScopedQuery {
   rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]>;
 }
 
+export interface IBootstrapGraphService {
+  bootstrap(input: {
+    project_name: string;
+    project_tag: string;
+    description: string;
+    domain: string;
+    entities: Array<{ name: string; type: string; description?: string; parent?: string }>;
+    semantic_seeds: Array<{ claim: string; domain: string; confidence?: number; about?: string[]; tags?: string[] }>;
+    agents: Array<{ id: string; name: string; type: string }>;
+  }): Promise<{
+    entities_created: number;
+    entities_existing: number;
+    agents_created: number;
+    agents_existing: number;
+    semantics_created: number;
+    relationships_created: number;
+    project_entity_id: string;
+  }>;
+  isBootstrapped(projectName: string): Promise<boolean>;
+  status(projectName: string): Promise<Record<string, unknown>>;
+}
+
 // ─── Injected instances ───────────────────────────────────────────────────────
 
 let ampService: IAMPService | null = null;
 let consolidationEngine: IConsolidationEngine | null = null;
 let scopedQuery: IScopedQuery | null = null;
+let bootstrapService: IBootstrapGraphService | null = null;
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
   consolidationEngine: IConsolidationEngine;
   scopedQuery: IScopedQuery;
+  bootstrapService: IBootstrapGraphService;
 }): void {
   ampService = services.ampService;
   consolidationEngine = services.consolidationEngine;
   scopedQuery = services.scopedQuery;
+  bootstrapService = services.bootstrapService;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
-export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve'] as const;
+export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap'] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -90,6 +115,32 @@ const AmpResolveSchema = {
   uri: z.string().describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
   max_tokens: z.number().int().positive().optional().default(2000).describe('Max tokens for resolved content'),
   stage_context: z.string().optional().describe('Current stage description for relevance ranking'),
+};
+
+const AmpBootstrapSchema = {
+  project_name: z.string().describe('Project name (e.g. "oni-core", "my-api")'),
+  project_tag: z.string().describe('Project scope tag (e.g. "project:oni-core")'),
+  description: z.string().describe('One-line project description'),
+  domain: z.string().describe('Project domain (e.g. "agent-orchestration", "e-commerce", "ml-training")'),
+  entities: z.array(z.object({
+    name: z.string().describe('Entity name'),
+    type: z.string().describe('Entity type: project, module, service, component, team, person, tool'),
+    description: z.string().optional().describe('What this entity is'),
+    parent: z.string().optional().describe('Parent entity name — creates a CONTAINS relationship'),
+  })).describe('Entities to create (modules, services, components, teams, etc.)'),
+  semantic_seeds: z.array(z.object({
+    claim: z.string().describe('The principle or observation, stated concisely'),
+    domain: z.string().describe('Domain tag (architecture, performance, testing, security, etc.)'),
+    confidence: z.number().min(0).max(1).optional().default(0.3).describe('Initial confidence (default 0.3 = prior/observation)'),
+    about: z.array(z.string()).optional().describe('Entity names this principle is ABOUT'),
+    tags: z.array(z.string()).optional().describe('Additional tags'),
+  })).optional().default([]).describe('Seed semantic principles — low-confidence priors from repo analysis'),
+  agents: z.array(z.object({
+    id: z.string().describe('Agent identifier (e.g. "mcp", "researcher-1")'),
+    name: z.string().describe('Human-readable name'),
+    type: z.string().describe('Agent type: assistant, sentinel, fixer, researcher'),
+  })).optional().default([{ id: 'mcp', name: 'Claude Code', type: 'assistant' }])
+    .describe('Agents that will interact with this project'),
 };
 
 // ─── Handler implementations ─────────────────────────────────────────────────
@@ -209,6 +260,20 @@ export function buildToolHandlers(): ToolHandlers {
       const ctx = await ampService.load(scope);
       return textContent(ctx.markdown);
     },
+
+    async amp_bootstrap(args) {
+      if (!bootstrapService) throw new Error('BootstrapGraphService not initialised');
+      const result = await bootstrapService.bootstrap({
+        project_name: args.project_name,
+        project_tag: args.project_tag,
+        description: args.description,
+        domain: args.domain,
+        entities: args.entities,
+        semantic_seeds: args.semantic_seeds ?? [],
+        agents: args.agents ?? [{ id: 'mcp', name: 'Claude Code', type: 'assistant' }],
+      });
+      return textContent(JSON.stringify(result, null, 2));
+    },
   };
 }
 
@@ -250,5 +315,12 @@ export function registerTools(server: McpServer): void {
     'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
     AmpResolveSchema,
     handlers.amp_resolve,
+  );
+
+  server.tool(
+    'amp_bootstrap',
+    'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that amp_store/amp_load/amp_consolidate have structure to work with.',
+    AmpBootstrapSchema,
+    handlers.amp_bootstrap,
   );
 }
