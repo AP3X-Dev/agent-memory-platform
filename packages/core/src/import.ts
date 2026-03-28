@@ -3,7 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { createHash } from 'crypto';
 import { type Driver } from 'neo4j-driver';
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import { parseFromMarkdown, diffEntries } from './markdown.js';
 import type { SemanticNode } from './types.js';
 

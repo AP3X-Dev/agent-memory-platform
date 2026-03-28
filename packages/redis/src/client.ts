@@ -1,5 +1,5 @@
 // packages/redis/src/client.ts
-import Redis, { RedisOptions } from 'ioredis';
+import { Redis, type RedisOptions } from 'ioredis';
 
 export function createRedisClient(url: string, overrides?: Partial<RedisOptions>): Redis {
   return new Redis(url, {

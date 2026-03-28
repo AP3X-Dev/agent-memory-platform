@@ -1,5 +1,5 @@
 // packages/redis/src/queue.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 
 const QUEUE_KEY = 'amp:consolidation-queue';
 

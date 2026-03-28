@@ -1,5 +1,5 @@
 // packages/redis/src/proposals.ts
-import type Redis from 'ioredis';
+import type { Redis } from 'ioredis';
 import type { ConsolidationProposal } from '@amp/core';
 
 const DEFAULT_TTL = 604800; // 7 days
