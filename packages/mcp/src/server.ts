@@ -11,13 +11,22 @@ import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@amp/retrieval';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
+export interface SSEHandle {
+  /** The underlying Node HTTP server. */
+  httpServer: ReturnType<typeof createServer>;
+  /** Active SSE transports keyed by session ID. */
+  transports: Map<string, SSEServerTransport>;
+  /** Per-session MCP servers keyed by session ID. */
+  servers: Map<string, McpServer>;
+}
+
 export interface AMPMCPServer {
   /** The underlying McpServer instance. */
   server: McpServer;
   /** Names of all registered tools. */
   toolNames: readonly string[];
   /** Start listening via SSE (HTTP) on the given port. */
-  startSSE(port?: number): Promise<void>;
+  startSSE(port?: number): Promise<SSEHandle>;
   /** Start listening via stdio. */
   startStdio(): Promise<void>;
 }
@@ -36,7 +45,7 @@ export function createAMPServer(): AMPMCPServer {
 
   // ─── SSE transport ────────────────────────────────────────────────────────
 
-  async function startSSE(port = 3101): Promise<void> {
+  async function startSSE(port = 3101): Promise<SSEHandle> {
     const transports = new Map<string, SSEServerTransport>();
     const servers = new Map<string, McpServer>();
 
@@ -163,6 +172,8 @@ export function createAMPServer(): AMPMCPServer {
     });
 
     console.error(`[amp-mcp] SSE server listening on http://localhost:${port}/sse`);
+
+    return { httpServer, transports, servers };
   }
 
   // ─── Stdio transport ──────────────────────────────────────────────────────
@@ -197,15 +208,48 @@ if (isMain) {
   // Bootstrap: connect Redis + Neo4j, create services, inject into tools
   import('./bootstrap.js')
     .then(({ bootstrap }) => bootstrap())
-    .then(() => {
+    .then(async (handles) => {
       const amp = createAMPServer();
 
+      let sseHandle: SSEHandle | undefined;
       if (useStdio) {
-        return amp.startStdio();
+        await amp.startStdio();
       } else {
         const port = parseInt(process.env['PORT'] ?? process.env['MCP_PORT'] ?? '3101', 10);
-        return amp.startSSE(port);
+        sseHandle = await amp.startSSE(port);
       }
+
+      // ── Graceful shutdown ───────────────────────────────────────────────
+      let shuttingDown = false;
+
+      async function gracefulShutdown(signal: string): Promise<void> {
+        if (shuttingDown) return;
+        shuttingDown = true;
+        console.error(`[amp-mcp] ${signal} received — shutting down gracefully`);
+
+        // 1. Stop accepting new HTTP connections
+        if (sseHandle) {
+          await new Promise<void>((resolve) => {
+            sseHandle!.httpServer.close(() => resolve());
+          });
+
+          // 2. Close active SSE transports
+          for (const transport of sseHandle.transports.values()) {
+            try { await transport.close(); } catch { /* best-effort */ }
+          }
+          sseHandle.transports.clear();
+          sseHandle.servers.clear();
+        }
+
+        // 3. Disconnect Redis and Neo4j
+        await handles.shutdown();
+
+        console.error('[amp-mcp] Shutdown complete');
+        process.exit(0);
+      }
+
+      process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
+      process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
     })
     .catch((err: unknown) => {
       console.error('[amp-mcp] Fatal startup error:', err);
