@@ -67,8 +67,9 @@ describe('SignalStream', () => {
   it('should consume a published signal', async () => {
     if (!redisAvailable) return;
 
-    // Create the stream first so XGROUP CREATE with '$' captures nothing,
-    // then we publish after creating the group with '0' to read from start.
+    // First consume call creates the group at '$'. After that, publish and consume with '>'.
+    await stream.consume('test-consume-group', 'consumer-1', 1);
+
     const signal: StreamSignal = {
       type: 'correction',
       target_id: 'node-002',
@@ -80,8 +81,8 @@ describe('SignalStream', () => {
 
     const msgId = await stream.publish(signal);
 
-    // Consume with startId='0' to read all pending including just-published
-    const consumed = await stream.consume('test-group', 'consumer-1', 10, '0');
+    // Consume with '>' to read new messages delivered after group creation
+    const consumed = await stream.consume('test-consume-group', 'consumer-1', 10);
 
     expect(consumed.length).toBeGreaterThanOrEqual(1);
     const found = consumed.find((s) => s.target_id === 'node-002');
@@ -96,6 +97,9 @@ describe('SignalStream', () => {
   it('should not return already-consumed messages on subsequent consume calls', async () => {
     if (!redisAvailable) return;
 
+    // Create the group first
+    await stream.consume('dedup-group', 'consumer-1', 1);
+
     const signal: StreamSignal = {
       type: 'contradiction',
       target_id: 'node-003',
@@ -107,12 +111,12 @@ describe('SignalStream', () => {
 
     await stream.publish(signal);
 
-    // First consume reads from beginning
-    const first = await stream.consume('dedup-group', 'consumer-1', 10, '0');
+    // First consume reads new messages
+    const first = await stream.consume('dedup-group', 'consumer-1', 10);
     expect(first.length).toBe(1);
 
     // Second consume with '>' should return nothing (already ACKed)
-    const second = await stream.consume('dedup-group', 'consumer-1', 10, '>');
+    const second = await stream.consume('dedup-group', 'consumer-1', 10);
     expect(second.length).toBe(0);
   });
 });

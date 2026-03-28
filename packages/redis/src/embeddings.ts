@@ -15,7 +15,10 @@ export class EmbeddingCache {
   async get(content: string): Promise<number[] | null> {
     const buf = await this.redis.getBuffer(contentKey(content));
     if (!buf) return null;
-    const floats = new Float32Array(buf.buffer, buf.byteOffset, buf.byteLength / 4);
+    // Copy to aligned buffer — ioredis may return buffers with non-4-byte-aligned offsets
+    const aligned = new Uint8Array(buf.byteLength);
+    aligned.set(new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength));
+    const floats = new Float32Array(aligned.buffer);
     return Array.from(floats);
   }
 
