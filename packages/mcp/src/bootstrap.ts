@@ -4,9 +4,41 @@
 import { createRedisClient } from '@amp/redis';
 import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore } from '@amp/redis';
 import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms } from '@amp/neo4j';
-import { AMPService, ConsolidationEngine, OpenAIEmbedding } from '@amp/core';
+import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
+import {
+  initResearchSchema,
+  ExperimentStore,
+  CampaignStore,
+  HypothesisNavigator,
+  ResearchContextBuilder,
+  ContradictionDetector,
+  ResearchConsolidation,
+  setResearchServiceInstances,
+} from '@amp/research';
+import {
+  initArchSchema,
+  ArchEntityStore,
+  AspectStore,
+  StructuralRelationStore,
+  ImpactAnalyzer,
+  DriftDetector,
+  ArchContextBuilder,
+  setArchServiceInstances,
+} from '@amp/arch';
+import {
+  initCodeSchema,
+  CodeIndexer,
+  SymbolStore,
+  CodeSearch,
+  setCodeServiceInstances,
+} from '@amp/code';
+import {
+  UnifiedAssembler,
+  FeedbackTracker,
+  setRetrievalServiceInstances,
+} from '@amp/retrieval';
 
 export interface BootstrapHandles {
   /** Call to disconnect Redis and Neo4j cleanly. */
@@ -83,12 +115,110 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     config,
   );
 
+  // Build bootstrap service
+  const bootstrapGraphService = new BootstrapGraphService(driver);
+
   // Inject into MCP tools
   setServiceInstances({
     ampService,
     consolidationEngine,
     scopedQuery,
+    bootstrapService: bootstrapGraphService,
   });
+
+  // ─── Research services ─────────────────────────────────────────────────────
+  await initResearchSchema(driver);
+  console.error('[amp-mcp] Research schema verified');
+
+  const experimentStore = new ExperimentStore(driver);
+  const campaignStore = new CampaignStore(driver);
+  const hypothesisNavigator = new HypothesisNavigator(driver);
+  const researchContextBuilder = new ResearchContextBuilder(driver);
+  const contradictionDetector = new ContradictionDetector(driver);
+  const researchConsolidation = new ResearchConsolidation(driver);
+
+  setResearchServiceInstances({
+    experimentStore,
+    campaignStore,
+    contextBuilder: researchContextBuilder,
+    hypothesisNavigator,
+    contradictionDetector,
+    researchConsolidation,
+  });
+
+  console.error('[amp-mcp] Research services initialized');
+
+  // ─── Arch services ─────────────────────────────────────────────────────────
+  await initArchSchema(driver);
+  console.error('[amp-mcp] Arch schema verified');
+
+  const archEntityStore = new ArchEntityStore(driver);
+  const aspectStore = new AspectStore(driver);
+  const relationStore = new StructuralRelationStore(driver);
+  const impactAnalyzer = new ImpactAnalyzer(driver);
+  const driftDetector = new DriftDetector(driver);
+  const archContextBuilder = new ArchContextBuilder(driver);
+
+  setArchServiceInstances({
+    archEntityStore,
+    aspectStore,
+    relationStore,
+    impactAnalyzer,
+    driftDetector,
+    archContextBuilder,
+  });
+
+  console.error('[amp-mcp] Arch services initialized');
+
+  // ─── Code intelligence services ────────────────────────────────────────────
+  await initCodeSchema(driver);
+  console.error('[amp-mcp] Code schema verified');
+
+  const codeIndexerService = new CodeIndexer(driver);
+  const symbolStoreService = new SymbolStore(driver);
+  const codeSearchService = new CodeSearch(driver, embedding);
+
+  setCodeServiceInstances({
+    codeIndexer: codeIndexerService,
+    codeSearch: codeSearchService,
+    symbolStore: symbolStoreService,
+  });
+
+  console.error('[amp-mcp] Code services initialized');
+
+  // ─── Retrieval services ────────────────────────────────────────────────────
+  const feedbackRedis = {
+    zincrby: async (key: string, inc: number, member: string) => {
+      const result = await redis.zincrby(key, inc, member);
+      return parseFloat(result);
+    },
+    zrevrangeWithScores: async (key: string, start: number, stop: number) => {
+      const raw = await redis.zrevrange(key, start, stop, 'WITHSCORES');
+      const pairs: Array<{ member: string; score: number }> = [];
+      for (let i = 0; i < raw.length; i += 2) {
+        pairs.push({ member: raw[i], score: parseFloat(raw[i + 1]) });
+      }
+      return pairs;
+    },
+    lpush: async (key: string, value: string) => redis.lpush(key, value),
+    ltrim: async (key: string, start: number, stop: number) => { await redis.ltrim(key, start, stop); },
+  };
+
+  const unifiedAssembler = new UnifiedAssembler(
+    driver,
+    feedbackRedis,
+    codeSearchService,
+    ampService,
+    embedding,
+  );
+  const feedbackTrackerService = new FeedbackTracker(feedbackRedis);
+
+  setRetrievalServiceInstances({
+    assembler: unifiedAssembler,
+    feedbackTracker: feedbackTrackerService,
+  });
+
+  console.error('[amp-mcp] Retrieval services initialized');
 
   console.error('[amp-mcp] All services initialized');
 
