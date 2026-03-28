@@ -168,7 +168,8 @@ export function buildToolHandlers(): ToolHandlers {
       if (!consolidationEngine) throw new Error('ConsolidationEngine not initialised');
       switch (args.action) {
         case 'run': {
-          const result = await consolidationEngine.run(args.scope);
+          const effectiveScope = args.scope ?? 'global';
+          const result = await consolidationEngine.run(effectiveScope);
           return textContent(JSON.stringify(result, null, 2));
         }
         case 'status': {

@@ -8,6 +8,100 @@ import type {
 } from './types.js';
 import { SIGNAL_WEIGHTS } from './types.js';
 
+// ─── Runtime validators ──────────────────────────────────────────────────────
+
+const VALID_DECAY_CLASSES = new Set(['volatile', 'stable', 'permanent']);
+
+/**
+ * Validates that a Record<string, unknown> (e.g. from Redis) has all required
+ * SemanticNode fields with correct types.  Returns the validated node or throws.
+ */
+function parseSemanticNode(raw: Record<string, unknown>, label: string): SemanticNode {
+  if (typeof raw.id !== 'string' || raw.id === '') {
+    throw new Error(`${label}: missing or invalid "id" (expected non-empty string)`);
+  }
+  if (typeof raw.content !== 'string') {
+    throw new Error(`${label}: missing or invalid "content" (expected string)`);
+  }
+  if (typeof raw.confidence !== 'number' || !Number.isFinite(raw.confidence)) {
+    throw new Error(`${label}: missing or invalid "confidence" (expected finite number)`);
+  }
+  if (typeof raw.signal_count !== 'number' || !Number.isFinite(raw.signal_count)) {
+    throw new Error(`${label}: missing or invalid "signal_count" (expected finite number)`);
+  }
+  if (typeof raw.created_at !== 'string') {
+    throw new Error(`${label}: missing or invalid "created_at" (expected string)`);
+  }
+  if (typeof raw.updated_at !== 'string') {
+    throw new Error(`${label}: missing or invalid "updated_at" (expected string)`);
+  }
+  if (typeof raw.decay_class !== 'string' || !VALID_DECAY_CLASSES.has(raw.decay_class)) {
+    throw new Error(`${label}: missing or invalid "decay_class" (expected 'volatile' | 'stable' | 'permanent')`);
+  }
+  if (!Array.isArray(raw.tags) || !raw.tags.every((t: unknown) => typeof t === 'string')) {
+    throw new Error(`${label}: missing or invalid "tags" (expected string[])`);
+  }
+
+  return {
+    id: raw.id,
+    content: raw.content,
+    confidence: raw.confidence,
+    signal_count: raw.signal_count,
+    created_at: raw.created_at,
+    updated_at: raw.updated_at,
+    decay_class: raw.decay_class as SemanticNode['decay_class'],
+    tags: raw.tags as string[],
+    ...(Array.isArray(raw.embedding) ? { embedding: raw.embedding as number[] } : {}),
+  };
+}
+
+/**
+ * Validates a partial SemanticNode record (the "after" side of a proposal).
+ * Only present keys are type-checked; the result is Partial<SemanticNode>.
+ */
+function parsePartialSemanticNode(raw: Record<string, unknown>, label: string): Partial<SemanticNode> {
+  const result: Partial<SemanticNode> = {};
+
+  if ('id' in raw) {
+    if (typeof raw.id !== 'string' || raw.id === '') throw new Error(`${label}: invalid "id"`);
+    result.id = raw.id;
+  }
+  if ('content' in raw) {
+    if (typeof raw.content !== 'string') throw new Error(`${label}: invalid "content"`);
+    result.content = raw.content;
+  }
+  if ('confidence' in raw) {
+    if (typeof raw.confidence !== 'number' || !Number.isFinite(raw.confidence))
+      throw new Error(`${label}: invalid "confidence"`);
+    result.confidence = raw.confidence;
+  }
+  if ('signal_count' in raw) {
+    if (typeof raw.signal_count !== 'number' || !Number.isFinite(raw.signal_count))
+      throw new Error(`${label}: invalid "signal_count"`);
+    result.signal_count = raw.signal_count;
+  }
+  if ('created_at' in raw) {
+    if (typeof raw.created_at !== 'string') throw new Error(`${label}: invalid "created_at"`);
+    result.created_at = raw.created_at;
+  }
+  if ('updated_at' in raw) {
+    if (typeof raw.updated_at !== 'string') throw new Error(`${label}: invalid "updated_at"`);
+    result.updated_at = raw.updated_at;
+  }
+  if ('decay_class' in raw) {
+    if (typeof raw.decay_class !== 'string' || !VALID_DECAY_CLASSES.has(raw.decay_class))
+      throw new Error(`${label}: invalid "decay_class"`);
+    result.decay_class = raw.decay_class as SemanticNode['decay_class'];
+  }
+  if ('tags' in raw) {
+    if (!Array.isArray(raw.tags) || !raw.tags.every((t: unknown) => typeof t === 'string'))
+      throw new Error(`${label}: invalid "tags"`);
+    result.tags = raw.tags as string[];
+  }
+
+  return result;
+}
+
 // ─── Dependency interfaces ────────────────────────────────────────────────────
 
 export interface ConsolidationRedisLayer {
@@ -219,8 +313,8 @@ export class ConsolidationEngine {
   private async _applyProposal(proposal: ConsolidationProposal): Promise<boolean> {
     try {
       if (proposal.type === 'supersede') {
-        const after = proposal.after as unknown as Partial<SemanticNode>;
-        const before = proposal.before as unknown as SemanticNode;
+        const before = parseSemanticNode(proposal.before, 'proposal.before');
+        const after = parsePartialSemanticNode(proposal.after, 'proposal.after');
 
         const newNode: SemanticNode = {
           id: nanoid(),
