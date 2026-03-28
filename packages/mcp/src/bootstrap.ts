@@ -8,7 +8,12 @@ import { AMPService, ConsolidationEngine, OpenAIEmbedding } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
 
-export async function bootstrap(): Promise<void> {
+export interface BootstrapHandles {
+  /** Call to disconnect Redis and Neo4j cleanly. */
+  shutdown(): Promise<void>;
+}
+
+export async function bootstrap(): Promise<BootstrapHandles> {
   const neo4jUri = process.env['NEO4J_URI'] ?? 'bolt://localhost:7687';
   const neo4jUser = process.env['NEO4J_USER'] ?? 'neo4j';
   const neo4jPassword = process.env['NEO4J_PASSWORD'] ?? '';
@@ -86,4 +91,11 @@ export async function bootstrap(): Promise<void> {
   });
 
   console.error('[amp-mcp] All services initialized');
+
+  return {
+    async shutdown() {
+      try { await redis.quit(); } catch { /* already closed */ }
+      try { await driver.close(); } catch { /* already closed */ }
+    },
+  };
 }
