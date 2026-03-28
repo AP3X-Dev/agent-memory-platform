@@ -185,7 +185,7 @@ export class ConsolidationEngine {
 
       if (contradictions.length > 0 || corrections.length > 0) {
         // Propose supersede with adjusted confidence
-        const newConfidence = Math.min(1.0, node.confidence + 0.1 * corrections.length);
+        const newConfidence = Math.max(0, node.confidence - 0.1 * (corrections.length + contradictions.length));
         proposals.push(buildSupersedePropsal(scope, node, newConfidence, cluster.totalWeight));
       } else {
         // Reinforce — decay proposal: bump confidence gently
@@ -201,8 +201,8 @@ export class ConsolidationEngine {
   private async _applyProposal(proposal: ConsolidationProposal): Promise<boolean> {
     try {
       if (proposal.type === 'supersede') {
-        const after = proposal.after as Partial<SemanticNode>;
-        const before = proposal.before as SemanticNode;
+        const after = proposal.after as unknown as Partial<SemanticNode>;
+        const before = proposal.before as unknown as SemanticNode;
 
         const newNode: SemanticNode = {
           id: nanoid(),
