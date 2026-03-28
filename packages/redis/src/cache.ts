@@ -21,9 +21,12 @@ export class ContextCache {
     await this.redis.setex(key, ttl, JSON.stringify(context));
 
     // Track reverse dependencies for targeted invalidation
+    // Use a longer TTL for dep sets so they outlive the context keys they reference
+    const depsTtl = ttl * 2;
     const pipeline = this.redis.pipeline();
     for (const nodeId of sourceNodeIds) {
       pipeline.sadd(`amp:deps:${nodeId}`, key);
+      pipeline.expire(`amp:deps:${nodeId}`, depsTtl);
     }
     await pipeline.exec();
   }
