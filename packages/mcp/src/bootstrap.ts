@@ -120,16 +120,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   // Adapt ConsolidationEngine to the IConsolidationEngine interface expected by tools
   const consolidationAdapter = {
-    run: async (scope?: string) => {
-      const r = await consolidationEngine.run(scope ?? 'global');
-      return JSON.parse(JSON.stringify(r)) as Record<string, unknown>;
-    },
-    status: async () => {
-      const s = await consolidationEngine.status();
-      return JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
-    },
+    run: (scope?: string) => consolidationEngine.run(scope ?? 'global'),
+    status: () => consolidationEngine.status(),
     review: async (proposalId: string) => {
-      return { proposalId } as Record<string, unknown>;
+      const proposal = await proposals.get(proposalId);
+      return proposal ?? { error: 'not found' };
     },
     apply: async (proposalId: string, decision: 'approve' | 'reject') => {
       await consolidationEngine.reviewProposal(proposalId, decision);

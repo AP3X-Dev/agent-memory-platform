@@ -2,7 +2,7 @@
 import { Redis, type RedisOptions } from 'ioredis';
 
 export function createRedisClient(url: string, overrides?: Partial<RedisOptions>): Redis {
-  return new Redis(url, {
+  const client = new Redis(url, {
     maxRetriesPerRequest: 3,
     connectTimeout: 5000,
     retryStrategy(times: number) {
@@ -11,6 +11,16 @@ export function createRedisClient(url: string, overrides?: Partial<RedisOptions>
     lazyConnect: true,
     ...overrides,
   });
+
+  // Prevent unhandled error events when Redis is unavailable (e.g., in CI or tests)
+  client.on('error', (err: Error) => {
+    if (!client.listenerCount('error') || client.listenerCount('error') <= 1) {
+      // Only log if no other error listeners are attached
+      console.error(`[amp-redis] Connection error: ${err.message}`);
+    }
+  });
+
+  return client;
 }
 
 export interface HealthResult {

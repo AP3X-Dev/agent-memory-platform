@@ -12,9 +12,9 @@ export interface IAMPService {
 }
 
 export interface IConsolidationEngine {
-  run(scope?: string): Promise<Record<string, unknown>>;
-  status(): Promise<Record<string, unknown>>;
-  review(proposalId: string): Promise<Record<string, unknown>>;
+  run(scope?: string): Promise<unknown>;
+  status(): Promise<unknown>;
+  review(proposalId: string): Promise<unknown>;
   apply(proposalId: string, decision: 'approve' | 'reject'): Promise<{ applied: boolean }>;
 }
 

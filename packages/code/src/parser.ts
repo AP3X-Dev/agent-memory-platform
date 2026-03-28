@@ -17,17 +17,34 @@ import type {
 // ─── Tree-sitter lazy loading ─────────────────────────────────────────────────
 // Grammars loaded on first use per language to avoid loading all at startup.
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- tree-sitter is dynamically loaded
-let Parser: any = null;
+/** Minimal typed interface for tree-sitter Parser. */
+interface TSParser {
+  new(): TSParserInstance;
+}
+interface TSParserInstance {
+  setLanguage(language: unknown): void;
+  parse(input: string): { rootNode: TSSyntaxNode };
+}
+interface TSSyntaxNode {
+  type: string;
+  text: string;
+  startPosition: { row: number; column: number };
+  endPosition: { row: number; column: number };
+  childCount: number;
+  child(index: number): TSSyntaxNode | null;
+  childForFieldName?(name: string): TSSyntaxNode | null;
+}
+
+let ParserClass: TSParser | null = null;
 
 const grammarCache = new Map<SupportedLanguage, unknown>();
 
-async function getParser(): Promise<any> {
-  if (!Parser) {
+async function getParser(): Promise<TSParser> {
+  if (!ParserClass) {
     const mod = await import('tree-sitter');
-    Parser = mod.default ?? mod;
+    ParserClass = (mod.default ?? mod) as TSParser;
   }
-  return Parser;
+  return ParserClass;
 }
 
 async function getGrammar(language: SupportedLanguage): Promise<unknown> {
@@ -64,11 +81,11 @@ export async function parseFile(
   language: SupportedLanguage,
 ): Promise<ParsedFile> {
   const source = await readFile(filePath, 'utf-8');
-  const TreeSitter = await getParser();
+  const TSParser = await getParser();
   const grammar = await getGrammar(language);
 
-  const parser = new TreeSitter();
-  parser.setLanguage(grammar as Parameters<typeof parser.setLanguage>[0]);
+  const parser = new TSParser();
+  parser.setLanguage(grammar);
   const tree = parser.parse(source);
 
   const symbols: SymbolNode[] = [];
@@ -79,7 +96,7 @@ export async function parseFile(
   // Walk the AST
   walkNode(tree.rootNode, null);
 
-  function walkNode(node: ReturnType<typeof tree.rootNode.child>, parentSymbolId: string | null): void {
+  function walkNode(node: TSSyntaxNode | null, parentSymbolId: string | null): void {
     if (!node) return;
 
     const extracted = extractSymbol(node, language, filePath, source, parentSymbolId, now);
@@ -115,7 +132,7 @@ interface ExtractedSymbol {
 }
 
 function extractSymbol(
-  node: { type: string; text: string; startPosition: { row: number }; endPosition: { row: number }; childCount: number; child(i: number): typeof node | null; childForFieldName?(name: string): typeof node | null },
+  node: TSSyntaxNode,
   language: SupportedLanguage,
   filePath: string,
   source: string,
@@ -271,7 +288,7 @@ function extractSymbol(
 // ─── Import extraction ────────────────────────────────────────────────────────
 
 function extractImport(
-  node: { type: string; text: string; startPosition: { row: number }; childForFieldName?(name: string): typeof node | null; childCount: number; child(i: number): typeof node | null },
+  node: TSSyntaxNode,
   language: SupportedLanguage,
   filePath: string,
 ): ImportInfo | null {
@@ -332,7 +349,7 @@ function extractFirstLine(text: string): string {
   return line.length > 200 ? line.slice(0, 200) + '...' : line;
 }
 
-function extractName(node: { childCount: number; child(i: number): { type: string; text: string } | null }): string | null {
+function extractName(node: TSSyntaxNode): string | null {
   for (let i = 0; i < node.childCount; i++) {
     const child = node.child(i);
     if (child?.type === 'identifier' || child?.type === 'property_identifier') {
@@ -343,7 +360,7 @@ function extractName(node: { childCount: number; child(i: number): { type: strin
 }
 
 function extractDocComment(
-  node: { startPosition: { row: number } },
+  node: TSSyntaxNode,
   source: string,
 ): string {
   const lines = source.split('\n');
@@ -371,7 +388,7 @@ function extractDocComment(
 }
 
 function detectHeritage(
-  node: { text: string; childCount: number; child(i: number): { type: string; text: string } | null },
+  node: TSSyntaxNode,
   language: SupportedLanguage,
 ): { extends: string[]; implements: string[] } {
   const result = { extends: [] as string[], implements: [] as string[] };

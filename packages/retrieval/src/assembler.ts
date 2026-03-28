@@ -39,6 +39,9 @@ export interface AssemblerMemoryLayer {
 export class UnifiedAssembler {
   private deterministic: DeterministicAssembler;
   private feedback: FeedbackTracker;
+  private cachedCollectionSize: number | undefined;
+  private collectionSizeCachedAt = 0;
+  private static readonly COLLECTION_SIZE_TTL_MS = 60_000; // 60s cache
 
   constructor(
     private driver: Driver,
@@ -49,6 +52,25 @@ export class UnifiedAssembler {
   ) {
     this.deterministic = new DeterministicAssembler(driver);
     this.feedback = new FeedbackTracker(redis);
+  }
+
+  private async getCollectionSize(): Promise<number | undefined> {
+    const now = Date.now();
+    if (this.cachedCollectionSize !== undefined && now - this.collectionSizeCachedAt < UnifiedAssembler.COLLECTION_SIZE_TTL_MS) {
+      return this.cachedCollectionSize;
+    }
+    try {
+      const session = this.driver.session();
+      try {
+        const result = await session.run('MATCH (s:Symbol) RETURN count(s) AS c');
+        const raw = result.records[0]?.get('c');
+        this.cachedCollectionSize = typeof raw === 'number' ? raw : raw?.toNumber?.() ?? undefined;
+        this.collectionSizeCachedAt = now;
+      } finally {
+        await session.close();
+      }
+    } catch { /* proceed without scaling */ }
+    return this.cachedCollectionSize;
   }
 
   /**
@@ -178,18 +200,8 @@ export class UnifiedAssembler {
       boosts = await this.feedback.getBoosts();
     } catch { /* proceed without boosts */ }
 
-    // Get collection size for dynamic k scaling (non-critical)
-    let collectionSize: number | undefined;
-    try {
-      const session = this.driver.session();
-      try {
-        const countResult = await session.run('MATCH (s:Symbol) RETURN count(s) AS c');
-        const raw = countResult.records[0]?.get('c');
-        collectionSize = typeof raw === 'number' ? raw : raw?.toNumber?.() ?? undefined;
-      } finally {
-        await session.close();
-      }
-    } catch { /* proceed without dynamic scaling */ }
+    // Get collection size for dynamic k scaling (cached 60s to avoid per-request query)
+    const collectionSize = await this.getCollectionSize();
 
     // Build lexical text boost function (applied inside fusion, between normalization and MMR)
     const queryStats = computeQueryStats(task);

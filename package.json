@@ -12,7 +12,7 @@
     "packages/retrieval"
   ],
   "scripts": {
-    "build": "npm run build --workspaces --if-present",
+    "build": "tsc -b tsconfig.build.json",
     "test": "npm run test --workspaces --if-present",
     "dev": "tsx packages/mcp/src/server.ts"
   },

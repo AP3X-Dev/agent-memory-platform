@@ -1,10 +1,26 @@
-// Type declarations for tree-sitter grammar packages that lack their own types.
-// These are loaded dynamically in parser.ts — the shims let tsc compile without them installed.
+// Type declarations for tree-sitter and grammar packages.
+// Loaded dynamically in parser.ts — shims let tsc compile without them installed.
 
 declare module 'tree-sitter' {
-  const Parser: any;
-  export default Parser;
-  export = Parser;
+  namespace TreeSitter {
+    interface Tree {
+      rootNode: SyntaxNode;
+    }
+    interface SyntaxNode {
+      type: string;
+      text: string;
+      startPosition: { row: number; column: number };
+      endPosition: { row: number; column: number };
+      childCount: number;
+      child(index: number): SyntaxNode | null;
+      childForFieldName?(name: string): SyntaxNode | null;
+    }
+  }
+  class TreeSitter {
+    setLanguage(language: unknown): void;
+    parse(input: string): TreeSitter.Tree;
+  }
+  export = TreeSitter;
 }
 
 declare module 'tree-sitter-typescript' {

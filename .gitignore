@@ -3,13 +3,6 @@ dist/
 .env
 *.tsbuildinfo
 
-# TypeScript build output (emitted alongside source by composite builds)
-packages/*/src/**/*.js
-packages/*/src/**/*.js.map
-packages/*/src/**/*.d.ts
-packages/*/src/**/*.d.ts.map
-!packages/*/src/shims/*.d.ts
-
 # AMP data (cold storage exports — user-specific)
 .amp/
 
