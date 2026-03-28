@@ -17,14 +17,15 @@ import type {
 // ─── Tree-sitter lazy loading ─────────────────────────────────────────────────
 // Grammars loaded on first use per language to avoid loading all at startup.
 
-let Parser: typeof import('tree-sitter').default | null = null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- tree-sitter is dynamically loaded
+let Parser: any = null;
 
 const grammarCache = new Map<SupportedLanguage, unknown>();
 
-async function getParser(): Promise<typeof import('tree-sitter').default> {
+async function getParser(): Promise<any> {
   if (!Parser) {
     const mod = await import('tree-sitter');
-    Parser = mod.default;
+    Parser = mod.default ?? mod;
   }
   return Parser;
 }

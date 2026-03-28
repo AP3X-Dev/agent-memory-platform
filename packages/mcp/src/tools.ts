@@ -171,6 +171,15 @@ export type ToolHandlers = {
     max_tokens?: number;
     stage_context?: string;
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  amp_bootstrap: (args: {
+    project_name: string;
+    project_tag: string;
+    description: string;
+    domain: string;
+    entities: Array<{ name: string; type: string; description?: string; parent?: string }>;
+    semantic_seeds?: Array<{ claim: string; domain: string; confidence?: number; about?: string[]; tags?: string[] }>;
+    agents?: Array<{ id: string; name: string; type: string }>;
+  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 };
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {

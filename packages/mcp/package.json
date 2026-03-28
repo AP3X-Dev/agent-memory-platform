@@ -3,8 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "dist/server.js",
-  "types": "dist/server.d.ts",
+  "main": "src/server.ts",
   "scripts": {
     "build": "tsc",
     "test": "vitest run",

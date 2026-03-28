@@ -111,17 +111,36 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   const consolidationEngine = new ConsolidationEngine(
     { lock, signals, queue, cache, proposals },
-    { gds, semantic },
+    { semantic },
     config,
   );
 
   // Build bootstrap service
   const bootstrapGraphService = new BootstrapGraphService(driver);
 
+  // Adapt ConsolidationEngine to the IConsolidationEngine interface expected by tools
+  const consolidationAdapter = {
+    run: async (scope?: string) => {
+      const r = await consolidationEngine.run(scope ?? 'global');
+      return JSON.parse(JSON.stringify(r)) as Record<string, unknown>;
+    },
+    status: async () => {
+      const s = await consolidationEngine.status();
+      return JSON.parse(JSON.stringify(s)) as Record<string, unknown>;
+    },
+    review: async (proposalId: string) => {
+      return { proposalId } as Record<string, unknown>;
+    },
+    apply: async (proposalId: string, decision: 'approve' | 'reject') => {
+      await consolidationEngine.reviewProposal(proposalId, decision);
+      return { applied: true };
+    },
+  };
+
   // Inject into MCP tools
   setServiceInstances({
     ampService,
-    consolidationEngine,
+    consolidationEngine: consolidationAdapter,
     scopedQuery,
     bootstrapService: bootstrapGraphService,
   });

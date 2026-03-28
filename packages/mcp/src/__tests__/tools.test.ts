@@ -33,12 +33,24 @@ const mockScopedQuery: IScopedQuery = {
 
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
+const mockBootstrapService = {
+  bootstrap: vi.fn().mockResolvedValue({
+    entities_created: 1, entities_existing: 0,
+    agents_created: 1, agents_existing: 0,
+    semantics_created: 0, relationships_created: 0,
+    project_entity_id: 'test-id',
+  }),
+  isBootstrapped: vi.fn().mockResolvedValue(false),
+  status: vi.fn().mockResolvedValue({ bootstrapped: false }),
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   setServiceInstances({
     ampService: mockAmpService,
     consolidationEngine: mockConsolidationEngine,
     scopedQuery: mockScopedQuery,
+    bootstrapService: mockBootstrapService,
   });
 });
 
@@ -79,6 +91,7 @@ describe('amp_load handler', () => {
       ampService: null as unknown as IAMPService,
       consolidationEngine: mockConsolidationEngine,
       scopedQuery: mockScopedQuery,
+    bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
     await expect(handlers.amp_load({ task: 'test' })).rejects.toThrow('AMPService not initialised');
@@ -164,6 +177,7 @@ describe('amp_query handler', () => {
       ampService: mockAmpService,
       consolidationEngine: mockConsolidationEngine,
       scopedQuery: null as unknown as IScopedQuery,
+      bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
     await expect(handlers.amp_query({ query: 'MATCH (n) RETURN n' })).rejects.toThrow(
@@ -240,6 +254,7 @@ describe('amp_resolve handler', () => {
       ampService: null as unknown as IAMPService,
       consolidationEngine: mockConsolidationEngine,
       scopedQuery: mockScopedQuery,
+    bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
     await expect(handlers.amp_resolve({ uri: 'amp://entity/ClientX' })).rejects.toThrow(
@@ -310,6 +325,7 @@ describe('amp_consolidate handler', () => {
       ampService: mockAmpService,
       consolidationEngine: null as unknown as IConsolidationEngine,
       scopedQuery: mockScopedQuery,
+    bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
     await expect(handlers.amp_consolidate({ action: 'status' })).rejects.toThrow(
