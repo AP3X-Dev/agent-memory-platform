@@ -6,7 +6,8 @@
   "main": "src/index.ts",
   "scripts": {
     "build": "tsc -b",
-    "test": "vitest run"
+    "test": "vitest run",
+    "bench": "tsx bench/benchmark.ts"
   },
   "dependencies": {
     "@amp/core": "*",
@@ -20,5 +21,13 @@
   "devDependencies": {
     "typescript": "^5.5.0",
     "vitest": "^2.0.0"
+  },
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
   }
 }
