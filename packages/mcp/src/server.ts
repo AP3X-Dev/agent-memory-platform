@@ -4,6 +4,10 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
+import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@amp/research';
+import { registerArchTools, ARCH_TOOL_NAMES } from '@amp/arch';
+import { registerCodeTools, CODE_TOOL_NAMES } from '@amp/code';
+import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@amp/retrieval';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -23,28 +27,113 @@ export interface AMPMCPServer {
 export function createAMPServer(): AMPMCPServer {
   const server = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
 
-  // Register all four AMP tools
+  // Register all AMP tools (core + research + arch + code + retrieval)
   registerTools(server);
+  registerResearchTools(server);
+  registerArchTools(server);
+  registerCodeTools(server);
+  registerRetrievalTools(server);
 
   // ─── SSE transport ────────────────────────────────────────────────────────
 
   async function startSSE(port = 3101): Promise<void> {
     const transports = new Map<string, SSEServerTransport>();
+    const servers = new Map<string, McpServer>();
+
+    // ── Security helpers ───────────────────────────────────────────────────
+    const ALLOWED_ORIGINS = new Set([
+      'http://localhost',
+      'https://localhost',
+      'http://127.0.0.1',
+      'https://127.0.0.1',
+      'http://[::1]',
+      'https://[::1]',
+    ]);
+
+    /** Return true if the origin is localhost (with any port) or absent (non-browser). */
+    function isOriginAllowed(origin: string | undefined): boolean {
+      if (!origin) return true; // non-browser clients don't send Origin
+      try {
+        const parsed = new URL(origin);
+        const bare = `${parsed.protocol}//${parsed.hostname}`;
+        return ALLOWED_ORIGINS.has(bare);
+      } catch {
+        return false;
+      }
+    }
+
+    const API_TOKEN = process.env['AMP_API_TOKEN'] ?? '';
+
+    /** If AMP_API_TOKEN is set, require a matching Bearer token. */
+    function isAuthorized(req: IncomingMessage): boolean {
+      if (!API_TOKEN) return true; // token auth disabled
+      const header = req.headers['authorization'] ?? '';
+      return header === `Bearer ${API_TOKEN}`;
+    }
+
+    function setCorsHeaders(res: ServerResponse, origin: string | undefined): void {
+      // Echo back the specific allowed origin (never "*")
+      const allowedOrigin = origin && isOriginAllowed(origin) ? origin : 'http://localhost';
+      res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Max-Age', '86400');
+    }
 
     const httpServer = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
         const url = req.url ?? '/';
+        const origin = req.headers['origin'] as string | undefined;
+
+        // ── CORS preflight ───────────────────────────────────────────────
+        if (req.method === 'OPTIONS') {
+          if (!isOriginAllowed(origin)) {
+            res.writeHead(403);
+            res.end('Forbidden: origin not allowed');
+            return;
+          }
+          setCorsHeaders(res, origin);
+          res.writeHead(204);
+          res.end();
+          return;
+        }
+
+        // ── Origin validation ────────────────────────────────────────────
+        if (!isOriginAllowed(origin)) {
+          res.writeHead(403);
+          res.end('Forbidden: origin not allowed');
+          return;
+        }
+
+        // ── Token auth (when AMP_API_TOKEN is set) ───────────────────────
+        if (!isAuthorized(req)) {
+          res.writeHead(401);
+          res.end('Unauthorized: invalid or missing Bearer token');
+          return;
+        }
+
+        // Set CORS headers on every response
+        setCorsHeaders(res, origin);
 
         if (req.method === 'GET' && url === '/sse') {
-          // Establish SSE stream
+          // Create a fresh McpServer per connection (SDK limitation: one transport per server)
+          const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+          registerTools(perSessionServer);
+          registerResearchTools(perSessionServer);
+          registerArchTools(perSessionServer);
+          registerCodeTools(perSessionServer);
+          registerRetrievalTools(perSessionServer);
+
           const transport = new SSEServerTransport('/messages', res);
           transports.set(transport.sessionId, transport);
+          servers.set(transport.sessionId, perSessionServer);
 
           transport.onclose = () => {
             transports.delete(transport.sessionId);
+            servers.delete(transport.sessionId);
           };
 
-          await server.connect(transport);
+          await perSessionServer.connect(transport);
           return;
         }
 
@@ -86,7 +175,7 @@ export function createAMPServer(): AMPMCPServer {
 
   return {
     server,
-    toolNames: TOOL_NAMES,
+    toolNames: [...TOOL_NAMES, ...RESEARCH_TOOL_NAMES, ...ARCH_TOOL_NAMES, ...CODE_TOOL_NAMES, ...RETRIEVAL_TOOL_NAMES],
     startSSE,
     startStdio,
   };
