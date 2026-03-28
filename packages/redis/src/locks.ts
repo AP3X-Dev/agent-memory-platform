@@ -17,9 +17,17 @@ export class DistributedLock {
 
   async release(scope: string, holder: string): Promise<boolean> {
     const key = lockKey(scope);
-    const current = await this.redis.get(key);
-    if (current !== holder) return false;
-    await this.redis.del(key);
-    return true;
+    // Atomic compare-and-delete via Lua to prevent TOCTOU race
+    const result = await this.redis.eval(
+      `if redis.call("GET", KEYS[1]) == ARGV[1] then
+         return redis.call("DEL", KEYS[1])
+       else
+         return 0
+       end`,
+      1,
+      key,
+      holder,
+    );
+    return result === 1;
   }
 }
