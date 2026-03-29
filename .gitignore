@@ -17,3 +17,4 @@ docs/prompts/
 *.csv
 *.csv#
 .~lock.*
+packages/oni/
