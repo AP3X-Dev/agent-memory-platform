@@ -3,11 +3,31 @@
 
 import { createHash } from 'crypto';
 import { readFile, stat } from 'fs/promises';
+import path from 'path';
 import { type Driver } from 'neo4j-driver';
 import type { DriftResult } from './types.js';
 
+/**
+ * Validate that a file path is safely within the allowed base directory.
+ * Prevents path traversal attacks from untrusted Neo4j data.
+ * Throws if the resolved path escapes the base directory.
+ */
+function validateFilePath(filePath: string, baseDir: string): string {
+  const resolved = path.resolve(baseDir, filePath);
+  // Ensure the resolved path is within baseDir (with trailing separator to avoid prefix tricks like /app-evil matching /app)
+  const normalizedBase = baseDir.endsWith(path.sep) ? baseDir : baseDir + path.sep;
+  if (resolved !== baseDir && !resolved.startsWith(normalizedBase)) {
+    throw new Error(`Path traversal detected: ${filePath}`);
+  }
+  return resolved;
+}
+
 export class DriftDetector {
-  constructor(private driver: Driver) {}
+  private baseDir: string;
+
+  constructor(private driver: Driver, baseDir?: string) {
+    this.baseDir = path.resolve(baseDir ?? process.cwd());
+  }
 
   /**
    * Check if an entity's tracked files have changed since last indexing.
@@ -45,8 +65,9 @@ export class DriftDetector {
 
       for (const filePath of filePaths) {
         try {
-          await stat(filePath);
-          const currentHash = await hashFile(filePath);
+          const safePath = validateFilePath(filePath, this.baseDir);
+          await stat(safePath);
+          const currentHash = await hashFile(safePath);
           const storedHash = storedHashes[filePath];
 
           if (!storedHash || currentHash !== storedHash) {
@@ -54,7 +75,10 @@ export class DriftDetector {
           } else {
             unchanged.push(filePath);
           }
-        } catch {
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith('Path traversal detected')) {
+            throw err;
+          }
           missing.push(filePath);
         }
       }
@@ -101,9 +125,13 @@ export class DriftDetector {
 
       for (const filePath of filePaths) {
         try {
-          hashes[filePath] = await hashFile(filePath);
+          const safePath = validateFilePath(filePath, this.baseDir);
+          hashes[filePath] = await hashFile(safePath);
           count++;
-        } catch {
+        } catch (err) {
+          if (err instanceof Error && err.message.startsWith('Path traversal detected')) {
+            throw err;
+          }
           // File missing — skip
         }
       }
@@ -152,14 +180,18 @@ export class DriftDetector {
 
         for (const filePath of filePaths) {
           try {
-            await stat(filePath);
-            const currentHash = await hashFile(filePath);
+            const safePath = validateFilePath(filePath, this.baseDir);
+            await stat(safePath);
+            const currentHash = await hashFile(safePath);
             if (!storedHashes[filePath] || currentHash !== storedHashes[filePath]) {
               changed.push(filePath);
             } else {
               unchanged.push(filePath);
             }
-          } catch {
+          } catch (err) {
+            if (err instanceof Error && err.message.startsWith('Path traversal detected')) {
+              throw err;
+            }
             missing.push(filePath);
           }
         }
