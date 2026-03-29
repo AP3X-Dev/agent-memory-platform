@@ -136,8 +136,12 @@ export async function bootstrap(): Promise<BootstrapHandles> {
       return proposal ?? { error: 'not found' };
     },
     apply: async (proposalId: string, decision: 'approve' | 'reject') => {
-      await consolidationEngine.reviewProposal(proposalId, decision);
-      return { applied: true };
+      try {
+        await consolidationEngine.reviewProposal(proposalId, decision);
+        return { applied: true };
+      } catch (err) {
+        return { applied: false, error: err instanceof Error ? err.message : String(err) };
+      }
     },
   };
 
