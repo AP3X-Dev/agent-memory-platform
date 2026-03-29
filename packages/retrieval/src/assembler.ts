@@ -122,8 +122,18 @@ export class UnifiedAssembler {
     const lines: string[] = [];
     lines.push(`# Unified Context`);
     lines.push(`**Task:** ${ctx.task}`);
-    const sources = ctx.sections.map((s) => s.heading).filter(Boolean);
-    lines.push(`**Strategy:** ${ctx.strategy} | **Tokens:** ~${ctx.token_count} | **Sources:** ${sources.join(', ') || 'none'}`);
+
+    // Real provenance: count items per source type and list IDs
+    const sourceCounts: Record<string, number> = {};
+    const sourceIds: string[] = [];
+    for (const section of ctx.sections) {
+      for (const item of section.items) {
+        sourceCounts[section.source_type] = (sourceCounts[section.source_type] ?? 0) + 1;
+        sourceIds.push(item.id);
+      }
+    }
+    const provenance = Object.entries(sourceCounts).map(([type, count]) => `${type}:${count}`).join(', ');
+    lines.push(`**Strategy:** ${ctx.strategy} | **Tokens:** ~${ctx.token_count} | **Sources:** ${provenance || 'none'} | **IDs:** ${sourceIds.length}`);
     lines.push('');
 
     for (const section of ctx.sections) {
@@ -131,6 +141,9 @@ export class UnifiedAssembler {
       lines.push(`## ${section.heading}`);
       lines.push('');
       for (const item of section.items) {
+        // Include item ID for traceability
+        const filePath = item.metadata.file_path ? ` — ${item.metadata.file_path}` : '';
+        lines.push(`<!-- ${item.id}${filePath} -->`);
         lines.push(item.content);
         lines.push('');
       }
