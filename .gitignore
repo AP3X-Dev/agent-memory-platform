@@ -8,3 +8,12 @@ dist/
 
 # Claude Code state files
 .claude/
+
+# Planning and design docs (internal)
+docs/superpowers/
+amp-three-tier-architecture.md
+.superpowers/
+docs/prompts/
+*.csv
+*.csv#
+.~lock.*
