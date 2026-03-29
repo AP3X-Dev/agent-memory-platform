@@ -21,6 +21,7 @@ export interface ImportResult {
   modified: number;
   deleted: number;
   unchanged: number;
+  errors: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -125,10 +126,12 @@ export async function importFromPath(
       modified: diff.modified.length,
       deleted: diff.deleted.length,
       unchanged: diff.unchanged.length,
+      errors: 0,
     };
   }
 
   const now = new Date().toISOString();
+  let errorCount = 0;
 
   // ── 5. Apply: added nodes ──────────────────────────────────────────────────
   for (const id of diff.added) {
@@ -168,8 +171,9 @@ export async function importFromPath(
           action: 'add',
         },
       );
-    } catch {
-      // Best-effort: log but continue
+    } catch (err) {
+      errorCount++;
+      console.error(`[import] Neo4j write error during ADD for node "${id}":`, err instanceof Error ? err.message : err);
     } finally {
       await session.close();
     }
@@ -222,8 +226,9 @@ export async function importFromPath(
           action: 'modify',
         },
       );
-    } catch {
-      // Best-effort
+    } catch (err) {
+      errorCount++;
+      console.error(`[import] Neo4j write error during MODIFY for node "${id}":`, err instanceof Error ? err.message : err);
     } finally {
       await session.close();
     }
@@ -252,11 +257,16 @@ export async function importFromPath(
          SET s.archived = true, s.archived_at = $now`,
         { id, now },
       );
-    } catch {
-      // Best-effort
+    } catch (err) {
+      errorCount++;
+      console.error(`[import] Neo4j write error during DELETE (archive) for node "${id}":`, err instanceof Error ? err.message : err);
     } finally {
       await session.close();
     }
+  }
+
+  if (errorCount > 0) {
+    console.error(`[import] Completed with ${errorCount} Neo4j write error(s) out of ${diff.added.length + diff.modified.length + diff.deleted.length} operations`);
   }
 
   return {
@@ -264,5 +274,6 @@ export async function importFromPath(
     modified: diff.modified.length,
     deleted: diff.deleted.length,
     unchanged: diff.unchanged.length,
+    errors: errorCount,
   };
 }
