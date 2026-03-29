@@ -92,21 +92,32 @@ export function generateLexicalVector(text: string, dim = LEX_VECTOR_DIM): numbe
 
 // ─── Mini Vector (Random Projection) ─────────────────────────────────────────
 
-let miniProjectionMatrix: Float64Array | null = null;
-let miniMatrixInputDim = 0;
+/** Per-dimension cache of projection matrices, keyed by (inDim, outDim). */
+const miniProjectionCache = new Map<string, Float64Array>();
+
+/** Build a stable cache key for a given (inDim, outDim) pair. */
+function projectionCacheKey(inDim: number, outDim: number): string {
+  return `${inDim}:${outDim}`;
+}
 
 /**
  * Generate a mini vector via Rademacher random projection.
  * Compresses a dense vector (e.g., 1536-dim) to 64-dim for gate-first filtering.
  * The projection matrix is seeded for reproducibility.
+ *
+ * The projection matrix is cached per (inDim, outDim) pair so concurrent callers
+ * with different input dimensions each get a correctly-sized matrix without
+ * interfering with one another.
  */
 export function generateMiniVector(denseVec: number[], outDim = MINI_VEC_DIM): number[] {
   const inDim = denseVec.length;
+  const cacheKey = projectionCacheKey(inDim, outDim);
 
-  // Lazy init: create projection matrix on first call (or if input dim changed)
-  if (!miniProjectionMatrix || miniMatrixInputDim !== inDim) {
-    miniProjectionMatrix = createRademacherMatrix(inDim, outDim, MINI_VEC_SEED);
-    miniMatrixInputDim = inDim;
+  // Lazy init: create and cache projection matrix per (inDim, outDim) pair
+  let matrix = miniProjectionCache.get(cacheKey);
+  if (!matrix) {
+    matrix = createRademacherMatrix(inDim, outDim, MINI_VEC_SEED);
+    miniProjectionCache.set(cacheKey, matrix);
   }
 
   // Matrix multiply: out = dense @ M
@@ -114,7 +125,7 @@ export function generateMiniVector(denseVec: number[], outDim = MINI_VEC_DIM): n
   for (let j = 0; j < outDim; j++) {
     let sum = 0;
     for (let i = 0; i < inDim; i++) {
-      sum += denseVec[i] * miniProjectionMatrix[i * outDim + j];
+      sum += denseVec[i] * matrix[i * outDim + j];
     }
     out[j] = sum;
   }
