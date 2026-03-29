@@ -209,6 +209,10 @@ export function registerResearchTools(server: McpServer): void {
       const id = `exp-${nanoid(10)}`;
       const now = new Date().toISOString();
 
+      // Get metric name from campaign BEFORE constructing the node
+      // so it is persisted with the correct value on create
+      const campaign = await campaignStore.getById(args.campaign_id);
+
       const node: ExperimentNode = {
         id,
         session_id: args.session_id,
@@ -218,7 +222,7 @@ export function registerResearchTools(server: McpServer): void {
         branch: args.branch,
         parent_id: args.parent_id ?? null,
         commit_hash: args.commit ?? null,
-        metric_name: '', // Will be set from campaign
+        metric_name: campaign?.metric_name ?? '',
         metric_value: args.metric_value,
         secondary_metrics: args.secondary_metrics ?? {},
         status: args.status,
@@ -229,12 +233,6 @@ export function registerResearchTools(server: McpServer): void {
         components_touched: args.components_touched ?? [],
         created_at: now,
       };
-
-      // Get metric name from campaign
-      const campaign = await campaignStore.getById(args.campaign_id);
-      if (campaign) {
-        node.metric_name = campaign.metric_name;
-      }
 
       // Create experiment node
       await experimentStore.create(node);
