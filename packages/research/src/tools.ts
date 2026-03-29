@@ -94,56 +94,56 @@ export const RESEARCH_TOOL_NAMES = [
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
 const ResearchInitSchema = {
-  campaign_name: z.string().describe('Human-readable campaign name (e.g. "reduce-p99-latency")'),
-  objective: z.string().describe('What we are optimizing or improving'),
-  metric_name: z.string().describe('Primary metric name (e.g. "val_bpb", "p99_ms", "test_pass_rate")'),
+  campaign_name: z.string().max(500).describe('Human-readable campaign name (e.g. "reduce-p99-latency")'),
+  objective: z.string().max(5000).describe('What we are optimizing or improving'),
+  metric_name: z.string().max(200).describe('Primary metric name (e.g. "val_bpb", "p99_ms", "test_pass_rate")'),
   metric_direction: z.enum(['lower', 'higher']).describe('Whether lower or higher metric values are better'),
-  run_command: z.string().describe('Shell command to run one experiment'),
-  measure_command: z.string().describe('Shell command to measure the metric after a run'),
-  scope_files: z.array(z.string()).optional().describe('Files/dirs in scope for modification'),
-  constraints: z.string().optional().describe('Constraints and off-limits rules'),
+  run_command: z.string().max(2000).describe('Shell command to run one experiment'),
+  measure_command: z.string().max(2000).describe('Shell command to measure the metric after a run'),
+  scope_files: z.array(z.string().max(500)).max(100).optional().describe('Files/dirs in scope for modification'),
+  constraints: z.string().max(5000).optional().describe('Constraints and off-limits rules'),
 };
 
 const ResearchLogSchema = {
-  campaign_id: z.string().describe('Campaign ID from amp_research_init'),
-  session_id: z.string().describe('Session identifier for this agent session'),
+  campaign_id: z.string().max(200).describe('Campaign ID from amp_research_init'),
+  session_id: z.string().max(200).describe('Session identifier for this agent session'),
   experiment_number: z.number().int().nonnegative().describe('Sequential experiment number (0 = baseline)'),
-  branch: z.string().describe('Git branch name'),
-  parent_id: z.string().nullable().optional().describe('Parent experiment ID (null for baseline)'),
-  commit: z.string().nullable().optional().describe('Git commit hash'),
+  branch: z.string().max(500).describe('Git branch name'),
+  parent_id: z.string().max(200).nullable().optional().describe('Parent experiment ID (null for baseline)'),
+  commit: z.string().max(200).nullable().optional().describe('Git commit hash'),
   metric_value: z.number().describe('Primary metric value'),
   secondary_metrics: z.record(z.number()).optional().describe('Secondary metric values'),
   status: z.enum(['keep', 'discard', 'crash', 'thought', 'keep*', 'interesting', 'timeout'])
     .describe('Experiment outcome status'),
   duration_s: z.number().nonnegative().describe('Experiment duration in seconds'),
-  hypothesis: z.string().describe('What you predicted would happen'),
-  description: z.string().describe('What was actually changed'),
-  insight: z.string().describe('What was learned from this experiment'),
-  components_touched: z.array(z.string()).optional().describe('File paths that were modified'),
-  component_domain: z.string().optional().describe('Domain category for the components (e.g. "architecture", "optimizer", "config")'),
+  hypothesis: z.string().max(5000).describe('What you predicted would happen'),
+  description: z.string().max(5000).describe('What was actually changed'),
+  insight: z.string().max(5000).describe('What was learned from this experiment'),
+  components_touched: z.array(z.string().max(500)).max(100).optional().describe('File paths that were modified'),
+  component_domain: z.string().max(200).optional().describe('Domain category for the components (e.g. "architecture", "optimizer", "config")'),
 };
 
 const ResearchContextSchema = {
-  campaign_id: z.string().describe('Campaign ID'),
+  campaign_id: z.string().max(200).describe('Campaign ID'),
   max_tokens: z.number().int().positive().optional().default(4000)
     .describe('Max tokens for the assembled context'),
 };
 
 const ResearchTreeSchema = {
-  campaign_id: z.string().describe('Campaign ID'),
-  component: z.string().optional().describe('Filter to experiments that touched this component path'),
+  campaign_id: z.string().max(200).describe('Campaign ID'),
+  component: z.string().max(500).optional().describe('Filter to experiments that touched this component path'),
   status: z.enum(['keep', 'discard', 'crash', 'thought', 'keep*', 'interesting', 'timeout'])
     .optional().describe('Filter to experiments with this status'),
 };
 
 const ResearchContradictionsSchema = {
-  campaign_id: z.string().describe('Campaign ID'),
+  campaign_id: z.string().max(200).describe('Campaign ID'),
   include_uncertain: z.boolean().optional().default(false)
     .describe('Also return low-confidence principles that need experiments to resolve'),
 };
 
 const ResearchConsolidateSchema = {
-  campaign_id: z.string().describe('Campaign ID'),
+  campaign_id: z.string().max(200).describe('Campaign ID'),
 };
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
