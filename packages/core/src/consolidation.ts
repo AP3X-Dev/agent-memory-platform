@@ -341,7 +341,11 @@ export class ConsolidationEngine {
         }
       }
       return true;
-    } catch {
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        `[consolidation] _applyProposal failed for proposal ${proposal.id} (type=${proposal.type}): ${message}`,
+      );
       return false;
     }
   }
