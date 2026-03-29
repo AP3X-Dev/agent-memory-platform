@@ -91,78 +91,86 @@ export function createAMPServer(): AMPMCPServer {
 
     const httpServer = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
-        const url = req.url ?? '/';
-        const origin = req.headers['origin'] as string | undefined;
+        try {
+          const url = req.url ?? '/';
+          const origin = req.headers['origin'] as string | undefined;
 
-        // ── CORS preflight ───────────────────────────────────────────────
-        if (req.method === 'OPTIONS') {
+          // ── CORS preflight ───────────────────────────────────────────────
+          if (req.method === 'OPTIONS') {
+            if (!isOriginAllowed(origin)) {
+              res.writeHead(403);
+              res.end('Forbidden: origin not allowed');
+              return;
+            }
+            setCorsHeaders(res, origin);
+            res.writeHead(204);
+            res.end();
+            return;
+          }
+
+          // ── Origin validation ────────────────────────────────────────────
           if (!isOriginAllowed(origin)) {
             res.writeHead(403);
             res.end('Forbidden: origin not allowed');
             return;
           }
-          setCorsHeaders(res, origin);
-          res.writeHead(204);
-          res.end();
-          return;
-        }
 
-        // ── Origin validation ────────────────────────────────────────────
-        if (!isOriginAllowed(origin)) {
-          res.writeHead(403);
-          res.end('Forbidden: origin not allowed');
-          return;
-        }
-
-        // ── Token auth (when AMP_API_TOKEN is set) ───────────────────────
-        if (!isAuthorized(req)) {
-          res.writeHead(401);
-          res.end('Unauthorized: invalid or missing Bearer token');
-          return;
-        }
-
-        // Set CORS headers on every response
-        setCorsHeaders(res, origin);
-
-        if (req.method === 'GET' && url === '/sse') {
-          // Create a fresh McpServer per connection (SDK limitation: one transport per server)
-          const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
-          registerTools(perSessionServer);
-          registerResearchTools(perSessionServer);
-          registerArchTools(perSessionServer);
-          registerCodeTools(perSessionServer);
-          registerRetrievalTools(perSessionServer);
-
-          const transport = new SSEServerTransport('/messages', res);
-          transports.set(transport.sessionId, transport);
-          servers.set(transport.sessionId, perSessionServer);
-
-          transport.onclose = () => {
-            transports.delete(transport.sessionId);
-            servers.delete(transport.sessionId);
-          };
-
-          await perSessionServer.connect(transport);
-          return;
-        }
-
-        if (req.method === 'POST' && url.startsWith('/messages')) {
-          // Route POST message to the correct session
-          const sessionId = new URL(url, 'http://localhost').searchParams.get('sessionId');
-          const transport = sessionId ? transports.get(sessionId) : undefined;
-
-          if (!transport) {
-            res.writeHead(404);
-            res.end('Session not found');
+          // ── Token auth (when AMP_API_TOKEN is set) ───────────────────────
+          if (!isAuthorized(req)) {
+            res.writeHead(401);
+            res.end('Unauthorized: invalid or missing Bearer token');
             return;
           }
 
-          await transport.handlePostMessage(req, res);
-          return;
-        }
+          // Set CORS headers on every response
+          setCorsHeaders(res, origin);
 
-        res.writeHead(404);
-        res.end('Not found');
+          if (req.method === 'GET' && url === '/sse') {
+            // Create a fresh McpServer per connection (SDK limitation: one transport per server)
+            const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+            registerTools(perSessionServer);
+            registerResearchTools(perSessionServer);
+            registerArchTools(perSessionServer);
+            registerCodeTools(perSessionServer);
+            registerRetrievalTools(perSessionServer);
+
+            const transport = new SSEServerTransport('/messages', res);
+            transports.set(transport.sessionId, transport);
+            servers.set(transport.sessionId, perSessionServer);
+
+            transport.onclose = () => {
+              transports.delete(transport.sessionId);
+              servers.delete(transport.sessionId);
+            };
+
+            await perSessionServer.connect(transport);
+            return;
+          }
+
+          if (req.method === 'POST' && url.startsWith('/messages')) {
+            // Route POST message to the correct session
+            const sessionId = new URL(url, 'http://localhost').searchParams.get('sessionId');
+            const transport = sessionId ? transports.get(sessionId) : undefined;
+
+            if (!transport) {
+              res.writeHead(404);
+              res.end('Session not found');
+              return;
+            }
+
+            await transport.handlePostMessage(req, res);
+            return;
+          }
+
+          res.writeHead(404);
+          res.end('Not found');
+        } catch (err) {
+          console.error('[amp-mcp] Unhandled error in HTTP handler:', err);
+          if (!res.headersSent) {
+            res.writeHead(500);
+            res.end('Internal Server Error');
+          }
+        }
       },
     );
 
