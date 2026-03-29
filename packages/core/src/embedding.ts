@@ -12,6 +12,9 @@ export class OpenAIEmbedding implements EmbeddingProvider {
 
   async embed(text: string): Promise<number[]> {
     const response = await this.client.embeddings.create({ model: this.model, input: text });
+    if (!response.data || response.data.length === 0) {
+      throw new Error('OpenAI embeddings API returned empty data array');
+    }
     return response.data[0].embedding;
   }
 
