@@ -108,10 +108,14 @@ export class StructuralRelationStore {
     entityName: string,
     maxDepth = 3,
   ): Promise<Array<{ from: string; to: string; relation: string; depth: number }>> {
+    const depth = Math.floor(Number(maxDepth));
+    if (!Number.isFinite(depth) || depth < 1 || depth > 20) {
+      throw new Error(`maxDepth must be an integer between 1 and 20, got: ${maxDepth}`);
+    }
     const session = this.driver.session();
     try {
       const result = await session.run(
-        `MATCH path = (start:Entity {name: $name})-[:USES|CALLS*1..${maxDepth}]->(dep:Entity)
+        `MATCH path = (start:Entity {name: $name})-[:USES|CALLS*1..${depth}]->(dep:Entity)
          UNWIND range(0, length(path)-1) AS idx
          WITH relationships(path)[idx] AS r, nodes(path)[idx] AS from, nodes(path)[idx+1] AS to, idx+1 AS depth
          RETURN DISTINCT from.name AS fromName, to.name AS toName, type(r) AS relation, depth
