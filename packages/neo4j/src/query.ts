@@ -8,6 +8,73 @@ export interface QueryScope {
   limit: number;
 }
 
+// ─── Cypher read-only validation ─────────────────────────────────────────────
+
+/**
+ * Mutating Cypher keywords that must not appear in user-supplied queries.
+ * Checked as whole words (with word-boundary assertions) after stripping
+ * string literals, line/block comments, and parameter references.
+ */
+const MUTATING_KEYWORDS = [
+  'CREATE', 'MERGE', 'SET', 'DELETE', 'DETACH', 'REMOVE', 'DROP',
+  'FOREACH', 'LOAD',
+];
+
+/**
+ * Validates that a Cypher query is read-only.
+ *
+ * Steps:
+ *  1. Strip string literals (single- and double-quoted) so keywords inside
+ *     strings don't trigger false positives.
+ *  2. Strip line comments (`// ...`) and block comments (`/* ... *​/`).
+ *  3. Strip parameter references (`$identifier`) so parameter names like
+ *     `$SET`, `$DELETE` don't trigger false positives.
+ *  4. Check for mutating keywords using word-boundary regex.
+ *  5. Check for `CALL` followed by a procedure name (word chars / dots),
+ *     but allow `CALL {` which is a read-only subquery in Neo4j 4.x+.
+ *
+ * Throws an error describing the violation when a mutating construct is found.
+ */
+export function validateReadOnlyCypher(cypher: string): void {
+  // Step 1: Strip string literals (replace with empty string)
+  let stripped = cypher.replace(/'(?:[^'\\]|\\.)*'/g, '""');
+  stripped = stripped.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+
+  // Step 2: Strip comments
+  stripped = stripped.replace(/\/\/[^\n]*/g, ' ');       // line comments
+  stripped = stripped.replace(/\/\*[\s\S]*?\*\//g, ' '); // block comments
+
+  // Step 3: Strip parameter references ($word) to prevent false positives
+  // e.g. $SET, $DELETE, $REMOVE should not trigger keyword checks
+  stripped = stripped.replace(/\$\w+/g, ' ');
+
+  // Step 4: Check for mutating keywords
+  for (const kw of MUTATING_KEYWORDS) {
+    const re = new RegExp(`\\b${kw}\\b`, 'i');
+    if (re.test(stripped)) {
+      throw new Error(
+        `Cypher validation failed: query contains mutating keyword "${kw}". ` +
+        'Only read-only queries are allowed via amp_query.',
+      );
+    }
+  }
+
+  // Step 5: Block CALL to procedures but allow CALL {} subqueries
+  // CALL { ... } is a read-only subquery in Neo4j 4.x+ → allowed
+  // CALL procedureName(...) invokes a stored procedure → blocked
+  // Strategy: find all CALL occurrences, check what follows each one.
+  // If the first non-whitespace character after CALL is '{', it's a subquery.
+  // Otherwise (word char = procedure name), it's a procedure call → reject.
+  const callProcRe = /\bCALL\b\s+(?!\s*\{)[\w.]/gi;
+  if (callProcRe.test(stripped)) {
+    throw new Error(
+      'Cypher validation failed: query contains CALL to a stored procedure. ' +
+      'Only read-only queries are allowed via amp_query. ' +
+      'CALL {} subqueries are permitted.',
+    );
+  }
+}
+
 export class ScopedQuery {
   constructor(private driver: Driver) {}
 
@@ -115,6 +182,9 @@ export class ScopedQuery {
   }
 
   async rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]> {
+    // Validate that the query is read-only before executing
+    validateReadOnlyCypher(cypher);
+
     const session = this.driver.session();
     try {
       // Append LIMIT clause only if not already present (case-insensitive)
