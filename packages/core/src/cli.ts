@@ -1,6 +1,7 @@
+#!/usr/bin/env node
 // packages/core/src/cli.ts
 // AMP CLI — export, import, snapshot commands.
-// Usage: npx tsx packages/core/src/cli.ts <command> [options]
+// Usage: npx amp <command> [options]
 
 import { execSync } from 'child_process';
 import { createNeo4jDriver } from '@amp/neo4j';

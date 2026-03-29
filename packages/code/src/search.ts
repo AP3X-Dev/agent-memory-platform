@@ -42,13 +42,9 @@ export class CodeSearch {
       includeSemantics ? this.semanticVectorSearch(query, limit) : Promise.resolve([]),
     ]);
 
-    // RRF fusion across all result lists
-    const fused = rrfFusion([
-      fulltextResults.map((r) => ({ ...r, source_type: 'symbol' as const })),
-      lexicalResults.map((r) => ({ ...r, source_type: 'symbol' as const })),
-      vectorResults.map((r) => ({ ...r, source_type: 'symbol' as const })),
-      semanticResults.map((r) => ({ ...r, source_type: 'semantic' as const })),
-    ], limit);
+    // RRF fusion across all result lists (source_type already set per list)
+    const allLists: CodeSearchResult[][] = [fulltextResults, lexicalResults, vectorResults, semanticResults];
+    const fused = rrfFusion(allLists, limit);
 
     return fused;
   }
@@ -303,17 +299,18 @@ export class CodeSearch {
   }
 }
 
-// ─── Reciprocal Rank Fusion (local, CodeSearchResult-typed) ──────────────────
-// Note: @amp/retrieval has an enhanced version (dynamic k, normalization, MMR)
-// for the unified assembler. This local version operates on CodeSearchResult[]
-// for direct amp_code_search calls that bypass the assembler.
+// ─── Reciprocal Rank Fusion (generic) ─────────────────────────────────────────
+// Same algorithm as @amp/retrieval's rrfFusion but operates on any
+// { id: string; score: number } type. The retrieval version adds dynamic k,
+// normalization, feedback boosts, and MMR — this is the lightweight path for
+// direct amp_code_search calls.
 
-function rrfFusion(
-  rankedLists: CodeSearchResult[][],
+function rrfFusion<T extends { id: string; score: number }>(
+  rankedLists: T[][],
   limit: number,
   k = 60,
-): CodeSearchResult[] {
-  const scores = new Map<string, { result: CodeSearchResult; score: number }>();
+): T[] {
+  const scores = new Map<string, { result: T; score: number }>();
 
   for (const list of rankedLists) {
     for (let rank = 0; rank < list.length; rank++) {
@@ -323,7 +320,6 @@ function rrfFusion(
 
       if (existing) {
         existing.score += rrfScore;
-        // Keep highest individual score for display
         if (result.score > existing.result.score) {
           existing.result = result;
         }

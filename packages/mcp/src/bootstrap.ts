@@ -82,13 +82,22 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const scopedQuery = new ScopedQuery(driver);
   const gds = new GDSAlgorithms(driver);
 
+  // ─── Operational status tracking ────────────────────────────────────────────
+  const status = {
+    redis: true,
+    neo4j: true,
+    embeddings: !!openaiKey,
+    degraded: [] as string[],
+  };
+
   // Build embedding provider
   const embedding = openaiKey
     ? new OpenAIEmbedding(openaiKey)
     : ({ embed: async () => new Array(1536).fill(0), embedBatch: async (t: string[]) => t.map(() => new Array(1536).fill(0)) });
 
   if (!openaiKey) {
-    console.error('[amp-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings');
+    status.degraded.push('embeddings: zero vectors (no OPENAI_API_KEY)');
+    console.error('[amp-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings. Vector search will return random results.');
   }
 
   // Config
@@ -234,7 +243,14 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   console.error('[amp-mcp] Retrieval services initialized');
 
-  console.error('[amp-mcp] All services initialized');
+  if (status.degraded.length > 0) {
+    console.error(`[amp-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);
+    for (const issue of status.degraded) {
+      console.error(`  - ${issue}`);
+    }
+  } else {
+    console.error('[amp-mcp] All services initialized — fully operational');
+  }
 
   return {
     async shutdown() {

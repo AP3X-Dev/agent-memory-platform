@@ -197,11 +197,12 @@ export function mmrDiversify(
     for (const idx of remaining) {
       const relevance = ranked[idx].score;
 
-      // Max similarity to any already-selected item (using cached path parts + tracked indices)
+      // Max similarity to any already-selected item (with early exit on perfect match)
       let maxSim = 0;
       for (let si = 0; si < selected.length; si++) {
         const selIdx = selectedIndices[si];
         const sim = fastSimilarity(ranked[idx], selected[si], pathPartsCache[idx], pathPartsCache[selIdx]);
+        if (sim >= 1.0) { maxSim = 1.0; break; } // Same file — max penalty, no need to check more
         if (sim > maxSim) maxSim = sim;
       }
 

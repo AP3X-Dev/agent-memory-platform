@@ -122,7 +122,8 @@ export class UnifiedAssembler {
     const lines: string[] = [];
     lines.push(`# Unified Context`);
     lines.push(`**Task:** ${ctx.task}`);
-    lines.push(`**Strategy:** ${ctx.strategy} | **Tokens:** ~${ctx.token_count}`);
+    const sources = ctx.sections.map((s) => s.heading).filter(Boolean);
+    lines.push(`**Strategy:** ${ctx.strategy} | **Tokens:** ~${ctx.token_count} | **Sources:** ${sources.join(', ') || 'none'}`);
     lines.push('');
 
     for (const section of ctx.sections) {

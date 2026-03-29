@@ -17,26 +17,45 @@ import {
 } from '../src/index.js';
 import type { RetrievalResult } from '../src/types.js';
 
-// ─── Test data generation ────────────────────────────────────────────────────
+// ─── Deterministic test data generation ───────────────────────────────────────
+
+/** Seeded PRNG for reproducible benchmarks (xorshift32). */
+function createRng(seed: number) {
+  let state = seed;
+  return () => {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return (state >>> 0) / 0xffffffff;
+  };
+}
+
+const rng = createRng(42);
+const NAMES = ['Auth', 'User', 'Payment', 'Order', 'Config', 'Cache', 'Queue', 'Handler'];
+const DIRS = ['auth', 'db', 'api', 'utils', 'middleware'];
 
 function generateResults(count: number): RetrievalResult[] {
   return Array.from({ length: count }, (_, i) => ({
     id: `result-${i}`,
     source_type: (['symbol', 'semantic', 'arch_entity'] as const)[i % 3],
-    title: `Symbol_${i}_${randomName()}`,
-    content: `This is the content of result ${i} with ${randomName()} implementation details`,
-    score: Math.random(),
+    title: `Symbol_${i}_${NAMES[i % NAMES.length]}`,
+    content: `This is the content of result ${i} with ${NAMES[(i + 3) % NAMES.length]} implementation details`,
+    score: rng(),
     metadata: {
       name: `symbol_${i}`,
-      file_path: `/src/${['auth', 'db', 'api', 'utils', 'middleware'][i % 5]}/file_${i}.ts`,
+      file_path: `/src/${DIRS[i % DIRS.length]}/file_${i}.ts`,
     },
   }));
 }
 
-function randomName(): string {
-  const names = ['Auth', 'User', 'Payment', 'Order', 'Config', 'Cache', 'Queue', 'Handler'];
-  return names[Math.floor(Math.random() * names.length)];
-}
+// Threshold assertions for regression detection
+const THRESHOLDS = {
+  rrfSmall: 5,       // ms — RRF 2×25 should be under 5ms
+  rrfMedium: 15,     // ms — RRF 2×100 should be under 15ms
+  mmrSmall: 5,       // ms — MMR 50→20 should be under 5ms
+  mmrMedium: 40,     // ms — MMR 200→50 should be under 40ms
+  fullPipeline: 20,  // ms — Full pipeline should be under 20ms
+};
 
 // ─── Benchmark runner ────────────────────────────────────────────────────────
 
@@ -85,8 +104,8 @@ async function main() {
   const list4 = medium.slice(100);
 
   console.log('--- RRF Fusion ---');
-  bench('rrfFusion (2 lists × 25 items)', () => rrfFusion([list1, list2], 20));
-  bench('rrfFusion (2 lists × 100 items)', () => rrfFusion([list3, list4], 50));
+  const rrfSmall = bench('rrfFusion (2 lists × 25 items)', () => rrfFusion([list1, list2], 20));
+  const rrfMedium = bench('rrfFusion (2 lists × 100 items)', () => rrfFusion([list3, list4], 50));
   bench('rrfFusion (4 lists × 250 items)', () => {
     const chunks = [large.slice(0, 250), large.slice(250, 500), large.slice(500, 750), large.slice(750)];
     rrfFusion(chunks, 50);
@@ -110,8 +129,8 @@ async function main() {
   });
 
   console.log('\n--- MMR Diversification ---');
-  bench('mmrDiversify (50 → 20)', () => mmrDiversify(small, 20), 500);
-  bench('mmrDiversify (200 → 50)', () => mmrDiversify(medium, 50), 100);
+  const mmrSmall = bench('mmrDiversify (50 → 20)', () => mmrDiversify(small, 20), 500);
+  const mmrMedium = bench('mmrDiversify (200 → 50)', () => mmrDiversify(medium, 50), 100);
   bench('mmrDiversify (1000 → 60, bounded)', () => mmrDiversify(large, 60), 50);
 
   console.log('\n--- Query Expansion ---');
@@ -145,7 +164,7 @@ async function main() {
   });
 
   console.log('\n--- End-to-End Pipeline (no DB) ---');
-  bench('full pipeline: expand → stats → weights → fuse → dedup', () => {
+  const pipeline = bench('full pipeline: expand → stats → weights → fuse → dedup', () => {
     const expansion = expandQuery('find authentication handler');
     const stats = computeQueryStats('find authentication handler');
     const weights = adaptiveWeights(stats);
@@ -159,7 +178,24 @@ async function main() {
     dedup(fused);
   }, 500);
 
-  console.log('\n=== Benchmark Complete ===\n');
+  // ─── Threshold assertions ──────────────────────────────────────────────────
+  console.log('\n--- Threshold Checks ---');
+  let failures = 0;
+  function check(name: string, actual: number, threshold: number) {
+    const pass = actual <= threshold;
+    const icon = pass ? '✓' : '✗';
+    console.log(`  ${icon} ${name}: ${actual.toFixed(2)}ms (threshold: ${threshold}ms)`);
+    if (!pass) failures++;
+  }
+
+  check('RRF small', rrfSmall.avg, THRESHOLDS.rrfSmall);
+  check('RRF medium', rrfMedium.avg, THRESHOLDS.rrfMedium);
+  check('MMR small', mmrSmall.avg, THRESHOLDS.mmrSmall);
+  check('MMR medium', mmrMedium.avg, THRESHOLDS.mmrMedium);
+  check('Full pipeline', pipeline.avg, THRESHOLDS.fullPipeline);
+
+  console.log(`\n=== Benchmark Complete: ${failures === 0 ? 'ALL PASSED' : `${failures} THRESHOLD(S) EXCEEDED`} ===\n`);
+  if (failures > 0) process.exit(1);
 }
 
 main().catch(console.error);

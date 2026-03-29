@@ -9,7 +9,7 @@
     "test": "vitest run"
   },
   "bin": {
-    "amp": "src/cli.ts"
+    "amp": "dist/cli.js"
   },
   "dependencies": {
     "neo4j-driver": "^5.27.0",
