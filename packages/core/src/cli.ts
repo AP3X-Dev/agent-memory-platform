@@ -3,7 +3,7 @@
 // AMP CLI — export, import, snapshot commands.
 // Usage: npx amp <command> [options]
 
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { createNeo4jDriver } from '@amp/neo4j';
 import { createRedisClient } from '@amp/redis';
 import { exportAll, exportFiltered } from './export.js';
@@ -117,7 +117,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 
   // 2. Stage .amp/ changes
   try {
-    execSync(`git add "${snapshotPath}"`, { stdio: 'inherit' });
+    execFileSync('git', ['add', snapshotPath], { stdio: 'inherit' });
   } catch (err) {
     console.error('git add failed:', err instanceof Error ? err.message : String(err));
     process.exit(1);
@@ -125,7 +125,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 
   // 3. Check if there are staged changes
   try {
-    execSync('git diff --cached --quiet', { stdio: 'inherit' });
+    execFileSync('git', ['diff', '--cached', '--quiet'], { stdio: 'inherit' });
     // Exit code 0 means no changes
     console.log('No changes to commit — snapshot is already up to date.');
     return;
@@ -135,7 +135,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 
   // 4. Commit
   try {
-    execSync(`git commit -m "${message.replace(/"/g, '\\"')}"`, { stdio: 'inherit' });
+    execFileSync('git', ['commit', '-m', message], { stdio: 'inherit' });
     console.log(`Snapshot committed: ${message}`);
   } catch (err) {
     console.error('git commit failed:', err instanceof Error ? err.message : String(err));
