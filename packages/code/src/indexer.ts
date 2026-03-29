@@ -74,10 +74,9 @@ export class CodeIndexer {
         result.symbols_updated += fileResult.symbols_updated;
         result.relations_created += fileResult.relations_created;
 
-        // Cache the parse for Phase 2 (avoid re-parsing)
-        const parsed = await parseFile(filePath, language);
-        if (parsed.imports.length > 0) {
-          parseCache.set(filePath, parsed);
+        // Cache the parse from indexFile for Phase 2 (no re-parsing needed)
+        if (fileResult.parsed.imports.length > 0) {
+          parseCache.set(filePath, fileResult.parsed);
         }
       } catch (err) {
         result.errors.push({
@@ -114,7 +113,7 @@ export class CodeIndexer {
   async indexFile(
     filePath: string,
     language: SupportedLanguage,
-  ): Promise<{ symbols_created: number; symbols_updated: number; relations_created: number }> {
+  ): Promise<{ symbols_created: number; symbols_updated: number; relations_created: number; parsed: Awaited<ReturnType<typeof parseFile>> }> {
     const parsed = await parseFile(filePath, language);
     let created = 0;
     let updated = 0;
@@ -182,7 +181,7 @@ export class CodeIndexer {
       }
     }
 
-    return { symbols_created: created, symbols_updated: updated, relations_created: relationsCreated };
+    return { symbols_created: created, symbols_updated: updated, relations_created: relationsCreated, parsed };
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────
