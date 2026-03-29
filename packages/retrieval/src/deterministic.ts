@@ -162,7 +162,9 @@ export class DeterministicAssembler {
     const session = this.driver.session();
     try {
       // Try fulltext search first (fast, uses index), fall back to CONTAINS
-      const escaped = task.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&');
+      const escaped = task
+          .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
+          .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
       try {
         const ftResult = await session.run(
           `CALL db.index.fulltext.queryNodes('entity_name_search', $query)

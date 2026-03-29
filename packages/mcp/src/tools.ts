@@ -70,16 +70,16 @@ export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidat
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
 const AmpLoadSchema = {
-  task: z.string().describe('Task description for context assembly'),
+  task: z.string().max(5000).describe('Task description for context assembly'),
   entities: z.array(z.string()).optional().describe('Entity names to scope the query'),
   tags: z.array(z.string()).optional().describe('Tags to scope the query'),
   max_tokens: z.number().int().positive().optional().default(4000).describe('Max tokens for context window'),
 };
 
 const AmpStoreSchema = {
-  session_id: z.string().describe('Session identifier'),
-  task: z.string().describe('Task description for this episode'),
-  content: z.string().describe('Episodic content to store'),
+  session_id: z.string().max(500).describe('Session identifier'),
+  task: z.string().max(5000).describe('Task description for this episode'),
+  content: z.string().max(10000).describe('Episodic content to store'),
   outcome: z
     .enum(['approved', 'revised', 'rejected', 'abandoned'])
     .optional()
@@ -97,14 +97,14 @@ const AmpStoreSchema = {
 };
 
 const AmpQuerySchema = {
-  query: z.string().describe('Cypher query to run against Neo4j'),
+  query: z.string().max(5000).describe('Cypher query to run against Neo4j'),
   limit: z.number().int().positive().optional().default(10).describe('Maximum number of results'),
 };
 
 const AmpConsolidateSchema = {
   action: z.enum(['run', 'status', 'review']).describe('Consolidation action to perform'),
-  scope: z.string().optional().describe('Entity or tag scope for "run" action'),
-  proposal_id: z.string().optional().describe('Proposal ID for "review" action'),
+  scope: z.string().max(2000).optional().describe('Entity or tag scope for "run" action'),
+  proposal_id: z.string().max(2000).optional().describe('Proposal ID for "review" action'),
   decision: z
     .enum(['approve', 'reject'])
     .optional()
@@ -112,33 +112,33 @@ const AmpConsolidateSchema = {
 };
 
 const AmpResolveSchema = {
-  uri: z.string().describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
+  uri: z.string().max(500).describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
   max_tokens: z.number().int().positive().optional().default(2000).describe('Max tokens for resolved content'),
-  stage_context: z.string().optional().describe('Current stage description for relevance ranking'),
+  stage_context: z.string().max(2000).optional().describe('Current stage description for relevance ranking'),
 };
 
 const AmpBootstrapSchema = {
-  project_name: z.string().describe('Project name (e.g. "oni-core", "my-api")'),
-  project_tag: z.string().describe('Project scope tag (e.g. "project:oni-core")'),
-  description: z.string().describe('One-line project description'),
-  domain: z.string().describe('Project domain (e.g. "agent-orchestration", "e-commerce", "ml-training")'),
+  project_name: z.string().max(500).describe('Project name (e.g. "oni-core", "my-api")'),
+  project_tag: z.string().max(500).describe('Project scope tag (e.g. "project:oni-core")'),
+  description: z.string().max(10000).describe('One-line project description'),
+  domain: z.string().max(2000).describe('Project domain (e.g. "agent-orchestration", "e-commerce", "ml-training")'),
   entities: z.array(z.object({
-    name: z.string().describe('Entity name'),
-    type: z.string().describe('Entity type: project, module, service, component, team, person, tool'),
-    description: z.string().optional().describe('What this entity is'),
-    parent: z.string().optional().describe('Parent entity name — creates a CONTAINS relationship'),
+    name: z.string().max(500).describe('Entity name'),
+    type: z.string().max(2000).describe('Entity type: project, module, service, component, team, person, tool'),
+    description: z.string().max(2000).optional().describe('What this entity is'),
+    parent: z.string().max(2000).optional().describe('Parent entity name — creates a CONTAINS relationship'),
   })).describe('Entities to create (modules, services, components, teams, etc.)'),
   semantic_seeds: z.array(z.object({
-    claim: z.string().describe('The principle or observation, stated concisely'),
-    domain: z.string().describe('Domain tag (architecture, performance, testing, security, etc.)'),
+    claim: z.string().max(2000).describe('The principle or observation, stated concisely'),
+    domain: z.string().max(500).describe('Domain tag (architecture, performance, testing, security, etc.)'),
     confidence: z.number().min(0).max(1).optional().default(0.3).describe('Initial confidence (default 0.3 = prior/observation)'),
     about: z.array(z.string()).optional().describe('Entity names this principle is ABOUT'),
     tags: z.array(z.string()).optional().describe('Additional tags'),
   })).optional().default([]).describe('Seed semantic principles — low-confidence priors from repo analysis'),
   agents: z.array(z.object({
-    id: z.string().describe('Agent identifier (e.g. "mcp", "researcher-1")'),
-    name: z.string().describe('Human-readable name'),
-    type: z.string().describe('Agent type: assistant, sentinel, fixer, researcher'),
+    id: z.string().max(500).describe('Agent identifier (e.g. "mcp", "researcher-1")'),
+    name: z.string().max(500).describe('Human-readable name'),
+    type: z.string().max(5000).describe('Agent type: assistant, sentinel, fixer, researcher'),
   })).optional().default([{ id: 'mcp', name: 'Claude Code', type: 'assistant' }])
     .describe('Agents that will interact with this project'),
 };
@@ -219,6 +219,14 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_query(args) {
       if (!scopedQuery) throw new Error('ScopedQuery not initialised');
+
+      // Block write operations — amp_query is read-only
+      const upper = args.query.toUpperCase().trim();
+      const writeOps = ['CREATE', 'MERGE', 'DELETE', 'DETACH', 'SET ', 'REMOVE', 'DROP', 'CALL {'];
+      if (writeOps.some((op) => upper.startsWith(op) || upper.includes(` ${op}`))) {
+        throw new Error('amp_query is read-only. Use amp_store, amp_bootstrap, or domain-specific tools for writes.');
+      }
+
       const limit = args.limit ?? 10;
       const rows = await scopedQuery.rawCypher(args.query, limit);
       return textContent(JSON.stringify(rows, null, 2));

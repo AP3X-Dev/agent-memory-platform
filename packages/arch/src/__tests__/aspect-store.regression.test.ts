@@ -30,7 +30,7 @@ describe('AspectStore regression', () => {
     const returnedId = await store.create({
       name: 'existing-aspect',
       description: 'test',
-      stability_tier: 'architectural',
+      stability_tier: 'implementation',
     });
 
     // Must return the actual graph node ID, not a freshly generated one

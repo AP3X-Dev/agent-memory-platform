@@ -124,7 +124,9 @@ export class CodeSearch {
     const session = this.driver.session();
     try {
       // Escape special Lucene characters for fulltext search
-      const escaped = query.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&');
+      const escaped = query
+        .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
+        .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
 
       const filters: string[] = [];
       const params: Record<string, unknown> = {

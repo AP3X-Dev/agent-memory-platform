@@ -95,13 +95,13 @@ export function registerArchTools(server: McpServer): void {
     'amp_arch_register',
     'Enrich an existing Entity node with architectural properties: category, hierarchy depth, responsibility (what it IS), interface (how to USE it), internals (how it WORKS), and tracked source file paths. The entity must already exist from amp_bootstrap. Idempotent.',
     {
-      entity_name: z.string().describe('Name of the entity to enrich (must already exist)'),
+      entity_name: z.string().max(500).describe('Name of the entity to enrich (must already exist)'),
       category: z.enum(['project', 'domain', 'module', 'service', 'library', 'component', 'infrastructure', 'config']).optional()
         .describe('Architectural category'),
       depth: z.number().int().nonnegative().optional().describe('Hierarchy level (0=project, 1=domain, 2=module, etc.)'),
-      responsibility: z.string().optional().describe('WHAT: identity, boundaries, what it is NOT responsible for'),
-      interface_desc: z.string().optional().describe('HOW TO USE: public API, contracts, failure modes'),
-      internals: z.string().optional().describe('HOW IT WORKS: algorithms, business rules, design decisions'),
+      responsibility: z.string().max(2000).optional().describe('WHAT: identity, boundaries, what it is NOT responsible for'),
+      interface_desc: z.string().max(2000).optional().describe('HOW TO USE: public API, contracts, failure modes'),
+      internals: z.string().max(2000).optional().describe('HOW IT WORKS: algorithms, business rules, design decisions'),
       file_paths: z.array(z.string()).optional().describe('Source file paths to track for drift detection'),
     },
     async (args) => {
@@ -128,8 +128,8 @@ export function registerArchTools(server: McpServer): void {
     'amp_arch_relate',
     'Create a typed structural relationship between two entities. Relationship types: USES (runtime dependency), CALLS (direct invocation), EXTENDS (inheritance), IMPLEMENTS (interface satisfaction), EMITS (event emission), LISTENS (event subscription). Both entities must already exist.',
     {
-      from_entity: z.string().describe('Source entity name'),
-      to_entity: z.string().describe('Target entity name'),
+      from_entity: z.string().max(500).describe('Source entity name'),
+      to_entity: z.string().max(500).describe('Target entity name'),
       type: z.enum(['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS', 'LISTENS'])
         .describe('Relationship type'),
       properties: z.record(z.string()).optional()
@@ -152,13 +152,13 @@ export function registerArchTools(server: McpServer): void {
     'Create or manage a cross-cutting concern (aspect). Aspects represent patterns that apply horizontally across components (e.g., "rate-limiting", "hipaa", "audit-logging"). They have stability tiers predicting decay rate and can imply other aspects.',
     {
       action: z.enum(['create', 'apply', 'remove', 'list', 'get']).describe('Action to perform'),
-      name: z.string().describe('Aspect name'),
-      description: z.string().optional().describe('What this concern requires (for "create")'),
+      name: z.string().max(500).describe('Aspect name'),
+      description: z.string().max(2000).optional().describe('What this concern requires (for "create")'),
       stability_tier: z.enum(['schema', 'protocol', 'implementation']).optional().default('implementation')
         .describe('Stability tier: schema (most stable) > protocol > implementation (least stable)'),
       implies: z.array(z.string()).optional().describe('Other aspect names this implies (for "create")'),
       anchors: z.array(z.string()).optional().describe('Code patterns that evidence this aspect (for "create")'),
-      entity_name: z.string().optional().describe('Entity to apply/remove aspect to/from'),
+      entity_name: z.string().max(2000).optional().describe('Entity to apply/remove aspect to/from'),
     },
     async (args) => {
       if (!aspectStore) throw new Error('Arch services not initialised');
@@ -206,7 +206,7 @@ export function registerArchTools(server: McpServer): void {
     'amp_impact',
     'Blast radius analysis: what breaks if this entity changes? Returns direct dependents, transitive dependents, co-aspect entities, affected aspects, and an overall change risk assessment (low/medium/high/critical).',
     {
-      entity_name: z.string().describe('Entity to analyze'),
+      entity_name: z.string().max(2000).describe('Entity to analyze'),
     },
     async (args) => {
       if (!impactAnalyzer) throw new Error('Arch services not initialised');
@@ -221,8 +221,8 @@ export function registerArchTools(server: McpServer): void {
     'Check if tracked source files have changed since last indexing. Compares SHA-256 hashes of files on disk against stored hashes. Use "check" to detect drift, "mark_fresh" to update hashes after reviewing changes, "check_all" to batch-check an entire project.',
     {
       action: z.enum(['check', 'mark_fresh', 'check_all', 'list_stale']).describe('Action to perform'),
-      entity_name: z.string().optional().describe('Entity name (for "check" and "mark_fresh")'),
-      project_name: z.string().optional().describe('Project name (for "check_all")'),
+      entity_name: z.string().max(2000).optional().describe('Entity name (for "check" and "mark_fresh")'),
+      project_name: z.string().max(2000).optional().describe('Project name (for "check_all")'),
     },
     async (args) => {
       if (!driftDetector) throw new Error('Arch services not initialised');
@@ -259,7 +259,7 @@ export function registerArchTools(server: McpServer): void {
     'amp_arch_context',
     'Deterministic architectural context assembly for an entity. Returns: responsibility, interface, internals, hierarchy (ancestors), children, dependencies with their interfaces, dependents (what breaks), and cross-cutting aspects. Same graph state always produces the same output — no ranking heuristics.',
     {
-      entity_name: z.string().describe('Entity to build context for'),
+      entity_name: z.string().max(2000).describe('Entity to build context for'),
       max_tokens: z.number().int().positive().optional().default(6000)
         .describe('Max tokens for the context package'),
       include_children: z.boolean().optional().default(false)

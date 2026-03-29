@@ -69,9 +69,9 @@ export function registerCodeTools(server: McpServer): void {
     'amp_code_index',
     'Index a project or file using tree-sitter AST parsing. Creates Symbol nodes (functions, classes, methods, interfaces, types) and relationship edges (SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, SYMBOL_CONTAINS) in the graph. Incremental: unchanged symbols are skipped via content hash. Supports: TypeScript, JavaScript, Python, Go, Rust.',
     {
-      path: z.string().describe('Absolute path to project directory or single file'),
+      path: z.string().max(2000).describe('Absolute path to project directory or single file'),
       mode: z.enum(['project', 'file']).optional().default('project').describe('Index entire project or a single file'),
-      language: z.string().optional().describe('Language hint for single-file mode (typescript, javascript, python, go, rust)'),
+      language: z.string().max(2000).optional().describe('Language hint for single-file mode (typescript, javascript, python, go, rust)'),
       include: z.array(z.string()).optional().describe('Include patterns (e.g., ["src/", "lib/"])'),
       exclude: z.array(z.string()).optional().describe('Additional directories to exclude'),
     },
@@ -108,10 +108,10 @@ export function registerCodeTools(server: McpServer): void {
     'amp_code_search',
     'Hybrid search across code symbols AND semantic memories. Combines fulltext search (symbol names, signatures, doc comments) with vector search and RRF fusion. Returns blended results ranked by relevance.',
     {
-      query: z.string().describe('Search query (natural language or symbol name)'),
-      language: z.string().optional().describe('Filter by language'),
-      file_path: z.string().optional().describe('Filter by file path (substring match)'),
-      kind: z.string().optional().describe('Filter by symbol kind (function, class, method, interface, type, variable, enum)'),
+      query: z.string().max(500).describe('Search query (natural language or symbol name)'),
+      language: z.string().max(2000).optional().describe('Filter by language'),
+      file_path: z.string().max(2000).optional().describe('Filter by file path (substring match)'),
+      kind: z.string().max(2000).optional().describe('Filter by symbol kind (function, class, method, interface, type, variable, enum)'),
       limit: z.number().int().positive().optional().default(20).describe('Max results'),
       include_semantics: z.boolean().optional().default(true).describe('Include semantic memory results alongside code'),
     },
@@ -143,9 +143,9 @@ export function registerCodeTools(server: McpServer): void {
     'amp_code_symbols',
     'Query specific symbols in the indexed codebase. Find by file path (all symbols in a file) or by name (across all files). Returns symbol details including kind, signature, doc comment, and line numbers.',
     {
-      file_path: z.string().optional().describe('Get all symbols in this file'),
-      name: z.string().optional().describe('Find symbols with this name'),
-      kind: z.string().optional().describe('Filter by kind (function, class, method, interface, type, variable, enum)'),
+      file_path: z.string().max(2000).optional().describe('Get all symbols in this file'),
+      name: z.string().max(2000).optional().describe('Find symbols with this name'),
+      kind: z.string().max(2000).optional().describe('Filter by kind (function, class, method, interface, type, variable, enum)'),
     },
     async (args) => {
       if (!symbolStore) throw new Error('Code services not initialised');
@@ -177,7 +177,7 @@ export function registerCodeTools(server: McpServer): void {
     'amp_code_deps',
     'Symbol-level dependency queries. Find what calls a function, what a class inherits from, who imports a module, etc. Traverses SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, and SYMBOL_IMPLEMENTS edges.',
     {
-      symbol_name: z.string().describe('Symbol name to query'),
+      symbol_name: z.string().max(500).describe('Symbol name to query'),
       direction: z.enum(['callers', 'callees', 'importers', 'inheritance']).describe('Query direction'),
     },
     async (args) => {
@@ -219,7 +219,7 @@ export function registerCodeTools(server: McpServer): void {
     'amp_code_context',
     'Build code-aware context for a task. Given a task description, returns relevant code symbols AND semantic memories, ranked and token-budgeted. Use this before making code changes to understand the relevant codebase context.',
     {
-      task: z.string().describe('Task description (natural language)'),
+      task: z.string().max(5000).describe('Task description (natural language)'),
       max_tokens: z.number().int().positive().optional().default(6000).describe('Max tokens for the context package'),
     },
     async (args) => {

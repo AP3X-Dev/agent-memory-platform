@@ -66,7 +66,7 @@ describe('AMPService.store regression', () => {
 
     const redis = makeRedis();
     const neo4j = makeNeo4j();
-    const embedding = { embed: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]) };
+    const embedding = { embed: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]), embedBatch: vi.fn().mockResolvedValue([[0.1, 0.2, 0.3]]) };
 
     const service = new AMPService(redis, neo4j, embedding, makeConfig());
 

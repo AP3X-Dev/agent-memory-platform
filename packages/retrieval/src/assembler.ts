@@ -282,7 +282,9 @@ export class UnifiedAssembler {
     const session = this.driver.session();
     try {
       // Fulltext search on entity architectural properties
-      const escaped = task.replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&');
+      const escaped = task
+        .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
+        .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
       const result = await session.run(
         `CALL db.index.fulltext.queryNodes('entity_arch_content', $query)
          YIELD node AS e, score

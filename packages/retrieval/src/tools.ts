@@ -62,7 +62,7 @@ export function registerRetrievalTools(server: McpServer): void {
     'amp_context',
     'Unified super-load: assembles context combining architecture (hierarchy, dependencies, aspects), code (symbols, signatures, docs), and memory (semantic principles, episodic history) into a single response. Three strategies: "auto" (default — classifies query intent and routes automatically), "ranked" (hybrid search with RRF fusion, query expansion, and feedback boosts — best for exploration), "deterministic" (Yggdrasil-style 5-step assembly — same graph state always produces same output, best for architectural queries). Use this as your primary context-loading tool when you need a complete picture.',
     {
-      task: z.string().describe('Task description (what you are about to do)'),
+      task: z.string().max(5000).describe('Task description (what you are about to do)'),
       strategy: z.enum(['auto', 'ranked', 'deterministic']).optional().default('auto')
         .describe('Retrieval strategy: "auto" (classifies intent and routes), "ranked" for exploration, "deterministic" for architectural queries'),
       include_code: z.boolean().optional().default(true).describe('Include code symbols in results'),
@@ -71,7 +71,7 @@ export function registerRetrievalTools(server: McpServer): void {
       max_tokens: z.number().int().positive().optional().default(8000).describe('Max tokens for the assembled context'),
       entity_scope: z.array(z.string()).optional().describe('Scope to specific entities'),
       tag_scope: z.array(z.string()).optional().describe('Scope to specific tags'),
-      project_name: z.string().optional().describe('Project name for scoping'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping'),
     },
     async (args) => {
       if (!assembler) throw new Error('Retrieval services not initialised');
@@ -95,10 +95,10 @@ export function registerRetrievalTools(server: McpServer): void {
     'amp_feedback',
     'Record feedback on retrieval results. Tell AMP which results were useful and which were not. This improves future retrieval rankings over time.',
     {
-      result_id: z.string().describe('ID of the result to give feedback on'),
+      result_id: z.string().max(500).describe('ID of the result to give feedback on'),
       was_useful: z.boolean().describe('Whether this result was useful for your task'),
-      session_id: z.string().describe('Current session ID'),
-      query: z.string().optional().default('').describe('The original query that produced this result'),
+      session_id: z.string().max(500).describe('Current session ID'),
+      query: z.string().max(2000).optional().default('').describe('The original query that produced this result'),
       source_type: z.enum(['semantic', 'episodic', 'symbol', 'arch_entity', 'aspect']).optional().default('semantic')
         .describe('Type of the result'),
     },
