@@ -119,8 +119,11 @@ export class EpisodicBuffer {
 
   /**
    * Flush all buffered events for a given session.
-   * Reads the full stream, filters by sessionId, deletes consumed entries,
-   * and returns the matching events.
+   * Reads the full stream, filters by sessionId, then deletes only the
+   * specific message IDs that were returned by XRANGE.  This prevents a
+   * concurrent `add` from inserting entries between the read and delete
+   * that would be silently lost, and prevents concurrent flushes from
+   * re-delivering already-consumed messages.
    */
   async flush(sessionId: string): Promise<BufferEvent[]> {
     const results = await this.redis.xrange(
@@ -132,7 +135,7 @@ export class EpisodicBuffer {
     if (!results || results.length === 0) return [];
 
     const events: BufferEvent[] = [];
-    const toDelete: string[] = [];
+    const fetchedIds: string[] = [];
 
     for (const [msgId, fields] of results) {
       const obj = parseFields(fields);
@@ -141,12 +144,16 @@ export class EpisodicBuffer {
           event_type: obj['event_type'],
           content: obj['content'],
         });
-        toDelete.push(msgId);
+        fetchedIds.push(msgId);
       }
     }
 
-    if (toDelete.length > 0) {
-      await this.redis.xdel(EPISODIC_BUFFER_STREAM, ...toDelete);
+    // Only delete the exact message IDs we read — never a range-based
+    // delete.  This ensures entries added between the XRANGE and XDEL
+    // are not affected.  Skip entirely when there are no matching entries
+    // to avoid a spurious XDEL call.
+    if (fetchedIds.length > 0) {
+      await this.redis.xdel(EPISODIC_BUFFER_STREAM, ...fetchedIds);
     }
 
     return events;
