@@ -47,6 +47,7 @@ function makeRedis(overrides: Partial<RedisLayer> = {}): RedisLayer {
     dedup: {
       isDuplicate: vi.fn().mockResolvedValue(false),
       markSeen: vi.fn().mockResolvedValue(undefined),
+      checkAndMark: vi.fn().mockResolvedValue(false),
     },
     signals: {
       publish: vi.fn().mockResolvedValue('stream-id-1'),
@@ -216,6 +217,7 @@ describe('AMPService.store', () => {
       dedup: {
         isDuplicate: vi.fn().mockResolvedValue(true),
         markSeen: vi.fn().mockResolvedValue(undefined),
+        checkAndMark: vi.fn().mockResolvedValue(true),
       },
     });
     const neo4j = makeNeo4j();
@@ -258,7 +260,7 @@ describe('AMPService.store', () => {
     expect(result.id).toBeTruthy();
     expect(neo4j.episodic.create).toHaveBeenCalledOnce();
     expect(neo4j.episodic.linkToAgent).toHaveBeenCalledWith(result.id, 'agent-1');
-    expect(redis.dedup.markSeen).toHaveBeenCalledOnce();
+    expect(redis.dedup.checkAndMark).toHaveBeenCalledOnce();
   });
 
   it('publishes signals and invalidates caches when signals are present', async () => {

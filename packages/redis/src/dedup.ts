@@ -20,4 +20,16 @@ export class DedupChecker {
   async markSeen(agentId: string, contentHash: string, ttl: number = DEFAULT_TTL): Promise<void> {
     await this.redis.setex(dedupKey(agentId, contentHash), ttl, '1');
   }
+
+  /**
+   * Atomically check-and-mark a content hash as seen using SET NX EX.
+   * Returns true if the content was already seen (duplicate), false if it was
+   * newly marked (not a duplicate). This eliminates the TOCTOU race between
+   * separate isDuplicate/markSeen calls.
+   */
+  async checkAndMark(agentId: string, contentHash: string, ttl: number = DEFAULT_TTL): Promise<boolean> {
+    const result = await this.redis.set(dedupKey(agentId, contentHash), '1', 'EX', ttl, 'NX');
+    // SET ... NX returns 'OK' if the key was set (not a duplicate), null if it already existed (duplicate)
+    return result === null;
+  }
 }
