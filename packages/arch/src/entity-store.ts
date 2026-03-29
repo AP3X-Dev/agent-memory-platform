@@ -4,6 +4,13 @@
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { ArchEntityProperties, EntityCategory } from './types.js';
 
+/**
+ * Allowlist pattern for property key names interpolated into Cypher queries.
+ * Keys must start with a letter or underscore, followed by alphanumerics or underscores.
+ * Prevents Cypher injection via crafted property key names (OWASP A03:2021).
+ */
+const SAFE_PROPERTY_KEY = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
+
 export class ArchEntityStore {
   constructor(private driver: Driver) {}
 
@@ -22,6 +29,11 @@ export class ArchEntityStore {
 
       for (const [key, value] of Object.entries(props)) {
         if (value !== undefined) {
+          if (!SAFE_PROPERTY_KEY.test(key)) {
+            throw new Error(
+              `Invalid property key "${key}": keys must match /^[a-zA-Z_][a-zA-Z0-9_]*$/`,
+            );
+          }
           setClauses.push(`e.${key} = $${key}`);
           params[key] = value;
         }
