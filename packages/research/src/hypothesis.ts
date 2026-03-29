@@ -39,15 +39,26 @@ export class HypothesisNavigator {
         });
       }
 
+      // Pass 1: Link parent-child relationships (no depth computation)
       const roots: HypothesisTreeNode[] = [];
       for (const node of nodes.values()) {
         if (node.parentId && nodes.has(node.parentId)) {
           const parent = nodes.get(node.parentId)!;
-          node.depth = parent.depth + 1;
           parent.children.push(node);
         } else {
           roots.push(node);
         }
+      }
+
+      // Pass 2: Assign depth via recursive traversal from roots
+      function assignDepth(node: HypothesisTreeNode, depth: number): void {
+        node.depth = depth;
+        for (const child of node.children) {
+          assignDepth(child, depth + 1);
+        }
+      }
+      for (const root of roots) {
+        assignDepth(root, 0);
       }
 
       return roots;
