@@ -29,6 +29,7 @@ export interface RedisLayer {
   dedup: {
     isDuplicate(agentId: string, contentHash: string): Promise<boolean>;
     markSeen(agentId: string, contentHash: string, ttl?: number): Promise<void>;
+    checkAndMark(agentId: string, contentHash: string, ttl?: number): Promise<boolean>;
   };
   signals: {
     publish(signal: StreamSignal): Promise<string>;
@@ -134,9 +135,9 @@ export class AMPService {
   // ─── STORE ─────────────────────────────────────────────────────────────────
 
   async store(input: EpisodeInput): Promise<{ id: string; duplicate: boolean }> {
-    // 1. Dedup check
+    // 1. Atomic dedup check-and-mark (prevents TOCTOU race between isDuplicate/markSeen)
     const contentHash = createHash('sha256').update(input.content).digest('hex');
-    const isDup = await this.redis.dedup.isDuplicate(input.agent_id, contentHash);
+    const isDup = await this.redis.dedup.checkAndMark(input.agent_id, contentHash);
     if (isDup) {
       return { id: '', duplicate: true };
     }
@@ -206,8 +207,7 @@ export class AMPService {
       }
     }
 
-    // 6. Mark as seen for dedup
-    await this.redis.dedup.markSeen(input.agent_id, contentHash);
+    // 6. Dedup mark already done atomically in step 1 via checkAndMark
 
     return { id, duplicate: false };
   }
