@@ -20,7 +20,7 @@ export class AspectStore {
       const id = `aspect-${nanoid(10)}`;
       const now = new Date().toISOString();
 
-      await session.run(
+      const result = await session.run(
         `MERGE (a:Aspect {name: $name})
          ON CREATE SET a.id = $id, a.description = $description,
                        a.stability_tier = $stability_tier,
@@ -29,7 +29,8 @@ export class AspectStore {
          ON MATCH SET a.description = $description,
                       a.stability_tier = $stability_tier,
                       a.implies = $implies, a.anchors = $anchors,
-                      a.updated_at = $now`,
+                      a.updated_at = $now
+         RETURN a.id AS nodeId`,
         {
           id,
           name: input.name,
@@ -40,6 +41,8 @@ export class AspectStore {
           now,
         },
       );
+
+      const actualId = result.records[0].get('nodeId') as string;
 
       // Create IMPLIES edges for implied aspects
       for (const impliedName of input.implies ?? []) {
@@ -53,7 +56,7 @@ export class AspectStore {
         );
       }
 
-      return id;
+      return actualId;
     } finally {
       await session.close();
     }
