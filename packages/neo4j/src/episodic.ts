@@ -119,6 +119,9 @@ export class EpisodicStore {
       contradiction: 'CONTRADICTS',
     };
     const relType = relTypeMap[signal.type];
+    if (!relType) {
+      throw new Error(`Unrecognised signal type: ${String(signal.type)}`);
+    }
 
     const session = this.driver.session();
     try {
