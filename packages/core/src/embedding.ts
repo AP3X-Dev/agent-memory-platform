@@ -11,15 +11,25 @@ export class OpenAIEmbedding implements EmbeddingProvider {
   }
 
   async embed(text: string): Promise<number[]> {
-    const response = await this.client.embeddings.create({ model: this.model, input: text });
-    if (!response.data || response.data.length === 0) {
-      throw new Error('OpenAI embeddings API returned empty data array');
+    try {
+      const response = await this.client.embeddings.create({ model: this.model, input: text });
+      if (!response.data || response.data.length === 0) {
+        throw new Error('OpenAI embeddings API returned empty data array');
+      }
+      return response.data[0].embedding;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`OpenAI embedding request failed: ${message}`);
     }
-    return response.data[0].embedding;
   }
 
   async embedBatch(texts: string[]): Promise<number[][]> {
-    const response = await this.client.embeddings.create({ model: this.model, input: texts });
-    return response.data.map(d => d.embedding);
+    try {
+      const response = await this.client.embeddings.create({ model: this.model, input: texts });
+      return response.data.map(d => d.embedding);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      throw new Error(`OpenAI embedBatch request failed: ${message}`);
+    }
   }
 }
