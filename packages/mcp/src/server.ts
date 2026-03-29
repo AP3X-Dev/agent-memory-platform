@@ -2,6 +2,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
 import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@amp/research';
@@ -71,13 +72,32 @@ export function createAMPServer(): AMPMCPServer {
       }
     }
 
-    const API_TOKEN = process.env['AMP_API_TOKEN'] ?? '';
+    // ── Auth token resolution ────────────────────────────────────────────
+    // Priority: AMP_API_TOKEN env var → unauthenticated opt-out → generated session token
+    const allowUnauthenticated =
+      (process.env['AMP_ALLOW_UNAUTHENTICATED'] ?? '').toLowerCase() === 'true';
 
-    /** If AMP_API_TOKEN is set, require a matching Bearer token. */
+    let effectiveToken: string | null;
+
+    if (process.env['AMP_API_TOKEN']) {
+      effectiveToken = process.env['AMP_API_TOKEN'];
+    } else if (allowUnauthenticated) {
+      effectiveToken = null;
+      console.error(
+        '[AMP] WARNING: AMP_ALLOW_UNAUTHENTICATED=true — server accepts unauthenticated requests.',
+      );
+    } else {
+      effectiveToken = randomUUID();
+      console.error(
+        `[AMP] No AMP_API_TOKEN set. Generated session token: ${effectiveToken}. Set AMP_ALLOW_UNAUTHENTICATED=true to disable auth.`,
+      );
+    }
+
+    /** Require a matching Bearer token unless auth is explicitly disabled. */
     function isAuthorized(req: IncomingMessage): boolean {
-      if (!API_TOKEN) return true; // token auth disabled
+      if (effectiveToken === null) return true; // auth explicitly disabled via opt-out
       const header = req.headers['authorization'] ?? '';
-      return header === `Bearer ${API_TOKEN}`;
+      return header === `Bearer ${effectiveToken}`;
     }
 
     function setCorsHeaders(res: ServerResponse, origin: string | undefined): void {
@@ -115,7 +135,7 @@ export function createAMPServer(): AMPMCPServer {
             return;
           }
 
-          // ── Token auth (when AMP_API_TOKEN is set) ───────────────────────
+          // ── Token auth (required by default) ──────────────────────────────
           if (!isAuthorized(req)) {
             res.writeHead(401);
             res.end('Unauthorized: invalid or missing Bearer token');
