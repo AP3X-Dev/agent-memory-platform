@@ -210,6 +210,9 @@ export class ExperimentStore {
            count(CASE WHEN e.status = 'interesting' THEN 1 END) AS interesting`,
         { campaignId },
       );
+      if (result.records.length === 0) {
+        return { total: 0, keeps: 0, discards: 0, crashes: 0, thoughts: 0, interesting: 0 };
+      }
       const r = result.records[0];
       return {
         total: toNum(r.get('total')),
