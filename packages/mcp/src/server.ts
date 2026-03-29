@@ -248,8 +248,18 @@ if (isMain) {
         process.exit(0);
       }
 
-      process.on('SIGTERM', () => { gracefulShutdown('SIGTERM'); });
-      process.on('SIGINT', () => { gracefulShutdown('SIGINT'); });
+      process.on('SIGTERM', () => {
+        gracefulShutdown('SIGTERM').catch((err: unknown) => {
+          console.error('[amp-mcp] Error during SIGTERM shutdown:', err);
+          process.exit(1);
+        });
+      });
+      process.on('SIGINT', () => {
+        gracefulShutdown('SIGINT').catch((err: unknown) => {
+          console.error('[amp-mcp] Error during SIGINT shutdown:', err);
+          process.exit(1);
+        });
+      });
     })
     .catch((err: unknown) => {
       console.error('[amp-mcp] Fatal startup error:', err);
