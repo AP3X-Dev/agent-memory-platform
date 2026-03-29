@@ -1,6 +1,7 @@
 // packages/code/src/tools.ts
 // MCP tools for code intelligence.
 
+import path from 'node:path';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { IndexResult, CodeSearchResult, SymbolNode, SymbolKind } from './types.js';
@@ -76,6 +77,13 @@ export function registerCodeTools(server: McpServer): void {
     },
     async (args) => {
       if (!codeIndexer) throw new Error('Code services not initialised');
+
+      // Validate path is within the project root to prevent directory traversal
+      const baseDir = path.resolve(process.cwd());
+      const resolved = path.resolve(args.path);
+      if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
+        throw new Error(`Path must be within project root: ${args.path}`);
+      }
 
       if (args.mode === 'file') {
         const lang = args.language ?? 'typescript';
