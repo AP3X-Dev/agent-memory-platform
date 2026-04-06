@@ -27,7 +27,7 @@ Two components:
 
 ### Scanning Strategy
 
-Three passes per run, executed sequentially:
+Four passes per run, executed sequentially (three promotion passes + one decay pass):
 
 #### Pass 1: Entity Clustering
 
@@ -63,6 +63,18 @@ Cypher pattern:
     AND NOT EXISTS { MATCH (:Semantic)-[:ABOUT]->(e) }
     RETURN e.id AS entityId, e.name AS entityName, collect(ep) AS episodes
 
+#### Pass 4: Neglect Decay
+
+Scan promoted semantic nodes that have gone stale. A node is stale if its `updated_at` is older than `RECENCY_DECAY_DAYS` (7 days). Apply `confidence *= 0.95` per cycle. Mark nodes below 0.1 as `volatile`.
+
+Cypher pattern:
+
+    MATCH (s:Semantic)-[:PROMOTED_FROM]->(:Episodic)
+    WHERE s.updated_at < $cutoff
+    RETURN s.id AS id, s.confidence AS confidence, s.decay_class AS decay_class
+
+For each stale node, call `semantic.updateConfidence(id, confidence * 0.95)`. If the new confidence < 0.1 and decay_class is not already `volatile`, update decay_class to `volatile`.
+
 ### Deduplication
 
 Before generating a proposal, check whether a Semantic node already has a PROMOTED_FROM relationship to any episode in the cluster. Skip clusters that have already been promoted.
@@ -81,11 +93,19 @@ Clusters scoring at or above `scoreThreshold` (default: 3) generate a promote pr
 
 Deterministic, no LLM:
 
-- **content**: Content of the highest-scored episode in the cluster (by recency + outcome). Preserves original prose rather than attempting lossy summarization.
+- **content**: Content of the best episode in the cluster. Selection order: most recent episode with `approved` outcome, then most recent episode with any outcome, then most recent episode overall. Preserves original prose rather than attempting lossy summarization.
 - **tags**: Union of project tags extracted from episode content (any `[project:*]` prefixes) plus entity-derived tags.
-- **confidence**: 0.5 for multi-session clusters, 0.3 for cold-start singles.
-- **decay_class**: `stable` for multi-session, `volatile` for cold-start singles.
+- **confidence**: 0.3 for standard promotions (Pass 1 and 2), 0.2 for cold-start singles (Pass 3). Flat values — the scanner decides *whether* to promote, not *how much to trust*. Confidence growth is earned through reinforcement signals after promotion.
+- **decay_class**: `stable` for standard promotions, `volatile` for cold-start singles.
 - **signal_count**: 0 (fresh node, no signals yet).
+
+### Confidence Lifecycle
+
+Promoted nodes follow a three-phase confidence lifecycle:
+
+1. **Birth**: Flat initial confidence (0.3 or 0.2). No inflation from cluster quality.
+2. **Growth/correction via signals**: Agents use the knowledge → reinforcement bumps confidence. Agents find it wrong → correction/contradiction lowers it. Handled by the existing ConsolidationEngine signal pipeline.
+3. **Neglect decay**: The PromotionScanner runs a decay pass each cycle. Promoted nodes (those with PROMOTED_FROM relationships) that have not been updated in `RECENCY_DECAY_DAYS` (7 days) get `confidence *= 0.95` per cycle. Nodes decaying below 0.1 are marked `volatile`, making them candidates for archival or removal.
 
 ### Proposal Structure
 
@@ -104,7 +124,7 @@ Deterministic, no LLM:
       after: {
         id: nanoid(),
         content: '...',
-        confidence: 0.5,
+        confidence: 0.3,
         signal_count: 0,
         decay_class: 'stable',
         tags: ['project:oni-core', 'auth'],
@@ -137,6 +157,9 @@ Deterministic, no LLM:
       semantic: {
         promoteFromEpisodic(episodicId: string, node: SemanticNode): Promise<string>;
         linkToEntity(semanticId: string, entityId: string): Promise<void>;
+        findStalePromoted(cutoffDate: string): Promise<Array<{ id: string; confidence: number; decay_class: string }>>;
+        updateConfidence(id: string, confidence: number): Promise<void>;
+        updateDecayClass(id: string, decay_class: string): Promise<void>;
       };
     }
 
