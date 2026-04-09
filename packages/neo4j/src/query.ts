@@ -1,6 +1,6 @@
 // packages/neo4j/src/query.ts
 import neo4j, { type Driver } from 'neo4j-driver';
-import type { SemanticNode } from '@amp/core';
+import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@amp/core';
 
 export interface QueryScope {
   entities?: string[];
@@ -181,6 +181,108 @@ export class ScopedQuery {
     }
   }
 
+  async byFacts(entityName: string, options?: TemporalOptions): Promise<FactNode[]> {
+    const session = this.driver.session();
+    try {
+      const timeMode = options?.time_mode ?? 'current';
+      let cypher: string;
+      const params: Record<string, unknown> = { entityName };
+
+      switch (timeMode) {
+        case 'current':
+          cypher = `
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+            WHERE f.status = 'active' AND f.invalid_at IS NULL
+            RETURN f
+            ORDER BY f.confidence DESC, f.valid_at DESC`;
+          break;
+
+        case 'historical':
+          params.as_of = options?.as_of ?? new Date().toISOString();
+          cypher = `
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+            WHERE f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
+            RETURN f
+            ORDER BY f.confidence DESC, f.valid_at DESC`;
+          break;
+
+        case 'interval':
+          params.from = options?.from ?? '1970-01-01T00:00:00.000Z';
+          params.to = options?.to ?? new Date().toISOString();
+          cypher = `
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+            WHERE f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+            RETURN f
+            ORDER BY f.confidence DESC, f.valid_at DESC`;
+          break;
+
+        case 'evolution':
+          if (options?.include_invalidated) {
+            cypher = `
+              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+              RETURN f
+              ORDER BY f.valid_at ASC`;
+          } else {
+            cypher = `
+              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+              WHERE f.status <> 'invalidated'
+              RETURN f
+              ORDER BY f.valid_at ASC`;
+          }
+          break;
+
+        default: {
+          const _exhaustive: never = timeMode;
+          throw new Error(`Unknown time_mode: ${String(_exhaustive)}`);
+        }
+      }
+
+      const result = await session.run(cypher, params);
+      return result.records.map((r) => mapFactNode(r.get('f').properties));
+    } finally {
+      await session.close();
+    }
+  }
+
+  async byEntityWithFacts(
+    entityName: string,
+    options?: TemporalOptions,
+  ): Promise<{ semantics: SemanticNode[]; facts: FactNode[]; episodes: EpisodicNode[] }> {
+    let semantics: SemanticNode[];
+    let episodes: EpisodicNode[];
+
+    // Query semantics and episodes in one session
+    const session = this.driver.session();
+    try {
+      const semanticResult = await session.run(
+        `MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $entityName})
+         RETURN s
+         ORDER BY s.confidence DESC, s.updated_at DESC`,
+        { entityName },
+      );
+      semantics = semanticResult.records.map((r) =>
+        mapSemanticNode(r.get('s').properties),
+      );
+
+      const episodeResult = await session.run(
+        `MATCH (ep:Episodic)-[:REFERENCES]->(e:Entity {name: $entityName})
+         RETURN ep
+         ORDER BY ep.created_at DESC`,
+        { entityName },
+      );
+      episodes = episodeResult.records.map((r) =>
+        mapEpisodicNode(r.get('ep').properties),
+      );
+    } finally {
+      await session.close();
+    }
+
+    // Query facts via byFacts (opens its own session)
+    const facts = await this.byFacts(entityName, options);
+
+    return { semantics, facts, episodes };
+  }
+
   async rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]> {
     // Validate that the query is read-only before executing
     validateReadOnlyCypher(cypher);
@@ -224,6 +326,40 @@ function mapSemanticNode(props: Record<string, unknown>): SemanticNode {
     updated_at: props.updated_at as string,
     decay_class: props.decay_class as SemanticNode['decay_class'],
     tags: (props.tags as string[]) ?? [],
+    embedding: props.embedding != null ? (props.embedding as number[]) : undefined,
+  };
+}
+
+function mapFactNode(props: Record<string, unknown>): FactNode {
+  return {
+    id: props.id as string,
+    subject: props.subject as string,
+    predicate: props.predicate as string,
+    object: props.object as string,
+    source_episode_ids: (props.source_episode_ids as string[]) ?? [],
+    valid_at: props.valid_at as string,
+    invalid_at: (props.invalid_at as string) ?? null,
+    confidence: props.confidence as number,
+    status: props.status as FactNode['status'],
+    supersedes_fact_id: (props.supersedes_fact_id as string) ?? null,
+    scope: props.scope as FactNode['scope'],
+    tags: (props.tags as string[]) ?? [],
+    created_at: props.created_at as string,
+    updated_at: props.updated_at as string,
+    ...(props.embedding != null && { embedding: props.embedding as number[] }),
+  };
+}
+
+function mapEpisodicNode(props: Record<string, unknown>): EpisodicNode {
+  return {
+    id: props.id as string,
+    session_id: props.session_id as string,
+    agent_id: props.agent_id as string,
+    task: props.task as string,
+    content: props.content as string,
+    outcome: (props.outcome as EpisodicNode['outcome']) ?? undefined,
+    created_at: props.created_at as string,
+    ttl: props.ttl != null ? (props.ttl as number) : undefined,
     embedding: props.embedding != null ? (props.embedding as number[]) : undefined,
   };
 }
