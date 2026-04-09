@@ -3,7 +3,7 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, extname, basename, relative, sep } from 'node:path';
+import { join, extname, basename, relative, resolve, sep } from 'node:path';
 import { Marked } from 'marked';
 import type { ViewerConfig } from './types.js';
 
@@ -463,26 +463,54 @@ function buildPageSidebar(content: string): string {
   return lines.join('\n');
 }
 
+// ─── Path confinement ───────────────────────────────────────────────────────
+
+/**
+ * Ensure a resolved path is confined within baseDir.
+ * Returns the resolved path if safe, or null if the path escapes.
+ * Rejects null bytes, and uses trailing-separator comparison to prevent
+ * prefix tricks (e.g. /wiki_dir_evil/ matching /wiki_dir/).
+ */
+export function confineToDir(baseDir: string, userPath: string): string | null {
+  // Reject null bytes — they can truncate paths in some runtimes
+  if (userPath.includes('\0')) return null;
+
+  const resolvedBase = resolve(baseDir) + sep;
+  const resolvedPath = resolve(baseDir, userPath);
+
+  // The resolved path must either BE the baseDir or START WITH baseDir + separator
+  if (resolvedPath !== resolve(baseDir) && !resolvedPath.startsWith(resolvedBase)) {
+    return null;
+  }
+
+  return resolvedPath;
+}
+
 // ─── File resolution ────────────────────────────────────────────────────────
 
 /**
  * Resolve a URL slug path to a markdown file on disk.
  * Tries: <path>.md, <path>/_index.md
+ * Returns null if the slug escapes the wiki directory.
  */
 async function resolveFile(wikiDir: string, slugPath: string): Promise<string | null> {
-  // Try direct .md
-  const directPath = join(wikiDir, `${slugPath}.md`);
-  try {
-    const s = await stat(directPath);
-    if (s.isFile()) return directPath;
-  } catch (_) { /* not found */ }
+  // Confine direct .md path
+  const directConfined = confineToDir(wikiDir, `${slugPath}.md`);
+  if (directConfined) {
+    try {
+      const s = await stat(directConfined);
+      if (s.isFile()) return directConfined;
+    } catch (_) { /* not found */ }
+  }
 
-  // Try as directory with _index.md
-  const indexPath = join(wikiDir, slugPath, '_index.md');
-  try {
-    const s = await stat(indexPath);
-    if (s.isFile()) return indexPath;
-  } catch (_) { /* not found */ }
+  // Confine directory _index.md path
+  const indexConfined = confineToDir(wikiDir, join(slugPath, '_index.md'));
+  if (indexConfined) {
+    try {
+      const s = await stat(indexConfined);
+      if (s.isFile()) return indexConfined;
+    } catch (_) { /* not found */ }
+  }
 
   return null;
 }
@@ -614,8 +642,13 @@ export function startWikiViewer(config: ViewerConfig): ReturnType<typeof createS
         const query = url.searchParams.get('q') ?? '';
         await handleSearch(wiki_dir, query, res);
       } else if (path.startsWith('/api/graph/')) {
-        const jsonPath = path.replace('/api/graph/', '');
-        const filePath = join(wiki_dir, jsonPath);
+        const jsonPath = decodeURIComponent(path.slice('/api/graph/'.length));
+        const filePath = confineToDir(wiki_dir, jsonPath);
+        if (!filePath) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
         try {
           const content = await readFile(filePath, 'utf-8');
           res.writeHead(200, { 'Content-Type': 'application/json' });

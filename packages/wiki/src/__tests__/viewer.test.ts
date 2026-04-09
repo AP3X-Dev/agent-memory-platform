@@ -4,9 +4,9 @@
 // the logic for unit testing. Since they are private, we test via the public API.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startWikiViewer } from '../viewer.js';
+import { startWikiViewer, confineToDir } from '../viewer.js';
 import { writeFile, mkdir, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { Server } from 'node:http';
 
@@ -152,5 +152,133 @@ describe('WikiViewer', () => {
   it('returns 404 for unknown routes', async () => {
     const res = await fetch(`http://localhost:${TEST_PORT}/unknown/route`);
     expect(res.status).toBe(404);
+  });
+
+  // ─── Path traversal protection ───────────────────────────────────────────
+
+  describe('path traversal protection — /wiki/', () => {
+    it('blocks basic traversal ../../etc/passwd', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/../../etc/passwd`);
+      expect(res.status).toBe(404);
+      const html = await res.text();
+      expect(html).not.toContain('root:');
+    });
+
+    it('blocks URL-encoded traversal ..%2F..%2Fetc%2Fpasswd', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/..%2F..%2Fetc%2Fpasswd`);
+      expect(res.status).toBe(404);
+      const html = await res.text();
+      expect(html).not.toContain('root:');
+    });
+
+    it('blocks double-encoded traversal ..%252F..%252F', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/..%252F..%252Fetc%252Fpasswd`);
+      expect(res.status).toBe(404);
+    });
+
+    it('blocks null byte injection ..%00.md', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/..%2F..%00.md`);
+      expect(res.status).toBe(404);
+    });
+
+    it('blocks traversal with valid prefix: projects/../../etc/passwd', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/projects/../../etc/passwd`);
+      expect(res.status).toBe(404);
+    });
+
+    it('blocks deeply nested traversal', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/a/b/c/../../../../etc/passwd`);
+      expect(res.status).toBe(404);
+    });
+
+    it('normal wiki pages still load correctly', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/projects/test-project/widget`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('Widget');
+    });
+
+    it('normal subdirectory _index pages still load', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/wiki/projects/test-project/_index`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('Test Project');
+    });
+  });
+
+  describe('path traversal protection — /api/graph/', () => {
+    it('blocks basic traversal', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/api/graph/../../etc/passwd`);
+      const status = res.status;
+      expect(status === 403 || status === 404).toBe(true);
+    });
+
+    it('blocks URL-encoded traversal', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/api/graph/..%2F..%2Fetc%2Fpasswd`);
+      expect(res.status).toBe(403);
+    });
+
+    it('blocks null byte in graph path', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/api/graph/..%2F..%00.json`);
+      expect(res.status).toBe(403);
+    });
+
+    it('blocks traversal with valid-looking prefix', async () => {
+      const res = await fetch(`http://localhost:${TEST_PORT}/api/graph/data/../../../etc/passwd`);
+      const status = res.status;
+      expect(status === 403 || status === 404).toBe(true);
+    });
+  });
+});
+
+// ─── confineToDir unit tests ──────────────────────────────────────────────────
+
+describe('confineToDir', () => {
+  const baseDir = '/home/wiki/data';
+
+  it('allows a safe relative path', () => {
+    const result = confineToDir(baseDir, 'pages/test.md');
+    expect(result).toBe(`${baseDir}/pages/test.md`);
+  });
+
+  it('allows the base directory itself', () => {
+    const result = confineToDir(baseDir, '.');
+    expect(result).toBe('/home/wiki/data');
+  });
+
+  it('rejects parent traversal with ../', () => {
+    expect(confineToDir(baseDir, '../../etc/passwd')).toBeNull();
+  });
+
+  it('rejects traversal that normalizes outside', () => {
+    expect(confineToDir(baseDir, 'pages/../../etc/passwd')).toBeNull();
+  });
+
+  it('rejects absolute path outside baseDir', () => {
+    expect(confineToDir(baseDir, '/etc/passwd')).toBeNull();
+  });
+
+  it('rejects null bytes', () => {
+    expect(confineToDir(baseDir, 'test\0.md')).toBeNull();
+    expect(confineToDir(baseDir, '../..\0/etc/passwd')).toBeNull();
+  });
+
+  it('rejects prefix trick (baseDir-evil)', () => {
+    // /home/wiki/data-evil starts with /home/wiki/data but is not inside it
+    expect(confineToDir('/home/wiki/data', '../data-evil/payload')).toBeNull();
+  });
+
+  it('allows deeply nested safe path', () => {
+    const result = confineToDir(baseDir, 'a/b/c/d/e.md');
+    expect(result).toBe(`${baseDir}/a/b/c/d/e.md`);
+  });
+
+  it('allows path with dot segments that resolve safely', () => {
+    const result = confineToDir(baseDir, 'a/./b/../b/c.md');
+    expect(result).toBe(`${baseDir}/a/b/c.md`);
+  });
+
+  it('rejects path that escapes after multiple levels', () => {
+    expect(confineToDir(baseDir, 'a/b/c/../../../../etc/passwd')).toBeNull();
   });
 });
