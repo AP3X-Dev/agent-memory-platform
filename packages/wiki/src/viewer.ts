@@ -379,6 +379,8 @@ interface SearchEntry {
   absPath: string;
   relPath: string;
   content: string;
+  /** Pre-lowercased content for search — avoids per-query allocation. */
+  contentLower: string;
   title: string;
 }
 
@@ -412,7 +414,7 @@ async function buildCache(wikiDir: string): Promise<WikiCache> {
       const wikiPath = file.relPath.replace(/\.md$/, '');
       const titleMatch = content.match(/^# (.+)$/m);
       const title = titleMatch ? titleMatch[1] : wikiPath.split('/').pop() ?? wikiPath;
-      searchIndex.set(wikiPath, { absPath: file.absPath, relPath: file.relPath, content, title });
+      searchIndex.set(wikiPath, { absPath: file.absPath, relPath: file.relPath, content, contentLower: content.toLowerCase(), title });
     } catch (err) {
       console.error('[wiki-viewer] Failed to read file for search index (skipping):', file.absPath, err instanceof Error ? err.message : err);
     }
@@ -692,9 +694,9 @@ async function handleSearch(wikiDir: string, query: string, res: ServerResponse)
   const queryLower = query.toLowerCase();
 
   for (const [wikiPath, entry] of cache.searchIndex) {
-    if (entry.content.toLowerCase().includes(queryLower)) {
+    const idx = entry.contentLower.indexOf(queryLower);
+    if (idx !== -1) {
       // Extract snippet around match
-      const idx = entry.content.toLowerCase().indexOf(queryLower);
       const start = Math.max(0, idx - 80);
       const end = Math.min(entry.content.length, idx + query.length + 80);
       const snippet = entry.content.slice(start, end).replace(/\n/g, ' ').trim();
@@ -738,9 +740,6 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
     .catch((err) => {
       console.error('[wiki-viewer] Initial cache build failed (will retry on first request):', err instanceof Error ? err.message : err);
     });
-
-  // Watch for file changes to auto-invalidate the cache
-  startWatching(wiki_dir);
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
@@ -811,6 +810,9 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
 
   return new Promise((resolve, reject) => {
     const onError = (err: Error & { code?: string }) => {
+      // Startup failed — clean up cache/watcher resources that were eagerly started
+      stopWatching();
+      wikiCache = null;
       const code = err.code ?? 'UNKNOWN';
       const msg = `[wiki-viewer] Failed to start on port ${port}: ${code} — ${err.message}`;
       reject(new Error(msg, { cause: err }));
@@ -822,6 +824,8 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
       // Remove the one-shot error listener to avoid a leak — runtime errors
       // after successful startup should be handled by the caller if needed.
       server.removeListener('error', onError);
+      // Start file watcher only after successful bind
+      startWatching(wiki_dir);
       console.error(`[wiki-viewer] Serving wiki from ${wiki_dir} on http://localhost:${port}`);
       resolve(server);
     });
