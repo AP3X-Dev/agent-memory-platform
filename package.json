@@ -9,7 +9,8 @@
     "packages/research",
     "packages/arch",
     "packages/code",
-    "packages/retrieval"
+    "packages/retrieval",
+    "packages/wiki"
   ],
   "scripts": {
     "build": "tsc -b tsconfig.build.json",
