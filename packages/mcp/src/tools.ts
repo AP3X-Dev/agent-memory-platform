@@ -1,7 +1,7 @@
 // packages/mcp/src/tools.ts
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { LoadScope, MemoryContext, EpisodeInput } from '@amp/core';
+import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier } from '@amp/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
@@ -20,6 +20,15 @@ export interface IConsolidationEngine {
 
 export interface IScopedQuery {
   rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]>;
+}
+
+export interface IMemoryBlockService {
+  read(scope: string, name: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string; session_id?: string; created_at: string; updated_at: string } | null>;
+  insert(scope: string, name: string, text: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  replace(scope: string, name: string, oldText: string, newText: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  rewrite(scope: string, name: string, content: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  promote(scope: string, name: string, fromTier: string, toTier: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  archive(scope: string, name: string, sessionId?: string): Promise<string>;
 }
 
 export interface IBootstrapGraphService {
@@ -50,22 +59,29 @@ let ampService: IAMPService | null = null;
 let consolidationEngine: IConsolidationEngine | null = null;
 let scopedQuery: IScopedQuery | null = null;
 let bootstrapService: IBootstrapGraphService | null = null;
+let memoryBlockService: IMemoryBlockService | null = null;
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
   consolidationEngine: IConsolidationEngine;
   scopedQuery: IScopedQuery;
   bootstrapService: IBootstrapGraphService;
+  memoryBlockService?: IMemoryBlockService;
 }): void {
   ampService = services.ampService;
   consolidationEngine = services.consolidationEngine;
   scopedQuery = services.scopedQuery;
   bootstrapService = services.bootstrapService;
+  memoryBlockService = services.memoryBlockService ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
-export const TOOL_NAMES = ['amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap'] as const;
+export const TOOL_NAMES = [
+  'amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
+  'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
+  'amp_memory_promote', 'amp_memory_archive',
+] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -143,7 +159,50 @@ const AmpBootstrapSchema = {
     .describe('Agents that will interact with this project'),
 };
 
+const AmpMemoryReadSchema = {
+  block: z.string().max(500).describe('Block name (e.g. "persona", "user", "working_state")'),
+  scope: z.string().max(500).optional().describe('Project scope tag (e.g. "project:my-project")'),
+  session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
+};
+
+const AmpMemoryInsertSchema = {
+  block: z.string().max(500).describe('Block name'),
+  text: z.string().max(5000).describe('Text to append to the block'),
+  scope: z.string().max(500).optional().describe('Project scope tag'),
+  session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
+};
+
+const AmpMemoryReplaceSchema = {
+  block: z.string().max(500).describe('Block name'),
+  old_text: z.string().max(5000).describe('Exact text to find and replace'),
+  new_text: z.string().max(5000).describe('Replacement text'),
+  scope: z.string().max(500).optional().describe('Project scope tag'),
+  session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
+};
+
+const AmpMemoryRewriteSchema = {
+  block: z.string().max(500).describe('Block name'),
+  content: z.string().max(10000).describe('New content to overwrite the entire block'),
+  scope: z.string().max(500).optional().describe('Project scope tag'),
+  session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
+};
+
+const AmpMemoryPromoteSchema = {
+  block: z.string().max(500).describe('Block name'),
+  from_tier: z.enum(['core', 'working', 'archive']).describe('Current tier of the block'),
+  to_tier: z.enum(['core', 'working', 'archive']).describe('Target tier to promote/demote to'),
+  scope: z.string().max(500).optional().describe('Project scope tag'),
+};
+
+const AmpMemoryArchiveSchema = {
+  block: z.string().max(500).describe('Block name to archive'),
+  scope: z.string().max(500).optional().describe('Project scope tag'),
+  session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
+};
+
 // ─── Handler implementations ─────────────────────────────────────────────────
+
+type ToolResult = Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 
 export type ToolHandlers = {
   amp_load: (args: {
@@ -151,26 +210,26 @@ export type ToolHandlers = {
     entities?: string[];
     tags?: string[];
     max_tokens?: number;
-  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  }) => ToolResult;
   amp_store: (args: {
     session_id: string;
     task: string;
     content: string;
     outcome?: 'approved' | 'revised' | 'rejected' | 'abandoned';
     signals?: Array<{ type: 'reinforcement' | 'correction' | 'contradiction'; target_id: string; detail: string }>;
-  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-  amp_query: (args: { query: string; limit?: number }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  }) => ToolResult;
+  amp_query: (args: { query: string; limit?: number }) => ToolResult;
   amp_consolidate: (args: {
     action: 'run' | 'status' | 'review';
     scope?: string;
     proposal_id?: string;
     decision?: 'approve' | 'reject';
-  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  }) => ToolResult;
   amp_resolve: (args: {
     uri: string;
     max_tokens?: number;
     stage_context?: string;
-  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  }) => ToolResult;
   amp_bootstrap: (args: {
     project_name: string;
     project_tag: string;
@@ -179,7 +238,13 @@ export type ToolHandlers = {
     entities: Array<{ name: string; type: string; description?: string; parent?: string }>;
     semantic_seeds?: Array<{ claim: string; domain: string; confidence?: number; about?: string[]; tags?: string[] }>;
     agents?: Array<{ id: string; name: string; type: string }>;
-  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  }) => ToolResult;
+  amp_memory_read: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
+  amp_memory_insert: (args: { block: string; text: string; scope?: string; session_id?: string }) => ToolResult;
+  amp_memory_replace: (args: { block: string; old_text: string; new_text: string; scope?: string; session_id?: string }) => ToolResult;
+  amp_memory_rewrite: (args: { block: string; content: string; scope?: string; session_id?: string }) => ToolResult;
+  amp_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string }) => ToolResult;
+  amp_memory_archive: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
 };
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -291,6 +356,51 @@ export function buildToolHandlers(): ToolHandlers {
       });
       return textContent(JSON.stringify(result, null, 2));
     },
+
+    async amp_memory_read(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const block = await memoryBlockService.read(scope, args.block, args.session_id);
+      if (!block) {
+        return textContent(JSON.stringify({ found: false, block: args.block }));
+      }
+      return textContent(JSON.stringify(block, null, 2));
+    },
+
+    async amp_memory_insert(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const block = await memoryBlockService.insert(scope, args.block, args.text, args.session_id);
+      return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
+    },
+
+    async amp_memory_replace(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const block = await memoryBlockService.replace(scope, args.block, args.old_text, args.new_text, args.session_id);
+      return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
+    },
+
+    async amp_memory_rewrite(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const block = await memoryBlockService.rewrite(scope, args.block, args.content, args.session_id);
+      return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
+    },
+
+    async amp_memory_promote(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier);
+      return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier }));
+    },
+
+    async amp_memory_archive(args) {
+      if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      const scope = args.scope ?? 'default';
+      const content = await memoryBlockService.archive(scope, args.block, args.session_id);
+      return textContent(JSON.stringify({ ok: true, block: args.block, archived_length: content.length }));
+    },
   };
 }
 
@@ -339,5 +449,47 @@ export function registerTools(server: McpServer): void {
     'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that amp_store/amp_load/amp_consolidate have structure to work with.',
     AmpBootstrapSchema,
     handlers.amp_bootstrap,
+  );
+
+  server.tool(
+    'amp_memory_read',
+    'Read a memory block by name. Returns the block content, tier, and metadata.',
+    AmpMemoryReadSchema,
+    handlers.amp_memory_read,
+  );
+
+  server.tool(
+    'amp_memory_insert',
+    'Append text to a memory block. Creates the block if it does not exist.',
+    AmpMemoryInsertSchema,
+    handlers.amp_memory_insert,
+  );
+
+  server.tool(
+    'amp_memory_replace',
+    'Find and replace text within a memory block. Throws if old_text is not found.',
+    AmpMemoryReplaceSchema,
+    handlers.amp_memory_replace,
+  );
+
+  server.tool(
+    'amp_memory_rewrite',
+    'Overwrite the entire content of a memory block. Creates the block if it does not exist.',
+    AmpMemoryRewriteSchema,
+    handlers.amp_memory_rewrite,
+  );
+
+  server.tool(
+    'amp_memory_promote',
+    'Change the tier of a memory block (e.g. working → core). Promoting to core persists to Neo4j.',
+    AmpMemoryPromoteSchema,
+    handlers.amp_memory_promote,
+  );
+
+  server.tool(
+    'amp_memory_archive',
+    'Archive a memory block: returns its content for the caller to store as an episodic entry, then deletes the block.',
+    AmpMemoryArchiveSchema,
+    handlers.amp_memory_archive,
   );
 }

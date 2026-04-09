@@ -6,6 +6,7 @@ import {
   type IAMPService,
   type IConsolidationEngine,
   type IScopedQuery,
+  type IMemoryBlockService,
 } from '../tools.js';
 
 // ─── Mocks ────────────────────────────────────────────────────────────────────
@@ -31,6 +32,39 @@ const mockScopedQuery: IScopedQuery = {
   rawCypher: vi.fn().mockResolvedValue([{ n: { id: 'sem-1', content: 'test' } }]),
 };
 
+const mockMemoryBlockService: IMemoryBlockService = {
+  read: vi.fn().mockResolvedValue({
+    id: 'block-1',
+    name: 'persona',
+    tier: 'core',
+    content: 'You are a helpful assistant.',
+    scope: 'project:test',
+    created_at: '2026-01-01T00:00:00.000Z',
+    updated_at: '2026-01-01T00:00:00.000Z',
+  }),
+  insert: vi.fn().mockResolvedValue({
+    id: 'block-1', name: 'persona', tier: 'core',
+    content: 'You are a helpful assistant. And wise.',
+    scope: 'project:test',
+  }),
+  replace: vi.fn().mockResolvedValue({
+    id: 'block-1', name: 'persona', tier: 'core',
+    content: 'You are a wise assistant.',
+    scope: 'project:test',
+  }),
+  rewrite: vi.fn().mockResolvedValue({
+    id: 'block-1', name: 'persona', tier: 'core',
+    content: 'Completely new persona.',
+    scope: 'project:test',
+  }),
+  promote: vi.fn().mockResolvedValue({
+    id: 'block-1', name: 'working_state', tier: 'core',
+    content: 'promoted content',
+    scope: 'project:test',
+  }),
+  archive: vi.fn().mockResolvedValue('archived block content'),
+};
+
 // ─── Setup ────────────────────────────────────────────────────────────────────
 
 const mockBootstrapService = {
@@ -51,6 +85,7 @@ beforeEach(() => {
     consolidationEngine: mockConsolidationEngine,
     scopedQuery: mockScopedQuery,
     bootstrapService: mockBootstrapService,
+    memoryBlockService: mockMemoryBlockService,
   });
 });
 
@@ -325,11 +360,133 @@ describe('amp_consolidate handler', () => {
       ampService: mockAmpService,
       consolidationEngine: null as unknown as IConsolidationEngine,
       scopedQuery: mockScopedQuery,
-    bootstrapService: mockBootstrapService,
+      bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
     await expect(handlers.amp_consolidate({ action: 'status' })).rejects.toThrow(
       'ConsolidationEngine not initialised',
     );
+  });
+});
+
+// ─── Memory block tools ────────────────────────────────────────────────────
+
+describe('amp_memory_read handler', () => {
+  it('reads a block and returns JSON', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_read({ block: 'persona', scope: 'project:test' });
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.name).toBe('persona');
+    expect(parsed.content).toBe('You are a helpful assistant.');
+  });
+
+  it('returns found:false when block does not exist', async () => {
+    vi.mocked(mockMemoryBlockService.read).mockResolvedValueOnce(null);
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_read({ block: 'nonexistent' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.found).toBe(false);
+  });
+
+  it('uses default scope when not provided', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_memory_read({ block: 'persona' });
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('default', 'persona', undefined);
+  });
+
+  it('passes session_id for working blocks', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_memory_read({ block: 'working_state', scope: 'project:test', session_id: 'sess-1' });
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
+  });
+});
+
+describe('amp_memory_insert handler', () => {
+  it('inserts text and returns result', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_insert({
+      block: 'persona',
+      text: ' And wise.',
+      scope: 'project:test',
+    });
+    expect(mockMemoryBlockService.insert).toHaveBeenCalledWith('project:test', 'persona', ' And wise.', undefined);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.block).toBe('persona');
+  });
+});
+
+describe('amp_memory_replace handler', () => {
+  it('replaces text and returns result', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_replace({
+      block: 'persona',
+      old_text: 'helpful',
+      new_text: 'wise',
+      scope: 'project:test',
+    });
+    expect(mockMemoryBlockService.replace).toHaveBeenCalledWith('project:test', 'persona', 'helpful', 'wise', undefined);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+  });
+});
+
+describe('amp_memory_rewrite handler', () => {
+  it('rewrites block and returns result', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_rewrite({
+      block: 'persona',
+      content: 'Completely new persona.',
+      scope: 'project:test',
+    });
+    expect(mockMemoryBlockService.rewrite).toHaveBeenCalledWith('project:test', 'persona', 'Completely new persona.', undefined);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.block).toBe('persona');
+  });
+});
+
+describe('amp_memory_promote handler', () => {
+  it('promotes block tier and returns result', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_promote({
+      block: 'working_state',
+      from_tier: 'working',
+      to_tier: 'core',
+      scope: 'project:test',
+    });
+    expect(mockMemoryBlockService.promote).toHaveBeenCalledWith('project:test', 'working_state', 'working', 'core');
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.tier).toBe('core');
+  });
+});
+
+describe('amp_memory_archive handler', () => {
+  it('archives block and returns content length', async () => {
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_memory_archive({
+      block: 'persona',
+      scope: 'project:test',
+    });
+    expect(mockMemoryBlockService.archive).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.ok).toBe(true);
+    expect(parsed.archived_length).toBe('archived block content'.length);
+  });
+});
+
+describe('memory block tools throw when service not initialised', () => {
+  it('amp_memory_read throws', async () => {
+    setServiceInstances({
+      ampService: mockAmpService,
+      consolidationEngine: mockConsolidationEngine,
+      scopedQuery: mockScopedQuery,
+      bootstrapService: mockBootstrapService,
+      // memoryBlockService omitted
+    });
+    const handlers = buildToolHandlers();
+    await expect(handlers.amp_memory_read({ block: 'persona' })).rejects.toThrow('MemoryBlockService not initialised');
   });
 });

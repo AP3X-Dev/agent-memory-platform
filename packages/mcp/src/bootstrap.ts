@@ -2,9 +2,9 @@
 // Wires up Redis, Neo4j, embedding, and core services from environment variables.
 
 import { createRedisClient } from '@amp/redis';
-import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore } from '@amp/redis';
-import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms } from '@amp/neo4j';
-import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService } from '@amp/core';
+import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore, BlockStore as RedisBlockStore } from '@amp/redis';
+import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore } from '@amp/neo4j';
+import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
 import {
@@ -110,12 +110,18 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     exportPath,
   };
 
+  // Build memory block stores
+  const redisBlockStore = new RedisBlockStore(redis);
+  const neo4jBlockStore = new Neo4jBlockStore(driver);
+  const memoryBlockServiceInstance = new MemoryBlockService(redisBlockStore, neo4jBlockStore);
+
   // Build services
   const ampService = new AMPService(
     { cache, embeddings, dedup, signals, queue },
     { episodic, query: scopedQuery },
     embedding,
     config,
+    memoryBlockServiceInstance,
   );
 
   const consolidationEngine = new ConsolidationEngine(
@@ -151,7 +157,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     consolidationEngine: consolidationAdapter,
     scopedQuery,
     bootstrapService: bootstrapGraphService,
+    memoryBlockService: memoryBlockServiceInstance,
   });
+
+  console.error('[amp-mcp] Memory block service initialized');
 
   // ─── Research services ─────────────────────────────────────────────────────
   await initResearchSchema(driver);
