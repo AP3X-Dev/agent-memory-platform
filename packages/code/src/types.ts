@@ -110,6 +110,7 @@ export interface CodeSearchResult {
   source_type: 'symbol' | 'semantic';
   name: string;
   kind: string;
+  language?: string;
   file_path: string;
   start_line: number;
   signature: string;

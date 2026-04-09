@@ -166,6 +166,7 @@ export class CodeSearch {
           source_type: 'symbol' as const,
           name: props.name as string,
           kind: props.kind as string,
+          language: (props.language as string) ?? '',
           file_path: props.file_path as string,
           start_line: toNum(props.start_line),
           signature: (props.signature as string) ?? '',
@@ -201,6 +202,7 @@ export class CodeSearch {
             source_type: 'symbol' as const,
             name: props.name as string,
             kind: props.kind as string,
+            language: (props.language as string) ?? '',
             file_path: props.file_path as string,
             start_line: toNum(props.start_line),
             signature: (props.signature as string) ?? '',
@@ -209,8 +211,8 @@ export class CodeSearch {
           };
         });
 
-        // Apply post-filters
-        if (options?.language) results = results.filter((r) => r.file_path.includes(`.${options.language}`));
+        // Apply post-filters (language matches the symbol's language property, not file extension)
+        if (options?.language) results = results.filter((r) => r.language === options.language);
         if (options?.file_path) results = results.filter((r) => r.file_path.includes(options.file_path!));
         if (options?.kind) results = results.filter((r) => r.kind === options.kind);
 
@@ -246,6 +248,7 @@ export class CodeSearch {
             source_type: 'symbol' as const,
             name: props.name as string,
             kind: props.kind as string,
+            language: (props.language as string) ?? '',
             file_path: props.file_path as string,
             start_line: toNum(props.start_line),
             signature: (props.signature as string) ?? '',
