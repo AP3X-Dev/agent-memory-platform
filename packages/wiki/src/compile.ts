@@ -10,7 +10,6 @@ import type {
   EntityInfo,
   EpisodicEntry,
   ProjectData,
-  SourceInfo,
   LibraryPage,
   TopicData,
   PortalData,
@@ -23,7 +22,6 @@ import {
   fetchProjectEntities,
   fetchEntitiesModifiedByProject,
   fetchSemanticsForEntity,
-  fetchSemanticCountForEntity,
   fetchEpisodicsForProject,
   fetchEpisodicsForEntity,
   fetchHierarchy,
@@ -34,11 +32,9 @@ import {
   fetchAllSources,
   fetchClaimsForSource,
   fetchAllTags,
-  fetchSemanticsForTag,
   fetchAllSemantics,
   fetchGraphStats,
   fetchRecentEpisodics,
-  extractProjectScope,
 } from './queries.js';
 import {
   renderFrontmatter,
@@ -104,6 +100,38 @@ export class WikiCompiler {
     await rm(outputDir, { recursive: true, force: true });
     await mkdir(outputDir, { recursive: true });
 
+    // ── Phase 0: Pre-fetch shared data ─────────────────────────────
+
+    // Fetch all semantics ONCE and build indexes for O(1) lookups
+    const allSemantics = await fetchAllSemantics(this.driver);
+
+    // Index: entity name (lowercase) → semantics ABOUT that entity
+    const semanticsByEntity = new Map<string, typeof allSemantics>();
+    // Index: entity name (lowercase) → semantics that MENTION entity in content
+    const semanticsMentioningEntity = new Map<string, typeof allSemantics>();
+    // Index: tag → semantics carrying that tag
+    const semanticsByTag = new Map<string, typeof allSemantics>();
+
+    for (const sem of allSemantics) {
+      // Build entity index (by ABOUT relationship)
+      for (const entityName of sem.entities) {
+        const key = entityName.toLowerCase();
+        const existing = semanticsByEntity.get(key) ?? [];
+        existing.push(sem);
+        semanticsByEntity.set(key, existing);
+      }
+
+      // Build tag index
+      for (const tag of sem.tags) {
+        const existing = semanticsByTag.get(tag) ?? [];
+        existing.push(sem);
+        semanticsByTag.set(tag, existing);
+      }
+    }
+
+    // Build mention index (which semantics mention an entity by name in content)
+    // We need all unique entity names first, so defer this until after entity discovery
+
     // ── Phase 1: Discover all projects ────────────────────────────────
 
     const projectEntities = await fetchAllProjects(this.driver);
@@ -131,20 +159,34 @@ export class WikiCompiler {
       }
       const entities = [...entityMap.values()];
 
+      // Build mention index for this project's entities (lazy, cached)
+      for (const entity of entities) {
+        const key = entity.name.toLowerCase();
+        if (!semanticsMentioningEntity.has(key)) {
+          const mentions = allSemantics.filter(
+            (s) => s.content.toLowerCase().includes(key),
+          );
+          semanticsMentioningEntity.set(key, mentions);
+        }
+      }
+
       // Classify: substantive = 1+ semantic OR 1+ episodic mention
       const substantive: EntityInfo[] = [];
       const sparse: EntityInfo[] = [];
 
-      // Fetch all semantics once for text-based matching
-      const allSemantics = await fetchAllSemantics(this.driver);
+      // Batch-fetch episodics for all entities in this project
+      const entityEpisodicMap = new Map<string, EpisodicEntry[]>();
+      const episodicPromises = entities.map(async (entity) => {
+        const eps = await fetchEpisodicsForEntity(this.driver, entity.name);
+        entityEpisodicMap.set(entity.name, eps);
+      });
+      await Promise.all(episodicPromises);
 
       for (const entity of entities) {
-        const semCount = await fetchSemanticCountForEntity(this.driver, entity.name);
-        const entityEpisodics = await fetchEpisodicsForEntity(this.driver, entity.name);
-        // Also check if any semantic content mentions this entity by name
-        const semMentions = allSemantics.filter(
-          (s) => s.content.toLowerCase().includes(entity.name.toLowerCase()),
-        );
+        const key = entity.name.toLowerCase();
+        const semCount = (semanticsByEntity.get(key) ?? []).length;
+        const entityEpisodics = entityEpisodicMap.get(entity.name) ?? [];
+        const semMentions = semanticsMentioningEntity.get(key) ?? [];
         if (semCount > 0 || entityEpisodics.length > 0 || semMentions.length > 0) {
           substantive.push(entity);
         } else {
@@ -152,17 +194,20 @@ export class WikiCompiler {
         }
       }
 
-      // Fetch semantics for project-level data
+      // Build semantics for project-level data from pre-fetched index
       const semantics: ProjectData['semantics'] = [];
+      const seenSemanticIds = new Set<string>();
       for (const entity of entities) {
-        const sems = await fetchSemanticsForEntity(this.driver, entity.name);
+        const sems = semanticsByEntity.get(entity.name.toLowerCase()) ?? [];
         for (const sem of sems) {
+          if (seenSemanticIds.has(sem.id)) continue;
+          seenSemanticIds.add(sem.id);
           semantics.push({
             id: sem.id,
             content: sem.content,
             confidence: sem.confidence,
             tags: sem.tags,
-            entities: sem.entity_refs,
+            entities: sem.entities.filter((e) => e !== entity.name),
           });
         }
       }
@@ -334,8 +379,7 @@ export class WikiCompiler {
     const allTags = await fetchAllTags(this.driver);
     const qualifiedTags = allTags.filter((t) => t.count >= 3 || (t.projects.length >= 2));
 
-    // Also include tags that span 2+ projects via semantics
-    const allSemantics = await fetchAllSemantics(this.driver);
+    // Build tag→projects map from pre-fetched allSemantics (no extra query)
     const tagProjectMap = new Map<string, Set<string>>();
     for (const sem of allSemantics) {
       const projectTag = sem.tags.find((t) => t.startsWith('project:'));
@@ -354,24 +398,40 @@ export class WikiCompiler {
       if (projects.size >= 2) topicTagSet.add(tag);
     }
 
+    // Pre-build co-occurring tag map: for each tag, which other topic-tags co-occur
+    // This avoids the O(topics * allSemantics) nested scan
+    const coTagMap = new Map<string, Set<string>>();
+    for (const sem of allSemantics) {
+      const nonProjectTags = sem.tags.filter((t) => !t.startsWith('project:'));
+      for (const tag of nonProjectTags) {
+        if (!topicTagSet.has(tag)) continue;
+        for (const other of nonProjectTags) {
+          if (other !== tag && topicTagSet.has(other)) {
+            const existing = coTagMap.get(tag) ?? new Set();
+            existing.add(other);
+            coTagMap.set(tag, existing);
+          }
+        }
+      }
+    }
+
     if (topicTagSet.size > 0) {
       const topicsDir = join(outputDir, 'topics');
       const topicDataList: TopicData[] = [];
 
       for (const tag of topicTagSet) {
-        const tagSemantics = await fetchSemanticsForTag(this.driver, tag);
+        // Use pre-indexed semanticsByTag instead of per-tag DB query
+        const tagSems = semanticsByTag.get(tag) ?? [];
 
         // Determine projects this tag appears in
         const projects = new Set<string>();
         const entities = new Set<string>();
         const semanticsWithProject: TopicData['semantics'] = [];
 
-        for (const sem of tagSemantics) {
+        for (const sem of tagSems) {
           for (const e of sem.entities) entities.add(e);
-          // Try to determine project from co-occurring project: tag
-          // We need to check the full semantic data
-          const fullSem = allSemantics.find((s) => s.content === sem.content);
-          const projectTag = fullSem?.tags.find((t) => t.startsWith('project:'));
+          // Project is already available from the full semantic data (no .find() needed)
+          const projectTag = sem.tags.find((t) => t.startsWith('project:'));
           const proj = projectTag ? projectTag.replace('project:', '') : 'unscoped';
           projects.add(proj);
 
@@ -383,17 +443,8 @@ export class WikiCompiler {
           });
         }
 
-        // Find co-occurring tags
-        const coTags = new Set<string>();
-        for (const sem of allSemantics) {
-          if (sem.tags.includes(tag)) {
-            for (const t of sem.tags) {
-              if (t !== tag && !t.startsWith('project:') && topicTagSet.has(t)) {
-                coTags.add(t);
-              }
-            }
-          }
-        }
+        // Use pre-built co-tag map instead of scanning allSemantics
+        const coTags = coTagMap.get(tag) ?? new Set<string>();
 
         const topicData: TopicData = {
           tag,

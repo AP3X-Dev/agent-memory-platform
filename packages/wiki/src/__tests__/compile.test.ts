@@ -189,4 +189,90 @@ describe('WikiCompiler', () => {
       await fs.rm(outputDir, { recursive: true, force: true });
     }
   });
+
+  it('compiles within 500ms budget on a realistic-sized mock graph', async () => {
+    // Simulate a graph with 2 projects, 20 entities each, 50 semantics, 219 episodics
+    const entities = Array.from({ length: 20 }, (_, i) => mockRecord({
+      id: `ent-${i}`,
+      name: `module-${i}`,
+      type: 'module',
+      description: `Module ${i}`,
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    }));
+
+    const semantics = Array.from({ length: 50 }, (_, i) => mockRecord({
+      id: `sem-${i}`,
+      content: `Semantic knowledge ${i} about module-${i % 20}`,
+      confidence: 0.5 + (i % 5) * 0.1,
+      tags: ['project:test-proj', i % 3 === 0 ? 'architecture' : 'api-design'],
+      entities: [`module-${i % 20}`],
+      updated_at: '2026-03-01T00:00:00Z',
+      entity_refs: [],
+    }));
+
+    const episodics = Array.from({ length: 50 }, (_, i) => mockRecord({
+      id: `ep-${i}`,
+      task: `[project:test-proj] Task ${i}`,
+      content: `Did something about module-${i % 20}`,
+      outcome: 'approved',
+      session_id: `session-${Math.floor(i / 5)}`,
+      created_at: new Date(2026, 0, 1 + i).toISOString(),
+    }));
+
+    const projectRecord = mockRecord({
+      id: 'proj-1',
+      name: 'test-proj',
+      type: 'project',
+      description: 'Test project',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+
+    // Build query→response map. The mock driver matches by first substring hit,
+    // so more specific patterns must come before general ones.
+    const responses = new Map<string, ReturnType<typeof mockResult>>([
+      ['ep.task STARTS WITH', mockResult([])],
+      ["(e:Entity {type: 'project'})\n", mockResult([projectRecord])],
+      ['CONTAINS*1..', mockResult(entities)],
+      ['-[:MODIFIED]->', mockResult([])],
+      ['UNWIND s.tags', mockResult([])],
+      ['count(s) AS cnt', mockResult([mockRecord({ cnt: 0 })])],
+      ['[:ABOUT]->(e:Entity {name: $name})', mockResult([])],
+      ['[:CITES]->(src:Source', mockResult([])],
+      ['collect(DISTINCT e.name) AS entities', mockResult(semantics)],
+      ['labels(n)[0]', mockResult([
+        mockRecord({ label: 'Entity', cnt: 20 }),
+        mockRecord({ label: 'Semantic', cnt: 50 }),
+        mockRecord({ label: 'Episodic', cnt: 219 }),
+        mockRecord({ label: 'Source', cnt: 0 }),
+      ])],
+      ['(s:Source)\n', mockResult([])],
+      ['LIMIT $limit', mockResult(episodics.slice(0, 10))],
+      ['ep.task CONTAINS $name OR ep.content CONTAINS', mockResult([])],
+      ['ep.task CONTAINS $tag', mockResult(episodics)],
+      ['parent:Entity', mockResult([])],
+      ['->(child:Entity)', mockResult([])],
+      ['(other:Entity)-[r2]->', mockResult([])],
+    ]);
+
+    const driver = createMockDriver(responses);
+    const compiler = new WikiCompiler(driver);
+
+    const os = await import('node:os');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const outputDir = path.join(os.tmpdir(), `amp-wiki-perf-${Date.now()}`);
+
+    try {
+      const start = performance.now();
+      await compiler.compile(outputDir);
+      const elapsed = performance.now() - start;
+
+      // The compile should complete well under 500ms with batched queries
+      expect(elapsed).toBeLessThan(500);
+    } finally {
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
+  });
 });
