@@ -8,6 +8,7 @@ const CONSTRAINTS: string[] = [
   'CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE',
   'CREATE CONSTRAINT agent_id IF NOT EXISTS FOR (a:Agent) REQUIRE a.id IS UNIQUE',
   'CREATE CONSTRAINT model_id IF NOT EXISTS FOR (m:Model) REQUIRE m.id IS UNIQUE',
+  'CREATE CONSTRAINT memblock_scope_name IF NOT EXISTS FOR (b:MemoryBlock) REQUIRE (b.scope, b.name) IS UNIQUE',
 ];
 
 const INDEXES: string[] = [

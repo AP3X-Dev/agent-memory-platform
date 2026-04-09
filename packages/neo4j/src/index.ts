@@ -10,4 +10,5 @@ export type { ProvenanceNode } from './provenance.js';
 export { ScopedQuery, validateReadOnlyCypher } from './query.js';
 export type { QueryScope } from './query.js';
 export { GDSAlgorithms } from './gds.js';
+export { BlockStore } from './blocks.js';
 export type { SimilarPair, RankedNode, CommunityNode } from './gds.js';

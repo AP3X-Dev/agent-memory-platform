@@ -10,3 +10,4 @@ export { SessionStore } from './session.js';
 export { ConsolidationQueue } from './queue.js';
 export { DistributedLock } from './locks.js';
 export { DedupChecker } from './dedup.js';
+export { BlockStore } from './blocks.js';
