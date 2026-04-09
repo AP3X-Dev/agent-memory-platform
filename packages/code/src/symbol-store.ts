@@ -152,6 +152,35 @@ export class SymbolStore {
     }
   }
 
+  /**
+   * Find a symbol by composite key: name + file + kind + parent_symbol.
+   * This uniquely identifies symbols even with overloaded names, duplicate method
+   * names across classes, or same-named nested symbols.
+   */
+  async findByCompositeKey(
+    name: string,
+    filePath: string,
+    kind: SymbolKind,
+    parentSymbol: string | null,
+  ): Promise<SymbolNode | null> {
+    const session = this.driver.session();
+    try {
+      const parentClause = parentSymbol === null
+        ? 'AND s.parent_symbol IS NULL'
+        : 'AND s.parent_symbol = $parent';
+      const result = await session.run(
+        `MATCH (s:Symbol {name: $name, file_path: $path, kind: $kind})
+         WHERE true ${parentClause}
+         RETURN s LIMIT 1`,
+        { name, path: filePath, kind, parent: parentSymbol },
+      );
+      if (result.records.length === 0) return null;
+      return mapSymbol(result.records[0].get('s').properties);
+    } finally {
+      await session.close();
+    }
+  }
+
   async getHashesByFile(filePath: string): Promise<Set<string>> {
     const session = this.driver.session();
     try {
@@ -237,7 +266,7 @@ export class SymbolStore {
   }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// --- Helpers ------------------------------------------------------------------
 
 function mapSymbol(props: Record<string, unknown>): SymbolNode {
   return {

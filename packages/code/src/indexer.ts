@@ -8,8 +8,17 @@ import { parseFile } from './parser.js';
 import { ImportResolver } from './resolver.js';
 import { SymbolStore } from './symbol-store.js';
 import { generateLexicalVector, generateMiniVector, generateSparseVector } from './vectors.js';
-import type { SupportedLanguage, IndexResult } from './types.js';
+import type { SupportedLanguage, SymbolKind, IndexResult } from './types.js';
 import { LANGUAGE_EXTENSIONS } from './types.js';
+
+/**
+ * Build a composite key string for symbol identity.
+ * Encodes name + kind + parent_symbol to uniquely identify symbols even when
+ * names are shared across classes or overloaded within the same file.
+ */
+function compositeKey(name: string, kind: SymbolKind | string, parentSymbol: string | null): string {
+  return `${name}\0${kind}\0${parentSymbol ?? ''}`;
+}
 
 // Default directories/patterns to skip
 const EXCLUDE_DIRS = new Set([
@@ -88,7 +97,7 @@ export class CodeIndexer {
     }
 
     // Phase 2: Create Entity:Component nodes for indexed files and resolve imports.
-    // Uses cached parse results — no re-parsing.
+    // Uses cached parse results --- no re-parsing.
     await this.ensureFileEntities(filtered);
 
     for (const [filePath, parsed] of parseCache) {
@@ -124,7 +133,7 @@ export class CodeIndexer {
 
     for (const symbol of parsed.symbols) {
       if (existingHashes.has(symbol.content_hash)) {
-        // Symbol unchanged — skip
+        // Symbol unchanged --- skip
         continue;
       }
 
@@ -134,13 +143,15 @@ export class CodeIndexer {
       const sparse = generateSparseVector(vectorText);
       symbol.sparse_indices = sparse.indices;
       symbol.sparse_values = sparse.values;
-      // Mini vector requires dense embedding — generated if embedding exists
+      // Mini vector requires dense embedding --- generated if embedding exists
       if (symbol.embedding) {
         symbol.mini_vector = generateMiniVector(symbol.embedding);
       }
 
-      // Check if symbol exists by name+file (update) or is new (create)
-      const existing = await this.symbolStore.findByNameAndFile(symbol.name, filePath);
+      // Check if symbol exists by composite key (name+file+kind+parent) or is new
+      const existing = await this.symbolStore.findByCompositeKey(
+        symbol.name, filePath, symbol.kind, symbol.parent_symbol,
+      );
       if (existing) {
         await this.symbolStore.update(existing.id, symbol);
         updated++;
@@ -165,10 +176,17 @@ export class CodeIndexer {
       }
     }
 
-    // Remove symbols that no longer exist in the file (batch delete)
-    const currentNames = new Set(parsed.symbols.map((s) => s.name));
+    // Remove symbols that no longer exist in the file (batch delete).
+    // Use composite keys (name+kind+parent_symbol) to correctly identify stale symbols
+    // even when multiple symbols share the same name (overloads, same-named methods in
+    // different classes, nested symbols).
+    const currentKeys = new Set(
+      parsed.symbols.map((s) => compositeKey(s.name, s.kind, s.parent_symbol)),
+    );
     const allExisting = await this.symbolStore.getByFile(filePath);
-    const toDelete = allExisting.filter((ex) => !currentNames.has(ex.name));
+    const toDelete = allExisting.filter(
+      (ex) => !currentKeys.has(compositeKey(ex.name, ex.kind, ex.parent_symbol)),
+    );
     if (toDelete.length > 0) {
       const session = this.driver.session();
       try {
@@ -184,7 +202,7 @@ export class CodeIndexer {
     return { symbols_created: created, symbols_updated: updated, relations_created: relationsCreated, parsed };
   }
 
-  // ─── Private helpers ───────────────────────────────────────────────────────
+  // --- Private helpers -------------------------------------------------------
 
   /**
    * Ensure Entity:Component nodes exist for all indexed files.
@@ -212,7 +230,7 @@ export class CodeIndexer {
     type: string,
     filePath: string,
   ): Promise<boolean> {
-    // Validate relation type against known symbol relationships — prevents Cypher injection
+    // Validate relation type against known symbol relationships --- prevents Cypher injection
     const VALID_SYMBOL_RELS = new Set(['SYMBOL_CALLS', 'SYMBOL_IMPORTS', 'SYMBOL_INHERITS', 'SYMBOL_IMPLEMENTS', 'SYMBOL_CONTAINS']);
     if (!VALID_SYMBOL_RELS.has(type)) return false;
 
