@@ -5,8 +5,10 @@ import type {
   StreamSignal,
   SemanticNode,
   AMPConfig,
+  FactNode,
 } from './types.js';
 import { SIGNAL_WEIGHTS } from './types.js';
+import { extractFacts } from './extract.js';
 
 // ─── Runtime validators ──────────────────────────────────────────────────────
 
@@ -131,12 +133,20 @@ export interface ConsolidationRedisLayer {
   };
 }
 
+export interface ConsolidationFactLayer {
+  create(fact: import('./types.js').FactNode): Promise<string>;
+  findBySubjectPredicate(subject: string, predicate: string): Promise<import('./types.js').FactNode[]>;
+  invalidate(id: string, invalidAt: string, supersededById?: string): Promise<void>;
+  dispute(id: string): Promise<void>;
+}
+
 export interface ConsolidationNeo4jLayer {
   semantic: {
     getById(id: string): Promise<SemanticNode | null>;
     updateConfidence(id: string, confidence: number): Promise<void>;
     supersede(oldId: string, newNode: SemanticNode): Promise<string>;
   };
+  fact?: ConsolidationFactLayer;
 }
 
 // ─── Result types ─────────────────────────────────────────────────────────────
@@ -330,6 +340,17 @@ export class ConsolidationEngine {
         await this.neo4j.semantic.supersede(before.id, newNode);
         await this.redis.cache.invalidateByNodeId(before.id);
         await this.redis.cache.invalidateByNodeId(newNode.id);
+
+        // Fact extraction: optionally extract facts from superseded content
+        await this._extractAndStoreFacts(newNode.content, newNode.id);
+
+        // Dispute related active facts when this is a contradiction-driven supersede
+        if (this.neo4j.fact) {
+          const lowerConfidence = (after.confidence ?? before.confidence) < before.confidence;
+          if (lowerConfidence) {
+            await this._disputeRelatedFacts(before.content);
+          }
+        }
       } else if (proposal.type === 'decay') {
         const targetId = proposal.affected_ids[0];
         if (targetId) {
@@ -347,6 +368,106 @@ export class ConsolidationEngine {
         `[consolidation] _applyProposal failed for proposal ${proposal.id} (type=${proposal.type}): ${message}`,
       );
       return false;
+    }
+  }
+
+  // ─── Private: fact extraction ──────────────────────────────────────────────
+
+  private async _extractAndStoreFacts(
+    content: string,
+    semanticId: string,
+  ): Promise<void> {
+    const factLayer = this.neo4j.fact;
+    const apiKey = this.config.embedding.apiKey;
+    if (!factLayer || !apiKey) return;
+
+    try {
+      const inputs = await extractFacts(content, apiKey);
+      if (inputs.length === 0) return;
+
+      const now = new Date().toISOString();
+      for (const input of inputs) {
+        // Check for existing active fact with same subject+predicate
+        const existing = await factLayer.findBySubjectPredicate(
+          input.subject,
+          input.predicate,
+        );
+
+        if (existing.length > 0) {
+          const current = existing[0]!;
+          if (current.object === input.object) {
+            // Same fact — skip (reinforce by doing nothing; confidence is maintained)
+            continue;
+          }
+          // Different object — invalidate old, create new with supersession
+          const newFactId = `fact-${nanoid(12)}`;
+          const newFact: FactNode = {
+            id: newFactId,
+            subject: input.subject,
+            predicate: input.predicate,
+            object: input.object,
+            source_episode_ids: input.source_episode_ids,
+            valid_at: now,
+            invalid_at: null,
+            confidence: input.confidence ?? 0.5,
+            status: 'active',
+            supersedes_fact_id: current.id,
+            scope: input.scope ?? 'project',
+            tags: input.tags ?? [],
+            created_at: now,
+            updated_at: now,
+          };
+          await factLayer.invalidate(current.id, now, newFactId);
+          await factLayer.create(newFact);
+        } else {
+          // New fact
+          const newFact: FactNode = {
+            id: `fact-${nanoid(12)}`,
+            subject: input.subject,
+            predicate: input.predicate,
+            object: input.object,
+            source_episode_ids: input.source_episode_ids,
+            valid_at: now,
+            invalid_at: null,
+            confidence: input.confidence ?? 0.5,
+            status: 'tentative',
+            supersedes_fact_id: null,
+            scope: input.scope ?? 'project',
+            tags: input.tags ?? [],
+            created_at: now,
+            updated_at: now,
+          };
+          await factLayer.create(newFact);
+        }
+      }
+    } catch (err) {
+      // Non-critical: fact extraction failure should not block consolidation
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[consolidation] fact extraction failed (non-critical): ${message}`);
+    }
+  }
+
+  private async _disputeRelatedFacts(semanticContent: string): Promise<void> {
+    const factLayer = this.neo4j.fact;
+    const apiKey = this.config.embedding.apiKey;
+    if (!factLayer || !apiKey) return;
+
+    try {
+      // Extract facts from the old (now-contradicted) content to find what to dispute
+      const oldFacts = await extractFacts(semanticContent, apiKey);
+      for (const oldFact of oldFacts) {
+        const matching = await factLayer.findBySubjectPredicate(
+          oldFact.subject,
+          oldFact.predicate,
+        );
+        for (const active of matching) {
+          if (active.object === oldFact.object) {
+            await factLayer.dispute(active.id);
+          }
+        }
+      }
+    } catch {
+      // Non-critical: dispute failure should not block consolidation
     }
   }
 }
