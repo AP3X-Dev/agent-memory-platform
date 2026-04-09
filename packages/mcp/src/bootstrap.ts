@@ -3,7 +3,7 @@
 
 import { createRedisClient } from '@amp/redis';
 import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore, BlockStore as RedisBlockStore } from '@amp/redis';
-import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore } from '@amp/neo4j';
+import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore, FactStore } from '@amp/neo4j';
 import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
@@ -81,6 +81,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const semantic = new SemanticStore(driver);
   const scopedQuery = new ScopedQuery(driver);
   const gds = new GDSAlgorithms(driver);
+  const factStoreInstance = new FactStore(driver);
 
   // ─── Operational status tracking ────────────────────────────────────────────
   const status = {
@@ -118,7 +119,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   // Build services
   const ampService = new AMPService(
     { cache, embeddings, dedup, signals, queue },
-    { episodic, query: scopedQuery },
+    { episodic, query: scopedQuery, fact: factStoreInstance },
     embedding,
     config,
     memoryBlockServiceInstance,
@@ -126,7 +127,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   const consolidationEngine = new ConsolidationEngine(
     { lock, signals, queue, cache, proposals },
-    { semantic },
+    { semantic, fact: factStoreInstance },
     config,
   );
 
@@ -158,9 +159,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     scopedQuery,
     bootstrapService: bootstrapGraphService,
     memoryBlockService: memoryBlockServiceInstance,
+    factStore: factStoreInstance,
   });
 
-  console.error('[amp-mcp] Memory block service initialized');
+  console.error('[amp-mcp] Memory block and fact services initialized');
 
   // ─── Research services ─────────────────────────────────────────────────────
   await initResearchSchema(driver);

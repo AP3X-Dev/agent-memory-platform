@@ -1,7 +1,7 @@
 // packages/mcp/src/tools.ts
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier } from '@amp/core';
+import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
@@ -53,6 +53,11 @@ export interface IBootstrapGraphService {
   status(projectName: string): Promise<Record<string, unknown>>;
 }
 
+export interface IFactStore {
+  timeline(entityName: string): Promise<FactTimeline>;
+  diff(entityName: string, from: string, to: string): Promise<FactDiff>;
+}
+
 // ─── Injected instances ───────────────────────────────────────────────────────
 
 let ampService: IAMPService | null = null;
@@ -60,6 +65,7 @@ let consolidationEngine: IConsolidationEngine | null = null;
 let scopedQuery: IScopedQuery | null = null;
 let bootstrapService: IBootstrapGraphService | null = null;
 let memoryBlockService: IMemoryBlockService | null = null;
+let factStore: IFactStore | null = null;
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
@@ -67,12 +73,14 @@ export function setServiceInstances(services: {
   scopedQuery: IScopedQuery;
   bootstrapService: IBootstrapGraphService;
   memoryBlockService?: IMemoryBlockService;
+  factStore?: IFactStore;
 }): void {
   ampService = services.ampService;
   consolidationEngine = services.consolidationEngine;
   scopedQuery = services.scopedQuery;
   bootstrapService = services.bootstrapService;
   memoryBlockService = services.memoryBlockService ?? null;
+  factStore = services.factStore ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
@@ -81,6 +89,7 @@ export const TOOL_NAMES = [
   'amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
   'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
   'amp_memory_promote', 'amp_memory_archive',
+  'amp_timeline', 'amp_fact_diff',
 ] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -90,6 +99,13 @@ const AmpLoadSchema = {
   entities: z.array(z.string()).optional().describe('Entity names to scope the query'),
   tags: z.array(z.string()).optional().describe('Tags to scope the query'),
   max_tokens: z.number().int().positive().optional().default(4000).describe('Max tokens for context window'),
+  temporal: z.object({
+    time_mode: z.enum(['current', 'historical', 'interval', 'evolution']).optional().describe('Temporal query mode'),
+    as_of: z.string().optional().describe('ISO timestamp for historical mode'),
+    from: z.string().optional().describe('Interval start (ISO timestamp)'),
+    to: z.string().optional().describe('Interval end (ISO timestamp)'),
+    include_invalidated: z.boolean().optional().describe('Include invalidated facts in evolution mode'),
+  }).optional().describe('Temporal filtering options for fact queries'),
 };
 
 const AmpStoreSchema = {
@@ -200,6 +216,18 @@ const AmpMemoryArchiveSchema = {
   session_id: z.string().max(500).optional().describe('Session ID for working-tier blocks'),
 };
 
+const AmpTimelineSchema = {
+  entity: z.string().max(200).describe('Entity name to get timeline for'),
+  include_episodes: z.boolean().optional().describe('Include linked episodes in timeline (default false)'),
+  limit: z.number().int().max(100).optional().describe('Maximum number of facts to return'),
+};
+
+const AmpFactDiffSchema = {
+  entity: z.string().max(200).describe('Entity name to diff'),
+  from: z.string().describe('Start timestamp (ISO format)'),
+  to: z.string().describe('End timestamp (ISO format)'),
+};
+
 // ─── Handler implementations ─────────────────────────────────────────────────
 
 type ToolResult = Promise<{ content: Array<{ type: 'text'; text: string }> }>;
@@ -210,6 +238,7 @@ export type ToolHandlers = {
     entities?: string[];
     tags?: string[];
     max_tokens?: number;
+    temporal?: TemporalOptions;
   }) => ToolResult;
   amp_store: (args: {
     session_id: string;
@@ -245,6 +274,8 @@ export type ToolHandlers = {
   amp_memory_rewrite: (args: { block: string; content: string; scope?: string; session_id?: string }) => ToolResult;
   amp_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string }) => ToolResult;
   amp_memory_archive: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
+  amp_timeline: (args: { entity: string; include_episodes?: boolean; limit?: number }) => ToolResult;
+  amp_fact_diff: (args: { entity: string; from: string; to: string }) => ToolResult;
 };
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -260,6 +291,7 @@ export function buildToolHandlers(): ToolHandlers {
         entities: args.entities,
         tags: args.tags,
         max_tokens: args.max_tokens ?? 4000,
+        temporal: args.temporal,
       };
       const ctx = await ampService.load(scope);
       return textContent(ctx.markdown);
@@ -401,6 +433,70 @@ export function buildToolHandlers(): ToolHandlers {
       const content = await memoryBlockService.archive(scope, args.block, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: args.block, archived_length: content.length }));
     },
+
+    async amp_timeline(args) {
+      if (!factStore) throw new Error('FactStore not initialised');
+      const tl = await factStore.timeline(args.entity);
+      const facts = args.limit ? tl.facts.slice(0, args.limit) : tl.facts;
+
+      const lines: string[] = [
+        `# Timeline: ${tl.entity}`,
+        '',
+      ];
+      for (const f of facts) {
+        const status = f.status !== 'active' ? ` [${f.status}]` : '';
+        const validRange = f.invalid_at
+          ? `${f.valid_at} → ${f.invalid_at}`
+          : `${f.valid_at} → present`;
+        lines.push(`- **${f.event}** at ${f.at}: **${f.subject}** ${f.predicate} **${f.object}**${status} (${validRange}, confidence: ${f.confidence.toFixed(2)})`);
+      }
+      if (facts.length === 0) {
+        lines.push('_No facts found for this entity._');
+      }
+      return textContent(lines.join('\n'));
+    },
+
+    async amp_fact_diff(args) {
+      if (!factStore) throw new Error('FactStore not initialised');
+      const d = await factStore.diff(args.entity, args.from, args.to);
+
+      const lines: string[] = [
+        `# Fact Diff: ${d.entity}`,
+        `**From:** ${d.from}`,
+        `**To:** ${d.to}`,
+        '',
+      ];
+
+      if (d.added.length > 0) {
+        lines.push('## Added');
+        for (const f of d.added) {
+          lines.push(`- **${f.subject}** ${f.predicate} **${f.object}** (confidence: ${f.confidence.toFixed(2)}, since: ${f.valid_at.split('T')[0]})`);
+        }
+        lines.push('');
+      }
+
+      if (d.invalidated.length > 0) {
+        lines.push('## Invalidated');
+        for (const f of d.invalidated) {
+          lines.push(`- ~~**${f.subject}** ${f.predicate} **${f.object}**~~ (was valid: ${f.valid_at.split('T')[0]} → ${f.invalid_at?.split('T')[0] ?? '?'})`);
+        }
+        lines.push('');
+      }
+
+      if (d.changed.length > 0) {
+        lines.push('## Changed');
+        for (const c of d.changed) {
+          lines.push(`- **${c.before.subject}** ${c.before.predicate}: ~~${c.before.object}~~ → **${c.after.object}** (confidence: ${c.after.confidence.toFixed(2)})`);
+        }
+        lines.push('');
+      }
+
+      if (d.added.length === 0 && d.invalidated.length === 0 && d.changed.length === 0) {
+        lines.push('_No changes detected in this time range._');
+      }
+
+      return textContent(lines.join('\n'));
+    },
   };
 }
 
@@ -491,5 +587,19 @@ export function registerTools(server: McpServer): void {
     'Archive a memory block: returns its content for the caller to store as an episodic entry, then deletes the block.',
     AmpMemoryArchiveSchema,
     handlers.amp_memory_archive,
+  );
+
+  server.tool(
+    'amp_timeline',
+    'Chronological fact history for an entity. Shows all facts with creation, invalidation, dispute, and supersession events ordered by time.',
+    AmpTimelineSchema,
+    handlers.amp_timeline,
+  );
+
+  server.tool(
+    'amp_fact_diff',
+    'Show what facts changed about an entity between two timestamps. Returns added, invalidated, and changed facts.',
+    AmpFactDiffSchema,
+    handlers.amp_fact_diff,
   );
 }
