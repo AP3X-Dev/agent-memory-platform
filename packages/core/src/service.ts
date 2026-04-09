@@ -11,8 +11,11 @@ import type {
   StreamSignal,
   EmbeddingProvider,
   AMPConfig,
+  MemoryBlock,
 } from './types.js';
 import { rankMemories, budgetTokens, estimateTokens } from './ranking.js';
+import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
+import { MemoryBlockService } from './blocks.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
@@ -55,13 +58,22 @@ export interface Neo4jLayer {
 
 // ─── AMPService ──────────────────────────────────────────────────────────────
 
+export interface BlocksLayer {
+  listBlocks(scope: string, tier?: 'core' | 'working' | 'archive', sessionId?: string): Promise<MemoryBlock[]>;
+}
+
 export class AMPService {
+  private blocks?: BlocksLayer;
+
   constructor(
     private redis: RedisLayer,
     private neo4j: Neo4jLayer,
     private embedding: EmbeddingProvider,
     private config: AMPConfig,
-  ) {}
+    blocks?: BlocksLayer,
+  ) {
+    this.blocks = blocks;
+  }
 
   // ─── LOAD ──────────────────────────────────────────────────────────────────
 
@@ -73,7 +85,23 @@ export class AMPService {
     const cached = await this.redis.cache.get(scopeHash);
     if (cached) return cached;
 
-    // 2. Cache miss → query Neo4j
+    // 2. Fetch memory blocks (if blocks service available)
+    let coreBlocks: MemoryBlock[] = [];
+    let workingBlocks: MemoryBlock[] = [];
+    const projectTag = scope.tags?.find((t) => t.startsWith('project:')) ?? scope.tags?.[0];
+
+    if (this.blocks && projectTag) {
+      const blockResults = await Promise.all([
+        this.blocks.listBlocks(projectTag, 'core'),
+        scope.session_id
+          ? this.blocks.listBlocks(projectTag, 'working', scope.session_id)
+          : Promise.resolve([]),
+      ]);
+      coreBlocks = blockResults[0].filter((b) => b.content.length > 0);
+      workingBlocks = blockResults[1].filter((b) => b.content.length > 0);
+    }
+
+    // 3. Cache miss → query Neo4j
     const [byScope, byVector] = await Promise.all([
       this.neo4j.query.byScope({
         entities: scope.entities,
@@ -99,29 +127,35 @@ export class AMPService {
       }
     }
 
-    // 3. Rank
+    // 4. Rank
     const ranked = rankMemories(merged);
 
-    // 4. Budget tokens
+    // 5. Budget tokens (blocks are NOT subject to token budgeting)
     const withTokens = ranked.map((m) => ({
       ...m,
       tokens: estimateTokens(m.content),
     }));
     const budgeted = budgetTokens(withTokens, maxTokens);
 
-    // 5. Render markdown
-    const markdown = renderMarkdown(scope.task, budgeted);
-    const totalTokens = budgeted.reduce((sum, m) => sum + m.tokens, 0);
+    // 6. Render markdown with blocks prepended
+    const blocksMarkdown = renderBlocksMarkdown(coreBlocks, workingBlocks);
+    const archiveMarkdown = renderMarkdown(scope.task, budgeted);
+    const markdown = blocksMarkdown
+      ? blocksMarkdown + '\n' + archiveMarkdown
+      : archiveMarkdown;
+
+    const blockTokens = estimateTokens(blocksMarkdown);
+    const archiveTokens = budgeted.reduce((sum, m) => sum + m.tokens, 0);
     const sources = budgeted.map((m) => m.id);
 
     const ctx: MemoryContext = {
       markdown,
-      tokens: totalTokens,
+      tokens: blockTokens + archiveTokens,
       sources,
       assembled_at: new Date().toISOString(),
     };
 
-    // 6. Cache
+    // 7. Cache
     await this.redis.cache.set(
       scopeHash,
       ctx,
@@ -245,6 +279,34 @@ function hashScope(scope: LoadScope): string {
     max_tokens: scope.max_tokens ?? 4096,
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
+function renderBlocksMarkdown(coreBlocks: MemoryBlock[], workingBlocks: MemoryBlock[]): string {
+  if (coreBlocks.length === 0 && workingBlocks.length === 0) return '';
+
+  const lines: string[] = [];
+
+  if (coreBlocks.length > 0) {
+    lines.push('## Core Memory');
+    lines.push('');
+    for (const block of coreBlocks) {
+      lines.push(`### ${block.name}`);
+      lines.push(block.content);
+      lines.push('');
+    }
+  }
+
+  if (workingBlocks.length > 0) {
+    lines.push('## Working Memory');
+    lines.push('');
+    for (const block of workingBlocks) {
+      lines.push(`### ${block.name}`);
+      lines.push(block.content);
+      lines.push('');
+    }
+  }
+
+  return lines.join('\n');
 }
 
 function renderMarkdown(

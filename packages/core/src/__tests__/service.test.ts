@@ -1,8 +1,8 @@
 // packages/core/src/__tests__/service.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AMPService } from '../service.js';
-import type { RedisLayer, Neo4jLayer } from '../service.js';
-import type { AMPConfig, LoadScope, EpisodeInput, SemanticNode } from '../types.js';
+import type { RedisLayer, Neo4jLayer, BlocksLayer } from '../service.js';
+import type { AMPConfig, LoadScope, EpisodeInput, SemanticNode, MemoryBlock } from '../types.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -339,5 +339,164 @@ describe('AMPService.store', () => {
     // embedding.embed should NOT be called since cache hit
     expect(embedding.embed).not.toHaveBeenCalled();
     expect(redis.embeddings.set).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Memory blocks integration ──────────────────────────────────────────────
+
+function makeMemoryBlock(overrides: Partial<MemoryBlock> = {}): MemoryBlock {
+  const now = new Date().toISOString();
+  return {
+    id: 'block-1',
+    name: 'persona',
+    tier: 'core',
+    content: 'You are a helpful assistant.',
+    scope: 'project:test',
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
+function makeBlocksLayer(overrides: Partial<BlocksLayer> = {}): BlocksLayer {
+  return {
+    listBlocks: vi.fn().mockResolvedValue([]),
+    ...overrides,
+  };
+}
+
+describe('AMPService.load with memory blocks', () => {
+  it('renders core blocks before semantic knowledge', async () => {
+    const coreBlock = makeMemoryBlock({ name: 'persona', content: 'Test persona content' });
+    const blocks = makeBlocksLayer({
+      listBlocks: vi.fn().mockImplementation((_scope: string, tier?: string) => {
+        if (tier === 'core') return Promise.resolve([coreBlock]);
+        return Promise.resolve([]);
+      }),
+    });
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    const scope: LoadScope = { task: 'test', tags: ['project:test'] };
+    const result = await service.load(scope);
+
+    expect(result.markdown).toContain('## Core Memory');
+    expect(result.markdown).toContain('### persona');
+    expect(result.markdown).toContain('Test persona content');
+    // Core memory should appear before semantic section
+    const coreIdx = result.markdown.indexOf('## Core Memory');
+    const semanticIdx = result.markdown.indexOf('# Memory Context');
+    expect(coreIdx).toBeLessThan(semanticIdx);
+  });
+
+  it('renders working blocks when session_id is provided', async () => {
+    const workingBlock = makeMemoryBlock({
+      name: 'working_state',
+      tier: 'working',
+      content: 'Current debug progress',
+      session_id: 'sess-1',
+    });
+    const blocks = makeBlocksLayer({
+      listBlocks: vi.fn().mockImplementation((_scope: string, tier?: string) => {
+        if (tier === 'working') return Promise.resolve([workingBlock]);
+        return Promise.resolve([]);
+      }),
+    });
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    const scope: LoadScope = { task: 'test', tags: ['project:test'], session_id: 'sess-1' };
+    const result = await service.load(scope);
+
+    expect(result.markdown).toContain('## Working Memory');
+    expect(result.markdown).toContain('### working_state');
+    expect(result.markdown).toContain('Current debug progress');
+  });
+
+  it('skips blocks section when no blocks service is provided', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const scope: LoadScope = { task: 'test', tags: ['project:test'] };
+    const result = await service.load(scope);
+
+    expect(result.markdown).not.toContain('## Core Memory');
+    expect(result.markdown).not.toContain('## Working Memory');
+  });
+
+  it('skips empty blocks', async () => {
+    const emptyBlock = makeMemoryBlock({ name: 'persona', content: '' });
+    const blocks = makeBlocksLayer({
+      listBlocks: vi.fn().mockImplementation((_scope: string, tier?: string) => {
+        if (tier === 'core') return Promise.resolve([emptyBlock]);
+        return Promise.resolve([]);
+      }),
+    });
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    const scope: LoadScope = { task: 'test', tags: ['project:test'] };
+    const result = await service.load(scope);
+
+    expect(result.markdown).not.toContain('## Core Memory');
+  });
+
+  it('does not count block tokens against budget', async () => {
+    const bigBlock = makeMemoryBlock({
+      name: 'persona',
+      content: 'X'.repeat(1000), // ~250 tokens
+    });
+    const nodes: SemanticNode[] = [
+      makeSemanticNode({ id: 'sem-1', content: 'A'.repeat(200) }),
+    ];
+    const blocks = makeBlocksLayer({
+      listBlocks: vi.fn().mockImplementation((_scope: string, tier?: string) => {
+        if (tier === 'core') return Promise.resolve([bigBlock]);
+        return Promise.resolve([]);
+      }),
+    });
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockResolvedValue(nodes),
+        byVector: vi.fn().mockResolvedValue([]),
+      },
+    });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    // Low budget — but blocks should still be included
+    const scope: LoadScope = { task: 'test', tags: ['project:test'], max_tokens: 100 };
+    const result = await service.load(scope);
+
+    expect(result.markdown).toContain('## Core Memory');
+    expect(result.markdown).toContain('X'.repeat(100)); // block content present
+    // Total tokens includes block tokens
+    expect(result.tokens).toBeGreaterThan(100);
+  });
+
+  it('uses project tag from tags array', async () => {
+    const blocks = makeBlocksLayer();
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    const scope: LoadScope = { task: 'test', tags: ['project:my-proj', 'other-tag'] };
+    await service.load(scope);
+
+    expect(blocks.listBlocks).toHaveBeenCalledWith('project:my-proj', 'core');
   });
 });
