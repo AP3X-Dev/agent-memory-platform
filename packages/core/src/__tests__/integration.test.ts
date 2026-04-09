@@ -1,7 +1,7 @@
 // packages/core/src/__tests__/integration.test.ts
 //
 // Full integration smoke test: STORE → LOAD → cache pipeline.
-// Requires real Redis + Neo4j connections and OPENAI_API_KEY.
+// Requires real Redis + Neo4j connections, OPENAI_API_KEY, and RUN_LIVE_TESTS=1.
 // The entire suite is skipped when any of those are unavailable.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
@@ -30,6 +30,7 @@ const NEO4J_URI = process.env.NEO4J_URI ?? 'bolt://localhost:7687';
 const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
 const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'password';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
+const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';
 
 // ─── Test-scoped IDs (cleaned up in afterAll) ─────────────────────────────────
 
@@ -105,6 +106,11 @@ describe('Integration: LOAD and STORE flow', () => {
   };
 
   beforeAll(async () => {
+    if (!RUN_LIVE) {
+      console.warn('[integration] RUN_LIVE_TESTS not set — skipping suite');
+      return;
+    }
+
     // Probe infrastructure
     [redisAvailable, neo4jAvailable] = await Promise.all([
       isRedisReachable(REDIS_URL),
@@ -245,9 +251,9 @@ describe('Integration: LOAD and STORE flow', () => {
     ]);
   }, 30_000);
 
-  // Helper to skip individual tests when infra / key is missing
+  // Helper to skip individual tests when infra / key is missing or live tests not requested
   function shouldSkip(): boolean {
-    return !redisAvailable || !neo4jAvailable || !OPENAI_API_KEY;
+    return !RUN_LIVE || !redisAvailable || !neo4jAvailable || !OPENAI_API_KEY;
   }
 
   // ─── Test 1: STORE an episode with a signal, verify not duplicate-skipped ──

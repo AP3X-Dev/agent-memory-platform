@@ -1,16 +1,15 @@
 // packages/core/src/__tests__/embedding.test.ts
+//
+// Live OpenAI embedding tests — gated behind RUN_LIVE_TESTS=1.
+// Having OPENAI_API_KEY alone is NOT enough; CI must opt in explicitly.
 import { describe, it, expect } from 'vitest';
 import { OpenAIEmbedding } from '../embedding.js';
 
-const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
+const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';
 
-describe('OpenAIEmbedding', () => {
+describe.runIf(RUN_LIVE && OPENAI_API_KEY)('OpenAIEmbedding (live)', () => {
   it('embed returns a 1536-dimensional number array', async () => {
-    if (!OPENAI_API_KEY) {
-      console.warn('[skip] OPENAI_API_KEY not set — skipping embed test');
-      return;
-    }
-
     const provider = new OpenAIEmbedding(OPENAI_API_KEY);
     const result = await provider.embed('Hello, world!');
 
@@ -20,11 +19,6 @@ describe('OpenAIEmbedding', () => {
   });
 
   it('embedBatch returns the correct number of embeddings', async () => {
-    if (!OPENAI_API_KEY) {
-      console.warn('[skip] OPENAI_API_KEY not set — skipping embedBatch test');
-      return;
-    }
-
     const provider = new OpenAIEmbedding(OPENAI_API_KEY);
     const texts = ['First sentence.', 'Second sentence.', 'Third sentence.'];
     const results = await provider.embedBatch(texts);
@@ -40,11 +34,6 @@ describe('OpenAIEmbedding', () => {
   });
 
   it('embedBatch with a single text returns one embedding', async () => {
-    if (!OPENAI_API_KEY) {
-      console.warn('[skip] OPENAI_API_KEY not set — skipping embedBatch single-item test');
-      return;
-    }
-
     const provider = new OpenAIEmbedding(OPENAI_API_KEY);
     const results = await provider.embedBatch(['Only one.']);
 
