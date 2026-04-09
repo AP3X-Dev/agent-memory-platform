@@ -61,16 +61,22 @@ export function slugify(name: string): string {
 }
 
 /** Resolve entity references in claim text to [[wikilinks]] */
-function resolveInlineLinks(text: string, entityRefs: string[], projectSlug: string): string {
+export function resolveInlineLinks(text: string, entityRefs: string[], projectSlug: string): string {
   let resolved = text;
   const sorted = [...entityRefs].sort((a, b) => b.length - a.length);
   for (const ref of sorted) {
     const escaped = ref.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const re = new RegExp(`\\b${escaped}\\b`, 'i');
-    if (re.test(resolved)) {
-      const entitySlug = slugify(ref);
-      resolved = resolved.replace(re, `[[projects/${projectSlug}/${entitySlug}|${ref}]]`);
-    }
+    const re = new RegExp(`\\b${escaped}\\b`, 'gi');
+    const entitySlug = slugify(ref);
+    const wikilink = `[[projects/${projectSlug}/${entitySlug}|${ref}]]`;
+    resolved = resolved.replace(re, (match, offset) => {
+      // Avoid double-linking: skip if this match is inside an existing [[wikilink]]
+      const before = resolved.slice(0, offset);
+      const openCount = (before.match(/\[\[/g) ?? []).length;
+      const closeCount = (before.match(/\]\]/g) ?? []).length;
+      if (openCount > closeCount) return match;
+      return wikilink;
+    });
   }
   return resolved;
 }

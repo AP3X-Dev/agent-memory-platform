@@ -2,7 +2,7 @@
 // Tests for WikiCompiler, slugify, and resolveInlineLinks.
 
 import { describe, it, expect, vi } from 'vitest';
-import { slugify, WikiCompiler } from '../compile.js';
+import { slugify, resolveInlineLinks, WikiCompiler } from '../compile.js';
 import type { Driver, Session, Result } from 'neo4j-driver';
 
 // slugify tests
@@ -54,6 +54,64 @@ describe('slugify', () => {
 
   it('handles mixed case and numbers', () => {
     expect(slugify('MyComponent2Test')).toBe('mycomponent2test');
+  });
+});
+
+// resolveInlineLinks tests
+
+describe('resolveInlineLinks', () => {
+  it('links a single mention of an entity', () => {
+    const result = resolveInlineLinks('Uses Redis for caching', ['Redis'], 'my-proj');
+    expect(result).toBe('Uses [[projects/my-proj/redis|Redis]] for caching');
+  });
+
+  it('links all occurrences of the same entity (global)', () => {
+    const text = 'Redis handles caching. Redis also handles pub/sub. Redis is fast.';
+    const result = resolveInlineLinks(text, ['Redis'], 'my-proj');
+    const link = '[[projects/my-proj/redis|Redis]]';
+    expect(result).toBe(`${link} handles caching. ${link} also handles pub/sub. ${link} is fast.`);
+  });
+
+  it('does not double-link an entity already inside a [[wikilink]]', () => {
+    const text = 'See [[projects/my-proj/redis|Redis]] and also Redis is great';
+    const result = resolveInlineLinks(text, ['Redis'], 'my-proj');
+    // The first "Redis" is inside [[...]] — must stay untouched. The second gets linked.
+    expect(result).toBe('See [[projects/my-proj/redis|Redis]] and also [[projects/my-proj/redis|Redis]] is great');
+  });
+
+  it('handles multiple different entities each appearing multiple times', () => {
+    const text = 'Neo4j stores data. Redis caches it. Neo4j is a graph DB. Redis is fast.';
+    const result = resolveInlineLinks(text, ['Neo4j', 'Redis'], 'proj');
+    expect(result).toContain('[[projects/proj/neo4j|Neo4j]] stores data');
+    expect(result).toContain('[[projects/proj/redis|Redis]] caches it');
+    expect(result).toContain('[[projects/proj/neo4j|Neo4j]] is a graph DB');
+    expect(result).toContain('[[projects/proj/redis|Redis]] is fast');
+  });
+
+  it('is case-insensitive when matching', () => {
+    const text = 'redis handles caching. REDIS also handles pub/sub.';
+    const result = resolveInlineLinks(text, ['Redis'], 'my-proj');
+    const link = '[[projects/my-proj/redis|Redis]]';
+    expect(result).toBe(`${link} handles caching. ${link} also handles pub/sub.`);
+  });
+
+  it('returns text unchanged when no entity refs match', () => {
+    const text = 'Nothing to link here.';
+    const result = resolveInlineLinks(text, ['Redis'], 'proj');
+    expect(result).toBe('Nothing to link here.');
+  });
+
+  it('handles empty entity refs array', () => {
+    const text = 'Some text about Redis.';
+    const result = resolveInlineLinks(text, [], 'proj');
+    expect(result).toBe('Some text about Redis.');
+  });
+
+  it('prefers longer entity names over shorter ones', () => {
+    const text = 'The auth module handles authentication.';
+    const result = resolveInlineLinks(text, ['auth', 'auth module'], 'proj');
+    // "auth module" is longer, should be linked first
+    expect(result).toContain('[[projects/proj/auth-module|auth module]]');
   });
 });
 
