@@ -58,13 +58,11 @@ async function setupTestWiki(): Promise<void> {
 describe('WikiViewer', () => {
   beforeAll(async () => {
     await setupTestWiki();
-    server = startWikiViewer({
+    server = await startWikiViewer({
       port: TEST_PORT,
       wiki_dir: testDir,
       project_tag: 'project:test',
     });
-    // Give the server a moment to bind
-    await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
   afterAll(async () => {
@@ -280,5 +278,71 @@ describe('confineToDir', () => {
 
   it('rejects path that escapes after multiple levels', () => {
     expect(confineToDir(baseDir, 'a/b/c/../../../../etc/passwd')).toBeNull();
+  });
+});
+
+// ─── startWikiViewer startup error handling ─────────────────────────────────
+
+describe('startWikiViewer startup', () => {
+  const startupTestDir = join(tmpdir(), `amp-wiki-startup-test-${Date.now()}`);
+  const STARTUP_PORT = 39844;
+
+  beforeAll(async () => {
+    await mkdir(startupTestDir, { recursive: true });
+    await writeFile(
+      join(startupTestDir, '_index.md'),
+      '---\ntitle: Test\n---\n\n# Test\n',
+      'utf-8',
+    );
+  });
+
+  afterAll(async () => {
+    await rm(startupTestDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('resolves with a Server on successful bind', async () => {
+    const srv = await startWikiViewer({
+      port: STARTUP_PORT,
+      wiki_dir: startupTestDir,
+      project_tag: 'project:test',
+    });
+    try {
+      expect(srv).toBeDefined();
+      expect(srv.listening).toBe(true);
+    } finally {
+      await new Promise<void>((resolve) => srv.close(() => resolve()));
+    }
+  });
+
+  it('rejects with EADDRINUSE when port is already bound', async () => {
+    // Bind the port with a first server
+    const first = await startWikiViewer({
+      port: STARTUP_PORT,
+      wiki_dir: startupTestDir,
+      project_tag: 'project:test',
+    });
+    try {
+      // Attempt to bind the same port — should reject
+      await expect(
+        startWikiViewer({
+          port: STARTUP_PORT,
+          wiki_dir: startupTestDir,
+          project_tag: 'project:test',
+        }),
+      ).rejects.toThrow(/EADDRINUSE/);
+    } finally {
+      await new Promise<void>((resolve) => first.close(() => resolve()));
+    }
+  });
+
+  it('returned server can be closed cleanly', async () => {
+    const srv = await startWikiViewer({
+      port: STARTUP_PORT,
+      wiki_dir: startupTestDir,
+      project_tag: 'project:test',
+    });
+    expect(srv.listening).toBe(true);
+    await new Promise<void>((resolve) => srv.close(() => resolve()));
+    expect(srv.listening).toBe(false);
   });
 });

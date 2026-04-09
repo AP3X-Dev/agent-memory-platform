@@ -356,12 +356,11 @@ async function setupXssTestWiki(): Promise<void> {
 describe('WikiViewer XSS integration', () => {
   beforeAll(async () => {
     await setupXssTestWiki();
-    xssServer = startWikiViewer({
+    xssServer = await startWikiViewer({
       port: XSS_TEST_PORT,
       wiki_dir: xssTestDir,
       project_tag: 'project:test',
     });
-    await new Promise((resolve) => setTimeout(resolve, 200));
   });
 
   afterAll(async () => {

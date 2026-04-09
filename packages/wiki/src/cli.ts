@@ -93,7 +93,7 @@ Options:
       }
 
       case 'serve': {
-        startWikiViewer({
+        await startWikiViewer({
           port,
           wiki_dir: outputDir,
           project_tag: 'all',
@@ -134,7 +134,7 @@ Options:
 
         console.error(`[wiki-cli] Compiled: ${result.projects_compiled} projects, ${result.articles_compiled} articles`);
 
-        startWikiViewer({
+        await startWikiViewer({
           port,
           wiki_dir: outputDir,
           project_tag: 'all',

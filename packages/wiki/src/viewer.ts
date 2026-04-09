@@ -617,7 +617,7 @@ async function handleSearch(wikiDir: string, query: string, res: ServerResponse)
 
 // ─── Server ─────────────────────────────────────────────────────────────────
 
-export function startWikiViewer(config: ViewerConfig): ReturnType<typeof createServer> {
+export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof createServer>> {
   const { port, wiki_dir } = config;
 
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
@@ -671,9 +671,21 @@ export function startWikiViewer(config: ViewerConfig): ReturnType<typeof createS
     }
   });
 
-  server.listen(port, () => {
-    console.error(`[wiki-viewer] Serving wiki from ${wiki_dir} on http://localhost:${port}`);
-  });
+  return new Promise((resolve, reject) => {
+    const onError = (err: Error & { code?: string }) => {
+      const code = err.code ?? 'UNKNOWN';
+      const msg = `[wiki-viewer] Failed to start on port ${port}: ${code} — ${err.message}`;
+      reject(new Error(msg, { cause: err }));
+    };
 
-  return server;
+    server.once('error', onError);
+
+    server.listen(port, () => {
+      // Remove the one-shot error listener to avoid a leak — runtime errors
+      // after successful startup should be handled by the caller if needed.
+      server.removeListener('error', onError);
+      console.error(`[wiki-viewer] Serving wiki from ${wiki_dir} on http://localhost:${port}`);
+      resolve(server);
+    });
+  });
 }
