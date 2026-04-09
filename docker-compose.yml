@@ -1,15 +1,11 @@
-services:
-  redis:
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:-amp-redis-2026}
-    restart: unless-stopped
+# AMP infrastructure — Neo4j only.
+# Redis is shared from ~/infra (cerebro-redis).
+# MCP server runs via systemd (amp-mcp.service), not Docker.
 
+services:
   neo4j:
-    image: neo4j:5.26-community
+    image: neo4j:5-community
+    container_name: amp-neo4j
     ports:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"
@@ -17,7 +13,7 @@ services:
       - neo4j_data:/data
       - neo4j_plugins:/plugins
     environment:
-      NEO4J_AUTH: neo4j/${AMP_NEO4J_PASSWORD}
+      NEO4J_AUTH: neo4j/amp-memory-2026
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
       NEO4J_dbms_security_procedures_unrestricted: "apoc.*,gds.*"
       NEO4J_dbms_memory_heap_initial__size: "256m"
@@ -25,28 +21,10 @@ services:
       NEO4J_dbms_memory_pagecache_size: "256m"
     restart: unless-stopped
 
-  amp-service:
-    build: .
-    ports:
-      - "3101:3101"
-    environment:
-      NEO4J_URI: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: ${AMP_NEO4J_PASSWORD}
-      REDIS_URL: redis://redis:6379
-      EMBEDDING_PROVIDER: openai
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
-      AMP_EXPORT_PATH: /data/amp-exports
-      MCP_PORT: "3101"
-    volumes:
-      - amp_exports:/data/amp-exports
-    depends_on:
-      - redis
-      - neo4j
-    restart: unless-stopped
-
 volumes:
-  redis_data:
   neo4j_data:
+    name: amp_neo4j_data
+    external: true
   neo4j_plugins:
-  amp_exports:
+    name: amp_neo4j_plugins
+    external: true
