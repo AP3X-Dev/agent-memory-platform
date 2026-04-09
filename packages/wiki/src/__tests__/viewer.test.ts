@@ -4,7 +4,7 @@
 // the logic for unit testing. Since they are private, we test via the public API.
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { startWikiViewer, confineToDir } from '../viewer.js';
+import { startWikiViewer, confineToDir, resetViewerCache } from '../viewer.js';
 import { writeFile, mkdir, rm } from 'node:fs/promises';
 import { join, sep } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -69,6 +69,7 @@ describe('WikiViewer', () => {
     if (server) {
       await new Promise<void>((resolve) => server!.close(() => resolve()));
     }
+    resetViewerCache();
     await rm(testDir, { recursive: true, force: true }).catch(() => {});
   });
 
@@ -229,6 +230,156 @@ describe('WikiViewer', () => {
   });
 });
 
+// ─── Cache behavior tests ─────────────────────────────────────────────────────
+
+describe('WikiViewer cache', () => {
+  const cacheTestDir = join(tmpdir(), `amp-wiki-cache-test-${Date.now()}`);
+  let cacheServer: Server | null = null;
+  const CACHE_PORT = 39743;
+
+  async function setupCacheTestWiki(): Promise<void> {
+    await mkdir(join(cacheTestDir, 'projects', 'alpha'), { recursive: true });
+    await mkdir(join(cacheTestDir, 'library'), { recursive: true });
+    await mkdir(join(cacheTestDir, 'topics'), { recursive: true });
+
+    await writeFile(
+      join(cacheTestDir, '_index.md'),
+      '---\ntitle: Cache Test\n---\n\n# Cache Test Portal\n\nWelcome.\n',
+      'utf-8',
+    );
+    await writeFile(
+      join(cacheTestDir, 'projects', 'alpha', '_index.md'),
+      '---\nproject: alpha\n---\n\n# Alpha Project\n\nAlpha content.\n',
+      'utf-8',
+    );
+    await writeFile(
+      join(cacheTestDir, 'library', '_index.md'),
+      '---\ntitle: Library\n---\n\n# Library\n\nNo sources.\n',
+      'utf-8',
+    );
+    await writeFile(
+      join(cacheTestDir, 'topics', '_index.md'),
+      '---\ntitle: Topics\n---\n\n# Topics\n\nNo topics.\n',
+      'utf-8',
+    );
+  }
+
+  beforeAll(async () => {
+    resetViewerCache();
+    await setupCacheTestWiki();
+    cacheServer = await startWikiViewer({
+      port: CACHE_PORT,
+      wiki_dir: cacheTestDir,
+      project_tag: 'project:cache-test',
+    });
+    // Give cache time to build
+    await new Promise((resolve) => setTimeout(resolve, 200));
+  });
+
+  afterAll(async () => {
+    if (cacheServer) {
+      await new Promise<void>((resolve) => cacheServer!.close(() => resolve()));
+    }
+    resetViewerCache();
+    await rm(cacheTestDir, { recursive: true, force: true }).catch(() => {});
+  });
+
+  it('sidebar is consistent across multiple requests (cached)', async () => {
+    const res1 = await fetch(`http://localhost:${CACHE_PORT}/wiki/_index`);
+    const html1 = await res1.text();
+
+    const res2 = await fetch(`http://localhost:${CACHE_PORT}/wiki/_index`);
+    const html2 = await res2.text();
+
+    const sidebarRegex = /<aside class="sidebar">([\s\S]*?)<\/aside>/;
+    const sidebar1 = html1.match(sidebarRegex)?.[1];
+    const sidebar2 = html2.match(sidebarRegex)?.[1];
+
+    expect(sidebar1).toBeTruthy();
+    expect(sidebar1).toBe(sidebar2);
+  });
+
+  it('search returns results from cached index without rescanning', async () => {
+    const res = await fetch(`http://localhost:${CACHE_PORT}/search?q=Alpha`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Alpha');
+    expect(html).toContain('1 result(s)');
+  });
+
+  it('POST /api/refresh rebuilds the cache', async () => {
+    // Add a new file
+    await writeFile(
+      join(cacheTestDir, 'projects', 'alpha', 'new-entity.md'),
+      '---\nentity: new-entity\n---\n\n# New Entity\n\nFreshly added content for refresh test.\n',
+      'utf-8',
+    );
+
+    // Search should NOT find it yet (old cache)
+    const resBefore = await fetch(`http://localhost:${CACHE_PORT}/search?q=Freshly+added`);
+    const htmlBefore = await resBefore.text();
+    expect(htmlBefore).toContain('No results found');
+
+    // Trigger manual refresh
+    const refreshRes = await fetch(`http://localhost:${CACHE_PORT}/api/refresh`, { method: 'POST' });
+    expect(refreshRes.status).toBe(200);
+    const refreshJson = await refreshRes.json();
+    expect(refreshJson.ok).toBe(true);
+    expect(refreshJson.files).toBeGreaterThan(0);
+
+    // Now search should find the new content
+    const resAfter = await fetch(`http://localhost:${CACHE_PORT}/search?q=Freshly+added`);
+    const htmlAfter = await resAfter.text();
+    expect(htmlAfter).toContain('New Entity');
+    expect(htmlAfter).toContain('1 result(s)');
+  });
+
+  it('POST /api/refresh updates the sidebar when new projects appear', async () => {
+    // Create a new project directory
+    await mkdir(join(cacheTestDir, 'projects', 'beta'), { recursive: true });
+    await writeFile(
+      join(cacheTestDir, 'projects', 'beta', '_index.md'),
+      '---\nproject: beta\n---\n\n# Beta Project\n\nBeta content.\n',
+      'utf-8',
+    );
+
+    // Sidebar should not have beta yet
+    const resBefore = await fetch(`http://localhost:${CACHE_PORT}/wiki/_index`);
+    const htmlBefore = await resBefore.text();
+    expect(htmlBefore).not.toContain('beta');
+
+    // Refresh cache
+    await fetch(`http://localhost:${CACHE_PORT}/api/refresh`, { method: 'POST' });
+
+    // Now sidebar should include beta
+    const resAfter = await fetch(`http://localhost:${CACHE_PORT}/wiki/_index`);
+    const htmlAfter = await resAfter.text();
+    expect(htmlAfter).toContain('beta');
+  });
+
+  it('cache auto-rebuilds when markdown files change (fs.watch)', async () => {
+    // Write a new file and wait for debounced rebuild
+    await writeFile(
+      join(cacheTestDir, 'projects', 'alpha', 'watched-entity.md'),
+      '---\nentity: watched\n---\n\n# Watched Entity\n\nContent added by fs watcher test.\n',
+      'utf-8',
+    );
+
+    // Wait for debounce (500ms) + rebuild time
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+
+    // Search should find the new content after auto-rebuild
+    const res = await fetch(`http://localhost:${CACHE_PORT}/search?q=watcher+test`);
+    const html = await res.text();
+    expect(html).toContain('Watched Entity');
+  });
+
+  it('GET /api/refresh returns 404 (must be POST)', async () => {
+    const res = await fetch(`http://localhost:${CACHE_PORT}/api/refresh`);
+    expect(res.status).toBe(404);
+  });
+});
+
 // ─── confineToDir unit tests ──────────────────────────────────────────────────
 
 describe('confineToDir', () => {
@@ -297,6 +448,7 @@ describe('startWikiViewer startup', () => {
   });
 
   afterAll(async () => {
+    resetViewerCache();
     await rm(startupTestDir, { recursive: true, force: true }).catch(() => {});
   });
 

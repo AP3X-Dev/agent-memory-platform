@@ -33,7 +33,7 @@ export type {
 export { WikiCompiler, slugify } from './compile.js';
 export { IngestionService, initWikiSchema } from './ingest.js';
 export { WikiLinter } from './lint.js';
-export { startWikiViewer, escapeHtml, sanitizeHtml } from './viewer.js';
+export { startWikiViewer, escapeHtml, sanitizeHtml, resetViewerCache } from './viewer.js';
 
 // Query functions
 export {

@@ -1,9 +1,11 @@
 // packages/wiki/src/viewer.ts
 // Self-hosted wiki viewer with subdirectory routing, global sidebar, and dark theme.
+// Caches sidebar HTML and search index at startup; auto-rebuilds on file changes.
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, extname, basename, relative, resolve, sep } from 'node:path';
+import { watch, type FSWatcher } from 'node:fs';
+import { join, relative, resolve, sep } from 'node:path';
 import { Marked } from 'marked';
 import type { ViewerConfig } from './types.js';
 
@@ -371,10 +373,117 @@ async function discoverMarkdownFiles(rootDir: string): Promise<FileEntry[]> {
   return entries;
 }
 
+// ─── Wiki cache ────────────────────────────────────────────────────────────
+
+interface SearchEntry {
+  absPath: string;
+  relPath: string;
+  content: string;
+  title: string;
+}
+
+interface WikiCache {
+  /** Pre-built global sidebar HTML */
+  sidebarHtml: string;
+  /** Search index: wiki path (no .md extension) -> file content + metadata */
+  searchIndex: Map<string, SearchEntry>;
+  /** Absolute wiki directory this cache was built from */
+  wikiDir: string;
+}
+
+let wikiCache: WikiCache | null = null;
+let cacheWatcher: FSWatcher | null = null;
+let cacheRebuildTimer: ReturnType<typeof setTimeout> | null = null;
+
+const DEBOUNCE_MS = 500;
+
+/** Build (or rebuild) sidebar HTML and search index from disk. */
+async function buildCache(wikiDir: string): Promise<WikiCache> {
+  const files = await discoverMarkdownFiles(wikiDir);
+
+  // Build sidebar HTML (pure computation, no I/O)
+  const sidebarHtml = buildSidebarFromFiles(files);
+
+  // Build search index by reading all file contents
+  const searchIndex = new Map<string, SearchEntry>();
+  for (const file of files) {
+    try {
+      const content = await readFile(file.absPath, 'utf-8');
+      const wikiPath = file.relPath.replace(/\.md$/, '');
+      const titleMatch = content.match(/^# (.+)$/m);
+      const title = titleMatch ? titleMatch[1] : wikiPath.split('/').pop() ?? wikiPath;
+      searchIndex.set(wikiPath, { absPath: file.absPath, relPath: file.relPath, content, title });
+    } catch (err) {
+      console.error('[wiki-viewer] Failed to read file for search index (skipping):', file.absPath, err instanceof Error ? err.message : err);
+    }
+  }
+
+  return { sidebarHtml, searchIndex, wikiDir };
+}
+
+/** Invalidate the cache and schedule a debounced rebuild. */
+function scheduleCacheRebuild(wikiDir: string): void {
+  if (cacheRebuildTimer) clearTimeout(cacheRebuildTimer);
+  cacheRebuildTimer = setTimeout(async () => {
+    try {
+      wikiCache = await buildCache(wikiDir);
+      console.error('[wiki-viewer] Cache rebuilt after file change');
+    } catch (err) {
+      console.error('[wiki-viewer] Cache rebuild failed:', err instanceof Error ? err.message : err);
+    }
+  }, DEBOUNCE_MS);
+}
+
+/** Start watching the wiki directory for changes. */
+function startWatching(wikiDir: string): void {
+  stopWatching();
+  try {
+    cacheWatcher = watch(wikiDir, { recursive: true }, (_eventType, filename) => {
+      // Only rebuild for markdown file changes
+      if (filename && filename.endsWith('.md')) {
+        scheduleCacheRebuild(wikiDir);
+      }
+    });
+    cacheWatcher.on('error', (err) => {
+      console.error('[wiki-viewer] File watcher error:', err instanceof Error ? err.message : err);
+    });
+  } catch (err) {
+    console.error('[wiki-viewer] Failed to start file watcher (cache will require manual refresh):', err instanceof Error ? err.message : err);
+  }
+}
+
+/** Stop watching and cancel any pending rebuild timer. */
+function stopWatching(): void {
+  if (cacheWatcher) {
+    cacheWatcher.close();
+    cacheWatcher = null;
+  }
+  if (cacheRebuildTimer) {
+    clearTimeout(cacheRebuildTimer);
+    cacheRebuildTimer = null;
+  }
+}
+
+/** Get the current cache, building it on first call or when wikiDir changes. */
+async function getCache(wikiDir: string): Promise<WikiCache> {
+  if (wikiCache && wikiCache.wikiDir === wikiDir) return wikiCache;
+  wikiCache = await buildCache(wikiDir);
+  return wikiCache;
+}
+
+/**
+ * Reset the module-level cache and stop the file watcher.
+ * Exported for testing cleanup between test suites.
+ */
+export function resetViewerCache(): void {
+  wikiCache = null;
+  stopWatching();
+}
+
 // ─── Global sidebar builder ─────────────────────────────────────────────────
 
-async function buildGlobalSidebar(wikiDir: string): Promise<string> {
-  const files = await discoverMarkdownFiles(wikiDir);
+/** Build sidebar HTML from a pre-discovered file list (no disk I/O). */
+function buildSidebarFromFiles(files: FileEntry[]): string {
   const lines: string[] = [];
 
   // Portal
@@ -419,6 +528,12 @@ async function buildGlobalSidebar(wikiDir: string): Promise<string> {
   }
 
   return lines.join('\n');
+}
+
+/** Get cached sidebar HTML, building the cache on first call. */
+async function getCachedSidebar(wikiDir: string): Promise<string> {
+  const cache = await getCache(wikiDir);
+  return cache.sidebarHtml;
 }
 
 // ─── Page-level sidebar (frontmatter + TOC) ─────────────────────────────────
@@ -528,8 +643,8 @@ async function handleWikiPage(wikiDir: string, slugPath: string, res: ServerResp
 
   const content = await readFile(filePath, 'utf-8');
 
-  // Build sidebar: global nav + page-level metadata/TOC
-  const globalNav = await buildGlobalSidebar(wikiDir);
+  // Build sidebar: cached global nav + page-level metadata/TOC
+  const globalNav = await getCachedSidebar(wikiDir);
   const pageSidebar = buildPageSidebar(content);
   const fullSidebar = globalNav + (pageSidebar ? '\n<hr style="border-color: var(--border); margin: 0.75rem 0;">\n' + pageSidebar : '');
 
@@ -571,27 +686,20 @@ async function handleSearch(wikiDir: string, query: string, res: ServerResponse)
     return;
   }
 
-  // Full-text search over all markdown files recursively
+  // Search over cached index (no disk I/O per request)
+  const cache = await getCache(wikiDir);
   const results: Array<{ wikiPath: string; title: string; snippet: string }> = [];
   const queryLower = query.toLowerCase();
 
-  const files = await discoverMarkdownFiles(wikiDir);
-  for (const file of files) {
-    const content = await readFile(file.absPath, 'utf-8');
-    if (content.toLowerCase().includes(queryLower)) {
-      // Derive wiki URL path from relative path: "projects/mars-fps/enemy.md" -> "projects/mars-fps/enemy"
-      const wikiPath = file.relPath.replace(/\.md$/, '');
-
-      const titleMatch = content.match(/^# (.+)$/m);
-      const title = titleMatch ? titleMatch[1] : wikiPath.split('/').pop() ?? wikiPath;
-
+  for (const [wikiPath, entry] of cache.searchIndex) {
+    if (entry.content.toLowerCase().includes(queryLower)) {
       // Extract snippet around match
-      const idx = content.toLowerCase().indexOf(queryLower);
+      const idx = entry.content.toLowerCase().indexOf(queryLower);
       const start = Math.max(0, idx - 80);
-      const end = Math.min(content.length, idx + query.length + 80);
-      const snippet = content.slice(start, end).replace(/\n/g, ' ').trim();
+      const end = Math.min(entry.content.length, idx + query.length + 80);
+      const snippet = entry.content.slice(start, end).replace(/\n/g, ' ').trim();
 
-      results.push({ wikiPath, title, snippet });
+      results.push({ wikiPath, title: entry.title, snippet });
     }
   }
 
@@ -620,6 +728,20 @@ async function handleSearch(wikiDir: string, query: string, res: ServerResponse)
 export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof createServer>> {
   const { port, wiki_dir } = config;
 
+  // Pre-build the cache eagerly on startup (non-blocking — handlers will
+  // await getCache() which returns instantly once this resolves)
+  buildCache(wiki_dir)
+    .then((cache) => {
+      wikiCache = cache;
+      console.error('[wiki-viewer] Initial cache built');
+    })
+    .catch((err) => {
+      console.error('[wiki-viewer] Initial cache build failed (will retry on first request):', err instanceof Error ? err.message : err);
+    });
+
+  // Watch for file changes to auto-invalidate the cache
+  startWatching(wiki_dir);
+
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     try {
       const url = new URL(req.url ?? '/', `http://localhost:${port}`);
@@ -629,6 +751,17 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
         // Redirect root to portal
         res.writeHead(302, { Location: '/wiki/_index' });
         res.end();
+      } else if (path === '/api/refresh' && req.method === 'POST') {
+        // Manual cache refresh endpoint
+        try {
+          wikiCache = await buildCache(wiki_dir);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: true, files: wikiCache.searchIndex.size }));
+        } catch (err) {
+          console.error('[wiki-viewer] Manual refresh failed:', err instanceof Error ? err.message : err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : 'unknown' }));
+        }
       } else if (path.startsWith('/wiki/')) {
         // Extract everything after /wiki/ as the slug path
         const slugPath = decodeURIComponent(path.slice(6)).replace(/\/$/, '');
@@ -669,6 +802,11 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
         res.end('Internal Server Error');
       }
     }
+  });
+
+  // Clean up watcher when server closes
+  server.on('close', () => {
+    stopWatching();
   });
 
   return new Promise((resolve, reject) => {
