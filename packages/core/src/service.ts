@@ -7,13 +7,15 @@ import type {
   EpisodeInput,
   EpisodicNode,
   SemanticNode,
+  FactNode,
+  TemporalOptions,
   Signal,
   StreamSignal,
   EmbeddingProvider,
   AMPConfig,
   MemoryBlock,
 } from './types.js';
-import { rankMemories, budgetTokens, estimateTokens } from './ranking.js';
+import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking.js';
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
 
@@ -42,6 +44,10 @@ export interface RedisLayer {
   };
 }
 
+export interface FactLayer {
+  getActive(entityName: string, options?: TemporalOptions): Promise<FactNode[]>;
+}
+
 export interface Neo4jLayer {
   episodic: {
     create(node: EpisodicNode): Promise<string>;
@@ -54,6 +60,7 @@ export interface Neo4jLayer {
     byScope(scope: { entities?: string[]; tags?: string[]; limit: number }): Promise<SemanticNode[]>;
     byVector(embedding: number[], limit: number): Promise<Array<SemanticNode & { score: number }>>;
   };
+  fact?: FactLayer;
 }
 
 // ─── AMPService ──────────────────────────────────────────────────────────────
@@ -101,7 +108,7 @@ export class AMPService {
       workingBlocks = blockResults[1].filter((b) => b.content.length > 0);
     }
 
-    // 3. Cache miss → query Neo4j
+    // 3. Cache miss → query Neo4j (semantics + vector)
     const [byScope, byVector] = await Promise.all([
       this.neo4j.query.byScope({
         entities: scope.entities,
@@ -111,7 +118,25 @@ export class AMPService {
       this._vectorSearch(scope.task, 20),
     ]);
 
-    // Merge and de-duplicate by id
+    // 3b. Query facts if fact layer is available
+    let facts: FactNode[] = [];
+    if (this.neo4j.fact && scope.entities && scope.entities.length > 0) {
+      const factResults = await Promise.all(
+        scope.entities.map((e) => this.neo4j.fact!.getActive(e, scope.temporal)),
+      );
+      const seenFactIds = new Set<string>();
+      for (const entityFacts of factResults) {
+        for (const fact of entityFacts) {
+          if (!seenFactIds.has(fact.id)) {
+            seenFactIds.add(fact.id);
+            facts.push(fact);
+          }
+        }
+      }
+      facts = rankFacts(facts);
+    }
+
+    // Merge and de-duplicate semantics by id
     const seen = new Set<string>();
     const merged: Array<SemanticNode & { relevanceScore?: number }> = [];
     for (const node of byScope) {
@@ -130,27 +155,33 @@ export class AMPService {
     // 4. Rank
     const ranked = rankMemories(merged);
 
-    // 5. Budget tokens (blocks are NOT subject to token budgeting)
+    // 5. Budget tokens (blocks and facts are NOT subject to token budgeting)
     const withTokens = ranked.map((m) => ({
       ...m,
       tokens: estimateTokens(m.content),
     }));
     const budgeted = budgetTokens(withTokens, maxTokens);
 
-    // 6. Render markdown with blocks prepended
+    // 6. Render markdown with blocks and facts prepended
     const blocksMarkdown = renderBlocksMarkdown(coreBlocks, workingBlocks);
+    const factsMarkdown = renderFactsMarkdown(facts, scope.temporal);
     const archiveMarkdown = renderMarkdown(scope.task, budgeted);
-    const markdown = blocksMarkdown
-      ? blocksMarkdown + '\n' + archiveMarkdown
-      : archiveMarkdown;
+
+    const sections = [blocksMarkdown, factsMarkdown, archiveMarkdown]
+      .filter((s) => s.length > 0);
+    const markdown = sections.join('\n');
 
     const blockTokens = estimateTokens(blocksMarkdown);
+    const factTokens = estimateTokens(factsMarkdown);
     const archiveTokens = budgeted.reduce((sum, m) => sum + m.tokens, 0);
-    const sources = budgeted.map((m) => m.id);
+    const sources = [
+      ...facts.map((f) => f.id),
+      ...budgeted.map((m) => m.id),
+    ];
 
     const ctx: MemoryContext = {
       markdown,
-      tokens: blockTokens + archiveTokens,
+      tokens: blockTokens + factTokens + archiveTokens,
       sources,
       assembled_at: new Date().toISOString(),
     };
@@ -277,6 +308,7 @@ function hashScope(scope: LoadScope): string {
     entities: (scope.entities ?? []).slice().sort(),
     tags: (scope.tags ?? []).slice().sort(),
     max_tokens: scope.max_tokens ?? 4096,
+    temporal: scope.temporal ?? null,
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
 }
@@ -306,6 +338,36 @@ function renderBlocksMarkdown(coreBlocks: MemoryBlock[], workingBlocks: MemoryBl
     }
   }
 
+  return lines.join('\n');
+}
+
+function renderFactsMarkdown(facts: FactNode[], temporal?: TemporalOptions): string {
+  if (facts.length === 0) return '';
+
+  const lines: string[] = [];
+  const isEvolution = temporal?.time_mode === 'evolution';
+
+  if (isEvolution) {
+    lines.push('## Fact Timeline');
+    lines.push('');
+    for (const f of facts) {
+      const status = f.status !== 'active' ? ` [${f.status}]` : '';
+      const validRange = f.invalid_at
+        ? `${f.valid_at} → ${f.invalid_at}`
+        : `${f.valid_at} → present`;
+      lines.push(`- **${f.subject}** ${f.predicate} **${f.object}**${status} (${validRange})`);
+    }
+  } else {
+    lines.push('## Current Facts');
+    lines.push('');
+    for (const f of facts) {
+      const since = f.valid_at.split('T')[0];
+      const status = f.status === 'disputed' ? ' [disputed]' : '';
+      lines.push(`- **${f.subject}** ${f.predicate} **${f.object}**${status} (confidence: ${f.confidence.toFixed(2)}, since: ${since})`);
+    }
+  }
+
+  lines.push('');
   return lines.join('\n');
 }
 

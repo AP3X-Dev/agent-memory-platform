@@ -1,5 +1,5 @@
 // packages/core/src/ranking.ts
-import type { SemanticNode } from './types.js';
+import type { SemanticNode, FactNode } from './types.js';
 import { RECENCY_DECAY_DAYS } from './types.js';
 
 export function rankMemories(
@@ -36,4 +36,25 @@ export function budgetTokens<T extends { tokens: number }>(items: T[], maxTokens
 export function estimateTokens(text: string): number {
   // ~4 chars per token
   return Math.ceil(text.length / 4);
+}
+
+/**
+ * Rank facts by confidence, recency (using valid_at), and status.
+ * Active facts get a base boost. Disputed facts get a penalty.
+ */
+export function rankFacts(
+  facts: FactNode[],
+  now: Date = new Date(),
+): FactNode[] {
+  const scored = facts.map((fact) => {
+    const ageDays =
+      (now.getTime() - new Date(fact.valid_at).getTime()) / (1000 * 60 * 60 * 24);
+    const recencyScore = Math.exp(-ageDays / (RECENCY_DECAY_DAYS * 4)); // slower decay for facts
+    const statusMultiplier = fact.status === 'disputed' ? 0.5 : 1.0;
+    const score = fact.confidence * recencyScore * statusMultiplier;
+    return { fact, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((s) => s.fact);
 }

@@ -1,7 +1,7 @@
 // packages/core/src/index.ts
 export * from './types.js';
 export { OpenAIEmbedding } from './embedding.js';
-export { rankMemories, budgetTokens, estimateTokens } from './ranking.js';
+export { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking.js';
 export { AMPService } from './service.js';
 export type { RedisLayer, Neo4jLayer, BlocksLayer } from './service.js';
 export { ConsolidationEngine } from './consolidation.js';
