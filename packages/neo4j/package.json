@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "nanoid": "^5.0.0",
     "neo4j-driver": "^5.27.0"
   },
   "devDependencies": {
