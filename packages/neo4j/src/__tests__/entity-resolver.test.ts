@@ -87,7 +87,9 @@ describe('EntityResolver', () => {
   describe('resolveExisting', () => {
     it('returns null when no entity matches', async () => {
       const { driver } = makeDriver([
-        { records: [{ get: () => null }] },
+        { records: [] }, // exact miss
+        { records: [] }, // case-insensitive miss
+        { records: [] }, // alias miss
       ]);
       const resolver = new EntityResolver(driver);
 

@@ -12,13 +12,13 @@ export class FactStore {
   }
 
   async create(fact: FactNode): Promise<string> {
-    // Resolve subject to canonical entity BEFORE the transaction
-    // (EntityResolver manages its own sessions)
-    const resolved = await this.resolver.resolve(fact.subject);
-
     const session = this.driver.session();
     const tx = session.beginTransaction();
     try {
+      // Resolve subject to canonical entity WITHIN the transaction
+      // so entity creation/alias mutation is atomic with fact creation
+      const resolved = await this.resolver.resolve(fact.subject, 'concept', tx);
+
       // Create the Fact node with entity_id for canonical lookup
       await tx.run(
         `CREATE (f:Fact {
@@ -312,14 +312,21 @@ export class FactStore {
   }
 
   async findBySubjectPredicate(subject: string, predicate: string): Promise<FactNode[]> {
+    // Resolve subject to canonical entity_id first — same resolution
+    // path as getActive/timeline/diff to avoid fragmentation
+    const resolved = await this.resolver.resolveExisting(subject);
+    if (!resolved) return []; // No known entity → no facts
+
     const session = this.driver.session();
     try {
       const result = await session.run(
         `MATCH (f:Fact)
-         WHERE toLower(f.subject) = toLower($subject) AND toLower(f.predicate) = toLower($predicate) AND f.status = 'active'
+         WHERE f.entity_id = $entityId
+           AND toLower(f.predicate) = toLower($predicate)
+           AND f.status = 'active'
          RETURN f
          ORDER BY f.valid_at DESC`,
-        { subject, predicate },
+        { entityId: resolved.id, predicate },
       );
       return result.records.map((r) => mapFactNode(r.get('f').properties));
     } finally {
