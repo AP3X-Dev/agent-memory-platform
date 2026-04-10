@@ -3,14 +3,22 @@ dist/
 .env
 *.tsbuildinfo
 
-# AMP data (cold storage exports — user-specific)
+# AMP data (cold storage exports — user-specific memory)
 .amp/
+
+# Compiled wiki output (generated from the knowledge graph — user-specific)
+# The wiki compiler source is at packages/wiki/ (tracked).
+# This directory is the compiled output (not tracked).
+wiki/
 
 # Claude Code state files
 .claude/
 
 # Planning and design docs (internal)
 docs/superpowers/
+docs/competitive-positioning.md
+docs/market-positioning.md
+docs/messaging-sheet.md
 amp-three-tier-architecture.md
 .superpowers/
 docs/prompts/
