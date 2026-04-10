@@ -6,6 +6,7 @@ import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { IndexResult, CodeSearchResult, SymbolNode, SymbolKind } from './types.js';
+import type { CodeWatcher } from './watcher.js';
 
 // ─── Service interfaces (injected) ───────────────────────────────────────────
 
@@ -36,15 +37,18 @@ export interface ISymbolStore {
 let codeIndexer: ICodeIndexer | null = null;
 let codeSearch: ICodeSearch | null = null;
 let symbolStore: ISymbolStore | null = null;
+let codeWatcher: CodeWatcher | null = null;
 
 export function setCodeServiceInstances(services: {
   codeIndexer: ICodeIndexer;
   codeSearch: ICodeSearch;
   symbolStore: ISymbolStore;
+  codeWatcher?: CodeWatcher;
 }): void {
   codeIndexer = services.codeIndexer;
   codeSearch = services.codeSearch;
   symbolStore = services.symbolStore;
+  if (services.codeWatcher) codeWatcher = services.codeWatcher;
 }
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
@@ -55,6 +59,7 @@ export const CODE_TOOL_NAMES = [
   'amp_code_symbols',
   'amp_code_deps',
   'amp_code_context',
+  'amp_code_watch',
 ] as const;
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -234,6 +239,56 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       const ctx = await codeSearch.buildContext(args.task, args.max_tokens);
       const md = codeSearch.renderContextMarkdown(ctx);
       return textContent(md);
+    },
+  ));
+
+  // ─── amp_code_watch ────────────────────────────────────────────────────
+  handles.push(server.tool(
+    'amp_code_watch',
+    'Start, stop, or check status of the background file watcher that automatically re-indexes source files when they change. Keeps the symbol graph fresh without manual re-indexing.',
+    {
+      action: z.enum(['start', 'stop', 'status']).describe('start/stop watching or check status'),
+      path: z.string().max(2000).optional().describe('Root path to watch. Required for start action.'),
+    },
+    { openWorldHint: true } satisfies ToolAnnotations,
+    async (args) => {
+      if (!codeWatcher) throw new Error('Code watcher not initialised');
+
+      switch (args.action) {
+        case 'start': {
+          if (!args.path) throw new Error('path is required for start action');
+
+          // Validate path is within project root
+          const baseDir = path.resolve(process.cwd());
+          const resolved = path.resolve(args.path);
+          if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
+            throw new Error(`Path must be within project root: ${args.path}`);
+          }
+
+          codeWatcher.watch(resolved);
+          return textContent(JSON.stringify({
+            action: 'started',
+            path: resolved,
+            watched_paths: codeWatcher.getWatchedPaths(),
+          }, null, 2));
+        }
+
+        case 'stop': {
+          const paths = codeWatcher.getWatchedPaths();
+          codeWatcher.stopAll();
+          return textContent(JSON.stringify({
+            action: 'stopped',
+            stopped_paths: paths,
+          }, null, 2));
+        }
+
+        case 'status': {
+          return textContent(JSON.stringify({
+            watched_paths: codeWatcher.getWatchedPaths(),
+            pending_reindexes: codeWatcher.getPendingCount(),
+          }, null, 2));
+        }
+      }
     },
   ));
 

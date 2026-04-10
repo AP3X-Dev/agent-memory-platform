@@ -39,6 +39,10 @@ export { CodeSearch } from './search.js';
 // Schema
 export { initCodeSchema } from './schema.js';
 
+// Watcher
+export { CodeWatcher, extractFilePaths } from './watcher.js';
+export type { CodeWatcherOptions, IFileIndexer, ISymbolDeleter } from './watcher.js';
+
 // MCP tools
 export { registerCodeTools, setCodeServiceInstances, CODE_TOOL_NAMES } from './tools.js';
 export type { ICodeIndexer, ICodeSearch, ISymbolStore } from './tools.js';

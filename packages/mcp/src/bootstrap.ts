@@ -32,6 +32,8 @@ import {
   CodeIndexer,
   SymbolStore,
   CodeSearch,
+  CodeWatcher,
+  extractFilePaths,
   setCodeServiceInstances,
 } from '@amp/code';
 import {
@@ -153,7 +155,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     },
   };
 
-  // Inject into MCP tools
+  // Inject into MCP tools (codeIndexer injected later after Code services init)
   setServiceInstances({
     ampService,
     consolidationEngine: consolidationAdapter,
@@ -216,11 +218,41 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const codeIndexerService = new CodeIndexer(driver);
   const symbolStoreService = new SymbolStore(driver);
   const codeSearchService = new CodeSearch(driver, embedding);
+  const codeWatcherService = new CodeWatcher(codeIndexerService, symbolStoreService);
+
+  // Wire post-store hook: re-index files mentioned in stored episode content
+  const originalStore = ampService.store.bind(ampService);
+  ampService.store = async (input) => {
+    const result = await originalStore(input);
+    if (!result.duplicate && input.content) {
+      try {
+        const filePaths = extractFilePaths(input.content);
+        for (const fp of filePaths) {
+          codeWatcherService.queueReindex(fp);
+        }
+      } catch {
+        // Post-store hook failures are non-fatal
+      }
+    }
+    return result;
+  };
 
   setCodeServiceInstances({
     codeIndexer: codeIndexerService,
     codeSearch: codeSearchService,
     symbolStore: symbolStoreService,
+    codeWatcher: codeWatcherService,
+  });
+
+  // Inject codeIndexer into core tools so amp_ingest_codebase can use it
+  setServiceInstances({
+    ampService,
+    consolidationEngine: consolidationAdapter,
+    scopedQuery,
+    bootstrapService: bootstrapGraphService,
+    memoryBlockService: memoryBlockServiceInstance,
+    factStore: factStoreInstance,
+    codeIndexer: codeIndexerService,
   });
 
   console.error('[amp-mcp] Code services initialized');
@@ -270,6 +302,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   return {
     async shutdown() {
+      try { codeWatcherService.stopAll(); } catch { /* best-effort */ }
       try { await redis.quit(); } catch { /* already closed */ }
       try { await driver.close(); } catch { /* already closed */ }
     },
