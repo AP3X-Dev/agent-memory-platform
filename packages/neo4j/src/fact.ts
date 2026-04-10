@@ -8,9 +8,10 @@ export class FactStore {
 
   async create(fact: FactNode): Promise<string> {
     const session = this.driver.session();
+    const tx = session.beginTransaction();
     try {
       // Create the Fact node
-      await session.run(
+      await tx.run(
         `CREATE (f:Fact {
           id: $id,
           subject: $subject,
@@ -45,17 +46,9 @@ export class FactStore {
         },
       );
 
-      // Set embedding if provided
-      if (fact.embedding) {
-        await session.run(
-          `MATCH (f:Fact {id: $id}) SET f.embedding = $embedding`,
-          { id: fact.id, embedding: fact.embedding },
-        );
-      }
-
       // Link SOURCED_FROM → Episodic for each source episode
       for (const episodeId of fact.source_episode_ids) {
-        await session.run(
+        await tx.run(
           `MATCH (f:Fact {id: $factId}), (e:Episodic {id: $episodeId})
            MERGE (f)-[:SOURCED_FROM]->(e)`,
           { factId: fact.id, episodeId },
@@ -63,7 +56,7 @@ export class FactStore {
       }
 
       // Link FACT_ABOUT → Entity (MERGE on subject name)
-      await session.run(
+      await tx.run(
         `MATCH (f:Fact {id: $factId})
          MERGE (e:Entity {name: $subject})
          ON CREATE SET e.id = $entityId, e.type = 'concept', e.created_at = $now
@@ -76,16 +69,28 @@ export class FactStore {
         },
       );
 
+      // Set embedding if provided
+      if (fact.embedding) {
+        await tx.run(
+          `MATCH (f:Fact {id: $id}) SET f.embedding = $embedding`,
+          { id: fact.id, embedding: fact.embedding },
+        );
+      }
+
       // Link SUPERSEDES → old Fact if supersedes_fact_id is set
       if (fact.supersedes_fact_id) {
-        await session.run(
+        await tx.run(
           `MATCH (newF:Fact {id: $newId}), (oldF:Fact {id: $oldId})
            MERGE (newF)-[:SUPERSEDES_FACT]->(oldF)`,
           { newId: fact.id, oldId: fact.supersedes_fact_id },
         );
       }
 
+      await tx.commit();
       return fact.id;
+    } catch (err) {
+      await tx.rollback();
+      throw err;
     } finally {
       await session.close();
     }
@@ -333,21 +338,22 @@ export class FactStore {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function mapFactNode(props: Record<string, unknown>): FactNode {
+  const now = new Date().toISOString();
   return {
-    id: props.id as string,
-    subject: props.subject as string,
-    predicate: props.predicate as string,
-    object: props.object as string,
-    source_episode_ids: (props.source_episode_ids as string[]) ?? [],
-    valid_at: props.valid_at as string,
-    invalid_at: (props.invalid_at as string) ?? null,
-    confidence: props.confidence as number,
-    status: props.status as FactNode['status'],
-    supersedes_fact_id: (props.supersedes_fact_id as string) ?? null,
-    scope: props.scope as FactNode['scope'],
-    tags: (props.tags as string[]) ?? [],
-    created_at: props.created_at as string,
-    updated_at: props.updated_at as string,
-    ...(props.embedding != null && { embedding: props.embedding as number[] }),
+    id: typeof props.id === 'string' ? props.id : '',
+    subject: typeof props.subject === 'string' ? props.subject : '',
+    predicate: typeof props.predicate === 'string' ? props.predicate : '',
+    object: typeof props.object === 'string' ? props.object : '',
+    source_episode_ids: Array.isArray(props.source_episode_ids) ? (props.source_episode_ids as string[]) : [],
+    valid_at: typeof props.valid_at === 'string' ? props.valid_at : now,
+    invalid_at: typeof props.invalid_at === 'string' ? props.invalid_at : null,
+    confidence: typeof props.confidence === 'number' ? props.confidence : 0.5,
+    status: typeof props.status === 'string' ? (props.status as FactNode['status']) : 'tentative',
+    supersedes_fact_id: typeof props.supersedes_fact_id === 'string' ? props.supersedes_fact_id : null,
+    scope: typeof props.scope === 'string' ? (props.scope as FactNode['scope']) : 'project',
+    tags: Array.isArray(props.tags) ? (props.tags as string[]) : [],
+    created_at: typeof props.created_at === 'string' ? props.created_at : now,
+    updated_at: typeof props.updated_at === 'string' ? props.updated_at : now,
+    ...(props.embedding != null && Array.isArray(props.embedding) && { embedding: props.embedding as number[] }),
   };
 }

@@ -155,16 +155,26 @@ export class AMPService {
     // 4. Rank
     const ranked = rankMemories(merged);
 
-    // 5. Budget tokens (blocks and facts are NOT subject to token budgeting)
+    // 5. Budget tokens — reserve 20% for facts, remainder for semantics
+    const factBudget = Math.floor(maxTokens * 0.2);
+    const semanticBudget = maxTokens - factBudget;
+
     const withTokens = ranked.map((m) => ({
       ...m,
       tokens: estimateTokens(m.content),
     }));
-    const budgeted = budgetTokens(withTokens, maxTokens);
+    const budgeted = budgetTokens(withTokens, semanticBudget);
 
-    // 6. Render markdown with blocks and facts prepended
+    // Budget facts: render each fact as a line, keep highest-ranked that fit
+    const factsWithTokens = facts.map((f) => ({
+      ...f,
+      tokens: estimateTokens(`${f.subject} ${f.predicate} ${f.object}`),
+    }));
+    const budgetedFacts = budgetTokens(factsWithTokens, factBudget);
+
+    // 6. Render markdown with blocks and budgeted facts prepended
     const blocksMarkdown = renderBlocksMarkdown(coreBlocks, workingBlocks);
-    const factsMarkdown = renderFactsMarkdown(facts, scope.temporal);
+    const factsMarkdown = renderFactsMarkdown(budgetedFacts, scope.temporal);
     const archiveMarkdown = renderMarkdown(scope.task, budgeted);
 
     const sections = [blocksMarkdown, factsMarkdown, archiveMarkdown]
@@ -175,7 +185,7 @@ export class AMPService {
     const factTokens = estimateTokens(factsMarkdown);
     const archiveTokens = budgeted.reduce((sum, m) => sum + m.tokens, 0);
     const sources = [
-      ...facts.map((f) => f.id),
+      ...budgetedFacts.map((f) => f.id),
       ...budgeted.map((m) => m.id),
     ];
 

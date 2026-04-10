@@ -404,6 +404,103 @@ describe('FactStore', () => {
     expect(found!.object).toBe('Express');
   });
 
+  // ─── edge cases: empty source_episode_ids ─────────────────────────────────
+
+  it('should create a fact with empty source_episode_ids', async () => {
+    if (!neo4jAvailable) return;
+    const fact = makeFactNode('empty-sources', { source_episode_ids: [] });
+    const id = await store.create(fact);
+    createdIds.push(id);
+
+    const fetched = await store.getById(id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.source_episode_ids).toEqual([]);
+  });
+
+  // ─── edge cases: diff with no changes ────────────────────────────────────
+
+  it('diff() with same state at both timestamps returns empty diff', async () => {
+    if (!neo4jAvailable) return;
+    // Create a fact that is active across both timestamps
+    const fact = makeFactNode('diff-stable', {
+      subject: 'auth-module',
+      predicate: 'stable_check',
+      object: 'unchanged',
+      valid_at: '2022-01-01T00:00:00.000Z',
+    });
+    await store.create(fact);
+    createdIds.push(fact.id);
+
+    const d = await store.diff(
+      'auth-module',
+      '2022-06-01T00:00:00.000Z',
+      '2023-06-01T00:00:00.000Z',
+    );
+    // The same fact is active at both times, so it should not appear as added, invalidated, or changed
+    const inAdded = d.added.find((f: { id: string }) => f.id === fact.id);
+    const inInvalidated = d.invalidated.find((f: { id: string }) => f.id === fact.id);
+    const inChanged = d.changed.find((c: { before: { id: string }; after: { id: string } }) => c.before.id === fact.id || c.after.id === fact.id);
+    expect(inAdded).toBeUndefined();
+    expect(inInvalidated).toBeUndefined();
+    expect(inChanged).toBeUndefined();
+  });
+
+  // ─── edge cases: very long strings ────────────────────────────────────────
+
+  it('should handle very long subject/predicate/object strings', async () => {
+    if (!neo4jAvailable) return;
+    const longStr = 'a'.repeat(5000);
+    const fact = makeFactNode('long-strings', {
+      subject: longStr,
+      predicate: longStr,
+      object: longStr,
+    });
+    const id = await store.create(fact);
+    createdIds.push(id);
+
+    const fetched = await store.getById(id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.subject.length).toBe(5000);
+    expect(fetched!.predicate.length).toBe(5000);
+    expect(fetched!.object.length).toBe(5000);
+  });
+
+  // ─── edge cases: getActive evolution with include_invalidated ─────────────
+
+  it('getActive evolution mode without include_invalidated excludes invalidated facts', async () => {
+    if (!neo4jAvailable) return;
+    const activeFact = makeFactNode('evo-mode-active', {
+      subject: 'auth-module',
+      valid_at: '2017-01-01T00:00:00.000Z',
+      status: 'active',
+    });
+    const invalidatedFact = makeFactNode('evo-mode-inv', {
+      subject: 'auth-module',
+      valid_at: '2017-02-01T00:00:00.000Z',
+      status: 'invalidated',
+      invalid_at: '2017-06-01T00:00:00.000Z',
+    });
+    await store.create(activeFact);
+    await store.create(invalidatedFact);
+    createdIds.push(activeFact.id, invalidatedFact.id);
+
+    // Without include_invalidated: should NOT include the invalidated fact
+    const withoutInvalidated = await store.getActive('auth-module', {
+      time_mode: 'evolution',
+      include_invalidated: false,
+    });
+    expect(withoutInvalidated.find((f) => f.id === invalidatedFact.id)).toBeUndefined();
+    expect(withoutInvalidated.find((f) => f.id === activeFact.id)).toBeDefined();
+
+    // With include_invalidated: should include the invalidated fact
+    const withInvalidated = await store.getActive('auth-module', {
+      time_mode: 'evolution',
+      include_invalidated: true,
+    });
+    expect(withInvalidated.find((f) => f.id === invalidatedFact.id)).toBeDefined();
+    expect(withInvalidated.find((f) => f.id === activeFact.id)).toBeDefined();
+  });
+
   // ─── setEmbedding ─────────────────────────────────────────────────────────
 
   it('should set embedding on a fact', async () => {

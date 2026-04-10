@@ -2,6 +2,9 @@
 import type { SemanticNode, FactNode } from './types.js';
 import { RECENCY_DECAY_DAYS } from './types.js';
 
+/** Facts decay 4x slower than semantics — they represent consolidated truth */
+const FACT_DECAY_MULTIPLIER = 4;
+
 export function rankMemories(
   memories: Array<SemanticNode & { relevanceScore?: number }>,
   now: Date = new Date(),
@@ -49,7 +52,7 @@ export function rankFacts(
   const scored = facts.map((fact) => {
     const ageDays =
       (now.getTime() - new Date(fact.valid_at).getTime()) / (1000 * 60 * 60 * 24);
-    const recencyScore = Math.exp(-ageDays / (RECENCY_DECAY_DAYS * 4)); // slower decay for facts
+    const recencyScore = Math.exp(-ageDays / (RECENCY_DECAY_DAYS * FACT_DECAY_MULTIPLIER));
     const statusMultiplier = fact.status === 'disputed' ? 0.5 : 1.0;
     const score = fact.confidence * recencyScore * statusMultiplier;
     return { fact, score };

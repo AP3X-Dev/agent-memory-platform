@@ -80,7 +80,14 @@ export async function extractFacts(
     const raw = response.choices[0]?.message?.content;
     if (!raw) return [];
 
-    const parsed = JSON.parse(raw);
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (parseErr) {
+      const preview = raw.length > 200 ? raw.slice(0, 200) + '...' : raw;
+      console.error(`[extract] JSON parse failed: ${parseErr instanceof Error ? parseErr.message : String(parseErr)}. Raw content: ${preview}`);
+      return [];
+    }
     const facts = validateFactResponse(parsed);
 
     return facts.map((f) => ({

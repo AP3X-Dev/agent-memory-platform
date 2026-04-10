@@ -342,7 +342,7 @@ export class ConsolidationEngine {
         await this.redis.cache.invalidateByNodeId(newNode.id);
 
         // Fact extraction: optionally extract facts from superseded content
-        await this._extractAndStoreFacts(newNode.content, newNode.id);
+        await this._extractAndStoreFacts(newNode.content, newNode.id, proposal.affected_ids);
 
         // Dispute related active facts when this is a contradiction-driven supersede
         if (this.neo4j.fact) {
@@ -376,6 +376,7 @@ export class ConsolidationEngine {
   private async _extractAndStoreFacts(
     content: string,
     semanticId: string,
+    sourceEpisodeIds: string[] = [],
   ): Promise<void> {
     const factLayer = this.neo4j.fact;
     const apiKey = this.config.embedding.apiKey;
@@ -387,6 +388,11 @@ export class ConsolidationEngine {
 
       const now = new Date().toISOString();
       for (const input of inputs) {
+        // Use proposal's affected_ids as source episodes for traceability
+        const episodeIds = sourceEpisodeIds.length > 0
+          ? sourceEpisodeIds
+          : input.source_episode_ids;
+
         // Check for existing active fact with same subject+predicate
         const existing = await factLayer.findBySubjectPredicate(
           input.subject,
@@ -406,7 +412,7 @@ export class ConsolidationEngine {
             subject: input.subject,
             predicate: input.predicate,
             object: input.object,
-            source_episode_ids: input.source_episode_ids,
+            source_episode_ids: episodeIds,
             valid_at: now,
             invalid_at: null,
             confidence: input.confidence ?? 0.5,
@@ -426,7 +432,7 @@ export class ConsolidationEngine {
             subject: input.subject,
             predicate: input.predicate,
             object: input.object,
-            source_episode_ids: input.source_episode_ids,
+            source_episode_ids: episodeIds,
             valid_at: now,
             invalid_at: null,
             confidence: input.confidence ?? 0.5,
