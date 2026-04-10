@@ -1,8 +1,15 @@
 // packages/core/src/__tests__/service.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AMPService } from '../service.js';
-import type { RedisLayer, Neo4jLayer, BlocksLayer } from '../service.js';
-import type { AMPConfig, LoadScope, EpisodeInput, SemanticNode, MemoryBlock } from '../types.js';
+import type { RedisLayer, Neo4jLayer, FactLayer, BlocksLayer } from '../service.js';
+import type { AMPConfig, LoadScope, EpisodeInput, SemanticNode, FactNode, MemoryBlock } from '../types.js';
+
+// Mock extractFacts — we test the wiring, not the OpenAI call
+vi.mock('../extract.js', () => ({
+  extractFacts: vi.fn().mockResolvedValue([]),
+}));
+import { extractFacts } from '../extract.js';
+const mockExtractFacts = vi.mocked(extractFacts);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -498,5 +505,258 @@ describe('AMPService.load with memory blocks', () => {
     await service.load(scope);
 
     expect(blocks.listBlocks).toHaveBeenCalledWith('project:my-proj', 'core');
+  });
+});
+
+// ─── Real-time fact extraction in store ─────────────────────────────────────
+
+function makeFactLayer(): FactLayer {
+  return {
+    getActive: vi.fn().mockResolvedValue([]),
+    create: vi.fn().mockResolvedValue('fact-1'),
+    findBySubjectPredicate: vi.fn().mockResolvedValue([]),
+    invalidate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+function makeFactNode(overrides: Partial<FactNode> = {}): FactNode {
+  const now = new Date().toISOString();
+  return {
+    id: 'fact-existing',
+    subject: 'auth-module',
+    predicate: 'uses',
+    object: 'JWT',
+    entity_id: 'ent-1',
+    source_episode_ids: ['ep-old'],
+    valid_at: now,
+    invalid_at: null,
+    confidence: 0.5,
+    status: 'active',
+    supersedes_fact_id: null,
+    scope: 'project',
+    tags: [],
+    created_at: now,
+    updated_at: now,
+    ...overrides,
+  };
+}
+
+describe('AMPService.store — real-time fact extraction', () => {
+  beforeEach(() => {
+    mockExtractFacts.mockReset();
+    mockExtractFacts.mockResolvedValue([]);
+  });
+
+  it('extracts facts and creates them when fact layer is available', async () => {
+    const factLayer = makeFactLayer();
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-1',
+      agent_id: 'agent-1',
+      task: 'test task',
+      content: 'The auth module uses JWT for authentication',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(result.id).toBeTruthy();
+    expect(mockExtractFacts).toHaveBeenCalledWith(input.content, 'test-key');
+    expect(factLayer.findBySubjectPredicate).toHaveBeenCalledWith('auth-module', 'uses');
+    expect(factLayer.create).toHaveBeenCalledOnce();
+    // Verify the created fact
+    const createdFact = (factLayer.create as ReturnType<typeof vi.fn>).mock.calls[0][0] as FactNode;
+    expect(createdFact.subject).toBe('auth-module');
+    expect(createdFact.predicate).toBe('uses');
+    expect(createdFact.object).toBe('JWT');
+    expect(createdFact.status).toBe('active');
+    expect(createdFact.source_episode_ids).toEqual([result.id]);
+    expect(createdFact.confidence).toBe(0.5);
+    expect(createdFact.supersedes_fact_id).toBeNull();
+  });
+
+  it('auto-invalidates conflicting fact and creates replacement with supersedes_fact_id', async () => {
+    const existingFact = makeFactNode({ id: 'fact-old', object: 'session-cookies' });
+    const factLayer = makeFactLayer();
+    (factLayer.findBySubjectPredicate as ReturnType<typeof vi.fn>).mockResolvedValue([existingFact]);
+
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-2',
+      agent_id: 'agent-1',
+      task: 'refactor auth',
+      content: 'Migrated auth module to use JWT instead of session cookies',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    // Old fact should be invalidated
+    expect(factLayer.invalidate).toHaveBeenCalledOnce();
+    const invalidateArgs = (factLayer.invalidate as ReturnType<typeof vi.fn>).mock.calls[0];
+    expect(invalidateArgs[0]).toBe('fact-old');
+    // New fact should be created with supersedes_fact_id
+    expect(factLayer.create).toHaveBeenCalledOnce();
+    const createdFact = (factLayer.create as ReturnType<typeof vi.fn>).mock.calls[0][0] as FactNode;
+    expect(createdFact.object).toBe('JWT');
+    expect(createdFact.supersedes_fact_id).toBe('fact-old');
+    // Invalidate receives the new fact's ID
+    expect(invalidateArgs[2]).toBe(createdFact.id);
+  });
+
+  it('skips creation when reinforcing fact already exists (same subject+predicate+object)', async () => {
+    const existingFact = makeFactNode({ id: 'fact-old', object: 'JWT' });
+    const factLayer = makeFactLayer();
+    (factLayer.findBySubjectPredicate as ReturnType<typeof vi.fn>).mockResolvedValue([existingFact]);
+
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-3',
+      agent_id: 'agent-1',
+      task: 'verify auth',
+      content: 'Confirmed auth module uses JWT',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    // No new fact created — existing fact is reinforcing
+    expect(factLayer.create).not.toHaveBeenCalled();
+    expect(factLayer.invalidate).not.toHaveBeenCalled();
+  });
+
+  it('stores episode successfully when no API key is configured (no fact extraction)', async () => {
+    const factLayer = makeFactLayer();
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const configNoKey = makeConfig();
+    configNoKey.embedding.apiKey = '';
+
+    const service = new AMPService(redis, neo4j, embedding, configNoKey);
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-4',
+      agent_id: 'agent-1',
+      task: 'test task',
+      content: 'Content without fact extraction',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(result.id).toBeTruthy();
+    // extractFacts should not be called when there's no API key
+    expect(mockExtractFacts).not.toHaveBeenCalled();
+    expect(factLayer.create).not.toHaveBeenCalled();
+  });
+
+  it('stores episode successfully when fact layer is not available', async () => {
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'test', predicate: 'has', object: 'value', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j(); // no fact layer
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-5',
+      agent_id: 'agent-1',
+      task: 'test task',
+      content: 'Content without fact layer',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(result.id).toBeTruthy();
+    // extractFacts should not be called when there's no fact layer
+    expect(mockExtractFacts).not.toHaveBeenCalled();
+  });
+
+  it('stores episode successfully even when fact extraction throws', async () => {
+    const factLayer = makeFactLayer();
+    mockExtractFacts.mockRejectedValue(new Error('OpenAI rate limit'));
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    // Suppress console.error for this test
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-6',
+      agent_id: 'agent-1',
+      task: 'test task',
+      content: 'Content where extraction fails',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(result.id).toBeTruthy();
+    // Episode is stored, Neo4j was called
+    expect(neo4j.episodic.create).toHaveBeenCalledOnce();
+    // Error was logged
+    expect(consoleSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[amp-store] Fact extraction failed'),
+      expect.stringContaining('OpenAI rate limit'),
+    );
+
+    consoleSpy.mockRestore();
+  });
+
+  it('handles multiple extracted facts in a single store', async () => {
+    const factLayer = makeFactLayer();
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+      { subject: 'auth-module', predicate: 'depends_on', object: 'redis', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-fact-7',
+      agent_id: 'agent-1',
+      task: 'document auth',
+      content: 'Auth module uses JWT and depends on Redis for session caching',
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(factLayer.create).toHaveBeenCalledTimes(2);
+    expect(factLayer.findBySubjectPredicate).toHaveBeenCalledTimes(2);
   });
 });

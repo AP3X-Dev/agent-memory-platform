@@ -18,6 +18,7 @@ import type {
 import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking.js';
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
+import { extractFacts } from './extract.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
@@ -47,6 +48,9 @@ export interface RedisLayer {
 
 export interface FactLayer {
   getActive(entityName: string, options?: TemporalOptions): Promise<FactNode[]>;
+  create(fact: FactNode): Promise<string>;
+  findBySubjectPredicate(subject: string, predicate: string): Promise<FactNode[]>;
+  invalidate(id: string, invalidAt: string, supersededById?: string): Promise<void>;
 }
 
 export interface Neo4jLayer {
@@ -297,6 +301,55 @@ export class AMPService {
     }
 
     // 6. Dedup mark already done atomically in step 1 via checkAndMark
+
+    // 7. Real-time fact extraction (non-blocking, non-fatal)
+    const factLayer = this.neo4j.fact;
+    if (factLayer && this.config.embedding.apiKey) {
+      try {
+        const factInputs = await extractFacts(input.content, this.config.embedding.apiKey);
+        const now = new Date().toISOString();
+        for (const fi of factInputs) {
+          // Check for existing active fact with same subject+predicate
+          const existing = await factLayer.findBySubjectPredicate(fi.subject, fi.predicate);
+          const conflicting = existing.find(f => f.object !== fi.object);
+          const reinforcing = existing.find(f => f.object === fi.object);
+
+          if (reinforcing) {
+            // Same fact already exists — skip (consolidation can boost confidence later)
+            continue;
+          }
+
+          const newFactId = `fact-${nanoid(12)}`;
+          const newFact: FactNode = {
+            id: newFactId,
+            subject: fi.subject,
+            predicate: fi.predicate,
+            object: fi.object,
+            entity_id: null,
+            source_episode_ids: [id],
+            valid_at: now,
+            invalid_at: null,
+            confidence: fi.confidence ?? 0.5,
+            status: 'active',
+            supersedes_fact_id: conflicting?.id ?? null,
+            scope: fi.scope ?? 'project',
+            tags: fi.tags ?? [],
+            created_at: now,
+            updated_at: now,
+          };
+
+          // Auto-invalidate conflicting fact before creating replacement
+          if (conflicting) {
+            await factLayer.invalidate(conflicting.id, now, newFactId);
+          }
+
+          await factLayer.create(newFact);
+        }
+      } catch (err) {
+        // Non-fatal — episode is stored regardless
+        console.error('[amp-store] Fact extraction failed (non-fatal):', err instanceof Error ? err.message : err);
+      }
+    }
 
     return { id, duplicate: false };
   }
