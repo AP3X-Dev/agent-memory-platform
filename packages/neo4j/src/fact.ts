@@ -2,21 +2,31 @@
 import { type Driver } from 'neo4j-driver';
 import { nanoid } from 'nanoid';
 import type { FactNode, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
+import { EntityResolver } from './entity-resolver.js';
 
 export class FactStore {
-  constructor(private driver: Driver) {}
+  private resolver: EntityResolver;
+
+  constructor(private driver: Driver) {
+    this.resolver = new EntityResolver(driver);
+  }
 
   async create(fact: FactNode): Promise<string> {
+    // Resolve subject to canonical entity BEFORE the transaction
+    // (EntityResolver manages its own sessions)
+    const resolved = await this.resolver.resolve(fact.subject);
+
     const session = this.driver.session();
     const tx = session.beginTransaction();
     try {
-      // Create the Fact node
+      // Create the Fact node with entity_id for canonical lookup
       await tx.run(
         `CREATE (f:Fact {
           id: $id,
           subject: $subject,
           predicate: $predicate,
           object: $object,
+          entity_id: $entity_id,
           source_episode_ids: $source_episode_ids,
           valid_at: $valid_at,
           invalid_at: $invalid_at,
@@ -33,6 +43,7 @@ export class FactStore {
           subject: fact.subject,
           predicate: fact.predicate,
           object: fact.object,
+          entity_id: resolved.id,
           source_episode_ids: fact.source_episode_ids,
           valid_at: fact.valid_at,
           invalid_at: fact.invalid_at,
@@ -55,30 +66,11 @@ export class FactStore {
         );
       }
 
-      // Link FACT_ABOUT → Entity — case-insensitive match to prevent
-      // fragmentation (e.g., "AMP", "amp", "Agent Memory Protocol" all merge
-      // to the same entity when an exact match exists). Falls back to creating
-      // a new entity with the original subject name if no match is found.
+      // Link FACT_ABOUT → canonical Entity (resolved by EntityResolver)
       await tx.run(
-        `MATCH (f:Fact {id: $factId})
-         WITH f
-         OPTIONAL MATCH (existing:Entity) WHERE toLower(existing.name) = toLower($subject)
-         WITH f, existing ORDER BY existing.created_at ASC LIMIT 1
-         WITH f, CASE WHEN existing IS NOT NULL THEN existing
-                      ELSE NULL END AS matched
-         FOREACH (_ IN CASE WHEN matched IS NOT NULL THEN [1] ELSE [] END |
-           MERGE (f)-[:FACT_ABOUT]->(matched)
-         )
-         FOREACH (_ IN CASE WHEN matched IS NULL THEN [1] ELSE [] END |
-           CREATE (e:Entity {id: $entityId, name: $subject, type: 'concept', created_at: $now})
-           MERGE (f)-[:FACT_ABOUT]->(e)
-         )`,
-        {
-          factId: fact.id,
-          subject: fact.subject,
-          entityId: `ent-${nanoid(12)}`,
-          now: new Date().toISOString(),
-        },
+        `MATCH (f:Fact {id: $factId}), (e:Entity {id: $entityId})
+         MERGE (f)-[:FACT_ABOUT]->(e)`,
+        { factId: fact.id, entityId: resolved.id },
       );
 
       // Set embedding if provided
@@ -123,61 +115,52 @@ export class FactStore {
   }
 
   async getActive(entityName: string, options?: TemporalOptions): Promise<FactNode[]> {
+    // Resolve entityName to canonical ID via EntityResolver (handles
+    // exact match, case-insensitive, and alias matching)
+    const resolved = await this.resolver.resolveExisting(entityName);
+    if (!resolved) return []; // No known entity → no facts
+
     const session = this.driver.session();
     try {
       const timeMode = options?.time_mode ?? 'current';
       let cypher: string;
-      const params: Record<string, unknown> = { entityName };
+      const params: Record<string, unknown> = { entityId: resolved.id };
 
       switch (timeMode) {
         case 'current':
-          // Active facts with no invalidation date (case-insensitive entity match)
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-            WHERE toLower(e.name) = toLower($entityName)
+            MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.status = 'active' AND f.invalid_at IS NULL
-            RETURN f
-            ORDER BY f.valid_at DESC`;
+            RETURN f ORDER BY f.valid_at DESC`;
           break;
 
         case 'historical':
-          // Facts valid at a specific point in time
           params.as_of = options?.as_of ?? new Date().toISOString();
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-            WHERE toLower(e.name) = toLower($entityName)
+            MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
-            RETURN f
-            ORDER BY f.valid_at DESC`;
+            RETURN f ORDER BY f.valid_at DESC`;
           break;
 
         case 'interval':
-          // Facts active during an interval
           params.from = options?.from ?? '1970-01-01T00:00:00.000Z';
           params.to = options?.to ?? new Date().toISOString();
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-            WHERE toLower(e.name) = toLower($entityName)
+            MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
-            RETURN f
-            ORDER BY f.valid_at DESC`;
+            RETURN f ORDER BY f.valid_at DESC`;
           break;
 
         case 'evolution':
-          // All facts, ordered chronologically, optionally including invalidated
           if (options?.include_invalidated) {
             cypher = `
-              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-              WHERE toLower(e.name) = toLower($entityName)
-              RETURN f
-              ORDER BY f.valid_at ASC`;
+              MATCH (f:Fact) WHERE f.entity_id = $entityId
+              RETURN f ORDER BY f.valid_at ASC`;
           } else {
             cypher = `
-              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-              WHERE toLower(e.name) = toLower($entityName)
+              MATCH (f:Fact) WHERE f.entity_id = $entityId
                 AND f.status <> 'invalidated'
-              RETURN f
-              ORDER BY f.valid_at ASC`;
+              RETURN f ORDER BY f.valid_at ASC`;
           }
           break;
 
@@ -231,14 +214,15 @@ export class FactStore {
   }
 
   async timeline(entityName: string): Promise<FactTimeline> {
+    const resolved = await this.resolver.resolveExisting(entityName);
+    if (!resolved) return { entity: entityName, facts: [] };
+
     const session = this.driver.session();
     try {
       const result = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-         WHERE toLower(e.name) = toLower($entityName)
-         RETURN f
-         ORDER BY f.valid_at ASC`,
-        { entityName },
+        `MATCH (f:Fact) WHERE f.entity_id = $entityId
+         RETURN f ORDER BY f.valid_at ASC`,
+        { entityId: resolved.id },
       );
 
       const facts = result.records.map((r) => {
@@ -267,25 +251,26 @@ export class FactStore {
   }
 
   async diff(entityName: string, from: string, to: string): Promise<FactDiff> {
+    const resolved = await this.resolver.resolveExisting(entityName);
+    if (!resolved) return { entity: entityName, from, to, added: [], invalidated: [], changed: [] };
+
     const session = this.driver.session();
     try {
-      // Facts active at 'from' timestamp (case-insensitive entity match)
+      // Facts active at 'from' timestamp
       const fromResult = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-         WHERE toLower(e.name) = toLower($entityName)
+        `MATCH (f:Fact) WHERE f.entity_id = $entityId
            AND f.valid_at <= $from AND (f.invalid_at IS NULL OR f.invalid_at > $from)
          RETURN f`,
-        { entityName, from },
+        { entityId: resolved.id, from },
       );
       const fromFacts = fromResult.records.map((r) => mapFactNode(r.get('f').properties));
 
       // Facts active at 'to' timestamp
       const toResult = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
-         WHERE toLower(e.name) = toLower($entityName)
+        `MATCH (f:Fact) WHERE f.entity_id = $entityId
            AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $to)
          RETURN f`,
-        { entityName, to },
+        { entityId: resolved.id, to },
       );
       const toFacts = toResult.records.map((r) => mapFactNode(r.get('f').properties));
 
@@ -364,6 +349,7 @@ function mapFactNode(props: Record<string, unknown>): FactNode {
     subject: typeof props.subject === 'string' ? props.subject : '',
     predicate: typeof props.predicate === 'string' ? props.predicate : '',
     object: typeof props.object === 'string' ? props.object : '',
+    entity_id: typeof props.entity_id === 'string' ? props.entity_id : null,
     source_episode_ids: Array.isArray(props.source_episode_ids) ? (props.source_episode_ids as string[]) : [],
     valid_at: typeof props.valid_at === 'string' ? props.valid_at : now,
     invalid_at: typeof props.invalid_at === 'string' ? props.invalid_at : null,

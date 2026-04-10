@@ -29,6 +29,7 @@ export interface EntityNode {
   id: string;
   name: string;
   type: string;
+  aliases: string[];
   created_at: string;
 }
 
@@ -155,6 +156,7 @@ export interface FactNode {
   subject: string;
   predicate: string;
   object: string;
+  entity_id: string | null;      // canonical Entity.id — primary lookup key
   source_episode_ids: string[];
   valid_at: string;
   invalid_at: string | null;
