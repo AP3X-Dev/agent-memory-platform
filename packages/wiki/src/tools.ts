@@ -1,7 +1,8 @@
 // packages/wiki/src/tools.ts
 import { z } from 'zod';
 import path from 'node:path';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { CompileInput, CompileResult, CompileV2Result, IngestInput, IngestResult, LintInput, LintResult, LintCheck } from './types.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
@@ -218,27 +219,33 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerWikiTools(server: McpServer): void {
+export function registerWikiTools(server: McpServer): RegisteredTool[] {
   const handlers = buildWikiToolHandlers();
+  const handles: RegisteredTool[] = [];
 
-  server.tool(
+  handles.push(server.tool(
     'amp_compile',
     'Compile the AMP knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
     AmpCompileSchema,
+    {} satisfies ToolAnnotations,
     handlers.amp_compile,
-  );
+  ));
 
-  server.tool(
+  handles.push(server.tool(
     'amp_ingest',
     'Ingest a raw source document into the AMP graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Use this to feed research material (articles, papers, notes) into the knowledge base.',
     AmpIngestSchema,
+    { openWorldHint: true } satisfies ToolAnnotations,
     handlers.amp_ingest,
-  );
+  ));
 
-  server.tool(
+  handles.push(server.tool(
     'amp_lint',
     'Run health checks on the wiki knowledge graph. Detects orphan pages, broken links, missing relationships, duplicate entities, contradictions, low-confidence claims, stale sources, and coverage gaps. Returns actionable suggestions.',
     AmpLintSchema,
+    { readOnlyHint: true } satisfies ToolAnnotations,
     handlers.amp_lint,
-  );
+  ));
+
+  return handles;
 }

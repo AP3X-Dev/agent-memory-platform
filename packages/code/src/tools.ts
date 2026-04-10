@@ -3,7 +3,8 @@
 
 import path from 'node:path';
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { IndexResult, CodeSearchResult, SymbolNode, SymbolKind } from './types.js';
 
 // ─── Service interfaces (injected) ───────────────────────────────────────────
@@ -62,10 +63,11 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerCodeTools(server: McpServer): void {
+export function registerCodeTools(server: McpServer): RegisteredTool[] {
+  const handles: RegisteredTool[] = [];
 
   // ─── amp_code_index ─────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_code_index',
     'Index a project or file using tree-sitter AST parsing. Creates Symbol nodes (functions, classes, methods, interfaces, types) and relationship edges (SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, SYMBOL_CONTAINS) in the graph. Incremental: unchanged symbols are skipped via content hash. Supports: TypeScript, JavaScript, Python, Go, Rust.',
     {
@@ -75,6 +77,7 @@ export function registerCodeTools(server: McpServer): void {
       include: z.array(z.string()).optional().describe('Include patterns (e.g., ["src/", "lib/"])'),
       exclude: z.array(z.string()).optional().describe('Additional directories to exclude'),
     },
+    { openWorldHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!codeIndexer) throw new Error('Code services not initialised');
 
@@ -101,10 +104,10 @@ export function registerCodeTools(server: McpServer): void {
         errors_truncated: result.errors.length > 10,
       }, null, 2));
     },
-  );
+  ));
 
   // ─── amp_code_search ────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_code_search',
     'Hybrid search across code symbols AND semantic memories. Combines fulltext search (symbol names, signatures, doc comments) with vector search and RRF fusion. Returns blended results ranked by relevance.',
     {
@@ -115,6 +118,7 @@ export function registerCodeTools(server: McpServer): void {
       limit: z.number().int().positive().optional().default(20).describe('Max results'),
       include_semantics: z.boolean().optional().default(true).describe('Include semantic memory results alongside code'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!codeSearch) throw new Error('Code services not initialised');
       const results = await codeSearch.search(args.query, {
@@ -136,10 +140,10 @@ export function registerCodeTools(server: McpServer): void {
       }));
       return textContent(JSON.stringify(formatted, null, 2));
     },
-  );
+  ));
 
   // ─── amp_code_symbols ───────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_code_symbols',
     'Query specific symbols in the indexed codebase. Find by file path (all symbols in a file) or by name (across all files). Returns symbol details including kind, signature, doc comment, and line numbers.',
     {
@@ -147,6 +151,7 @@ export function registerCodeTools(server: McpServer): void {
       name: z.string().max(2000).optional().describe('Find symbols with this name'),
       kind: z.string().max(2000).optional().describe('Filter by kind (function, class, method, interface, type, variable, enum)'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!symbolStore) throw new Error('Code services not initialised');
 
@@ -170,16 +175,17 @@ export function registerCodeTools(server: McpServer): void {
       }));
       return textContent(JSON.stringify(formatted, null, 2));
     },
-  );
+  ));
 
   // ─── amp_code_deps ──────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_code_deps',
     'Symbol-level dependency queries. Find what calls a function, what a class inherits from, who imports a module, etc. Traverses SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, and SYMBOL_IMPLEMENTS edges.',
     {
       symbol_name: z.string().max(500).describe('Symbol name to query'),
       direction: z.enum(['callers', 'callees', 'importers', 'inheritance']).describe('Query direction'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!symbolStore) throw new Error('Code services not initialised');
 
@@ -212,21 +218,24 @@ export function registerCodeTools(server: McpServer): void {
         results: formatted,
       }, null, 2));
     },
-  );
+  ));
 
   // ─── amp_code_context ───────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_code_context',
     'Build code-aware context for a task. Given a task description, returns relevant code symbols AND semantic memories, ranked and token-budgeted. Use this before making code changes to understand the relevant codebase context.',
     {
       task: z.string().max(5000).describe('Task description (natural language)'),
       max_tokens: z.number().int().positive().optional().default(6000).describe('Max tokens for the context package'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!codeSearch) throw new Error('Code services not initialised');
       const ctx = await codeSearch.buildContext(args.task, args.max_tokens);
       const md = codeSearch.renderContextMarkdown(ctx);
       return textContent(md);
     },
-  );
+  ));
+
+  return handles;
 }

@@ -4,7 +4,8 @@
 
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { ExperimentNode, CampaignNode } from './types.js';
 
 // ─── Service interfaces (injected) ───────────────────────────────────────────
@@ -154,12 +155,15 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerResearchTools(server: McpServer): void {
+export function registerResearchTools(server: McpServer): RegisteredTool[] {
+  const handles: RegisteredTool[] = [];
+
   // ─── amp_research_init ──────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_init',
     'Initialize a new research campaign. Creates campaign entity and returns campaign_id. Call once at the start of a new research session.',
     ResearchInitSchema,
+    {} satisfies ToolAnnotations,
     async (args) => {
       if (!campaignStore) throw new Error('Research services not initialised');
 
@@ -196,13 +200,14 @@ export function registerResearchTools(server: McpServer): void {
       await campaignStore.create(node);
       return textContent(JSON.stringify({ campaign_id: campaignId, id }, null, 2));
     },
-  );
+  ));
 
   // ─── amp_research_log ───────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_log',
     'Log an experiment result. Creates an Experiment node in the graph with full provenance: parent link, component edges, campaign membership. Returns experiment ID and whether consolidation should run.',
     ResearchLogSchema,
+    {} satisfies ToolAnnotations,
     async (args) => {
       if (!experimentStore || !campaignStore) throw new Error('Research services not initialised');
 
@@ -293,25 +298,27 @@ export function registerResearchTools(server: McpServer): void {
         },
       }, null, 2));
     },
-  );
+  ));
 
   // ─── amp_research_context ────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_context',
     'Build dynamic research context for the THINK phase. Returns assembled markdown with: campaign state, semantic principles, recent wins, dead ends, contradictions, and experiment stats.',
     ResearchContextSchema,
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!contextBuilder) throw new Error('Research services not initialised');
       const md = await contextBuilder.renderMarkdown(args.campaign_id, args.max_tokens);
       return textContent(md);
     },
-  );
+  ));
 
   // ─── amp_research_tree ──────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_tree',
     'Query the hypothesis tree for a campaign. Returns an indented markdown visualization of the experiment lineage. Optionally filter by component or status.',
     ResearchTreeSchema,
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!hypothesisNav) throw new Error('Research services not initialised');
 
@@ -328,13 +335,14 @@ export function registerResearchTools(server: McpServer): void {
       const md = hypothesisNav.renderTreeMarkdown(tree);
       return textContent(md);
     },
-  );
+  ));
 
   // ─── amp_research_contradictions ────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_contradictions',
     'Find conflicting semantic principles in a campaign. Also optionally returns low-confidence principles that need experiments to resolve uncertainty.',
     ResearchContradictionsSchema,
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!contradictionDetector) throw new Error('Research services not initialised');
 
@@ -348,13 +356,14 @@ export function registerResearchTools(server: McpServer): void {
 
       return textContent(JSON.stringify(result, null, 2));
     },
-  );
+  ));
 
   // ─── amp_research_consolidate ───────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_research_consolidate',
     'Run research-specific consolidation. Detects patterns in experiment history (component leverage, exhausted directions, crash patterns, combo synergies) and creates/updates semantic nodes. Call every 10 experiments or on session wrap-up.',
     ResearchConsolidateSchema,
+    {} satisfies ToolAnnotations,
     async (args) => {
       if (!researchConsolidation || !campaignStore) throw new Error('Research services not initialised');
 
@@ -363,5 +372,7 @@ export function registerResearchTools(server: McpServer): void {
 
       return textContent(JSON.stringify(result, null, 2));
     },
-  );
+  ));
+
+  return handles;
 }

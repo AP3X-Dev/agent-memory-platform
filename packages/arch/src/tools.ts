@@ -2,7 +2,8 @@
 // MCP tools for the architectural graph domain.
 
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { ArchEntityProperties, StructuralRelationType, StabilityTier, ImpactResult, DriftResult } from './types.js';
 
 // ─── Service interfaces (injected) ───────────────────────────────────────────
@@ -88,10 +89,11 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerArchTools(server: McpServer): void {
+export function registerArchTools(server: McpServer): RegisteredTool[] {
+  const handles: RegisteredTool[] = [];
 
   // ─── amp_arch_register ──────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_arch_register',
     'Enrich an existing Entity node with architectural properties: category, hierarchy depth, responsibility (what it IS), interface (how to USE it), internals (how it WORKS), and tracked source file paths. The entity must already exist from amp_bootstrap. Idempotent.',
     {
@@ -104,6 +106,7 @@ export function registerArchTools(server: McpServer): void {
       internals: z.string().max(2000).optional().describe('HOW IT WORKS: algorithms, business rules, design decisions'),
       file_paths: z.array(z.string()).optional().describe('Source file paths to track for drift detection'),
     },
+    { idempotentHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!archEntityStore) throw new Error('Arch services not initialised');
       const props: Partial<ArchEntityProperties> = {};
@@ -121,10 +124,10 @@ export function registerArchTools(server: McpServer): void {
       const updated = await archEntityStore.setArchProperties(args.entity_name, props);
       return textContent(JSON.stringify({ updated, entity: args.entity_name }));
     },
-  );
+  ));
 
   // ─── amp_arch_relate ────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_arch_relate',
     'Create a typed structural relationship between two entities. Relationship types: USES (runtime dependency), CALLS (direct invocation), EXTENDS (inheritance), IMPLEMENTS (interface satisfaction), EMITS (event emission), LISTENS (event subscription). Both entities must already exist.',
     {
@@ -135,6 +138,7 @@ export function registerArchTools(server: McpServer): void {
       properties: z.record(z.string()).optional()
         .describe('Optional properties (e.g., {consumes: "charge,refund"}, {event: "order.created"}, {failure: "retry 3x"})'),
     },
+    {} satisfies ToolAnnotations,
     async (args) => {
       if (!relationStore) throw new Error('Arch services not initialised');
       const created = await relationStore.create(
@@ -144,10 +148,10 @@ export function registerArchTools(server: McpServer): void {
       );
       return textContent(JSON.stringify({ created, from: args.from_entity, to: args.to_entity, type: args.type }));
     },
-  );
+  ));
 
   // ─── amp_arch_aspect ────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_arch_aspect',
     'Create or manage a cross-cutting concern (aspect). Aspects represent patterns that apply horizontally across components (e.g., "rate-limiting", "hipaa", "audit-logging"). They have stability tiers predicting decay rate and can imply other aspects.',
     {
@@ -160,6 +164,7 @@ export function registerArchTools(server: McpServer): void {
       anchors: z.array(z.string()).optional().describe('Code patterns that evidence this aspect (for "create")'),
       entity_name: z.string().max(2000).optional().describe('Entity to apply/remove aspect to/from'),
     },
+    {} satisfies ToolAnnotations,
     async (args) => {
       if (!aspectStore) throw new Error('Arch services not initialised');
       switch (args.action) {
@@ -199,24 +204,25 @@ export function registerArchTools(server: McpServer): void {
           throw new Error(`Unknown action: ${args.action}`);
       }
     },
-  );
+  ));
 
   // ─── amp_impact ─────────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_impact',
     'Blast radius analysis: what breaks if this entity changes? Returns direct dependents, transitive dependents, co-aspect entities, affected aspects, and an overall change risk assessment (low/medium/high/critical).',
     {
       entity_name: z.string().max(2000).describe('Entity to analyze'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!impactAnalyzer) throw new Error('Arch services not initialised');
       const result = await impactAnalyzer.blastRadius(args.entity_name);
       return textContent(JSON.stringify(result, null, 2));
     },
-  );
+  ));
 
   // ─── amp_arch_drift ─────────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_arch_drift',
     'Check if tracked source files have changed since last indexing. Compares SHA-256 hashes of files on disk against stored hashes. Use "check" to detect drift, "mark_fresh" to update hashes after reviewing changes, "check_all" to batch-check an entire project.',
     {
@@ -224,6 +230,7 @@ export function registerArchTools(server: McpServer): void {
       entity_name: z.string().max(2000).optional().describe('Entity name (for "check" and "mark_fresh")'),
       project_name: z.string().max(2000).optional().describe('Project name (for "check_all")'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!driftDetector) throw new Error('Arch services not initialised');
       switch (args.action) {
@@ -252,10 +259,10 @@ export function registerArchTools(server: McpServer): void {
           throw new Error(`Unknown action: ${args.action}`);
       }
     },
-  );
+  ));
 
   // ─── amp_arch_context ───────────────────────────────────────────────────
-  server.tool(
+  handles.push(server.tool(
     'amp_arch_context',
     'Deterministic architectural context assembly for an entity. Returns: responsibility, interface, internals, hierarchy (ancestors), children, dependencies with their interfaces, dependents (what breaks), and cross-cutting aspects. Same graph state always produces the same output — no ranking heuristics.',
     {
@@ -265,6 +272,7 @@ export function registerArchTools(server: McpServer): void {
       include_children: z.boolean().optional().default(false)
         .describe('Include direct children of this entity in the context'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!archContextBuilder) throw new Error('Arch services not initialised');
       let md = await archContextBuilder.renderMarkdown(args.entity_name, args.max_tokens);
@@ -282,5 +290,7 @@ export function registerArchTools(server: McpServer): void {
 
       return textContent(md);
     },
-  );
+  ));
+
+  return handles;
 }

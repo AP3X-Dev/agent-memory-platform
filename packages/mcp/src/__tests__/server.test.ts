@@ -22,7 +22,15 @@ describe('createAMPServer', () => {
     expect(amp.toolNames).toContain('amp_consolidate');
     expect(amp.toolNames).toContain('amp_resolve');
     expect(amp.toolNames).toContain('amp_bootstrap');
-    // Extension tools registered from research, arch, code, retrieval
+    // Progressive disclosure gateway
+    expect(amp.toolNames).toContain('amp_tools');
+    // Retrieval tier 1
+    expect(amp.toolNames).toContain('amp_context');
+    // Wiki tools (registered but disabled by default)
+    expect(amp.toolNames).toContain('amp_compile');
+    expect(amp.toolNames).toContain('amp_ingest');
+    expect(amp.toolNames).toContain('amp_lint');
+    // Extension tools registered from research, arch, code, retrieval, wiki
     expect(amp.toolNames.length).toBeGreaterThanOrEqual(6);
   });
 

@@ -2,7 +2,8 @@
 // The amp_context MCP tool — unified super-load.
 
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { UnifiedContext, RetrievalStrategy } from './types.js';
 
 // ─── Service interface (injected) ────────────────────────────────────────────
@@ -55,10 +56,19 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerRetrievalTools(server: McpServer): void {
+export interface RetrievalRegisteredTools {
+  /** Tier 1 tool — amp_context, always enabled. */
+  tier1: RegisteredTool[];
+  /** Tier 2 tools — amp_feedback, disabled by default. */
+  tier2: RegisteredTool[];
+}
 
-  // ─── amp_context ────────────────────────────────────────────────────────
-  server.tool(
+export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTools {
+  const tier1: RegisteredTool[] = [];
+  const tier2: RegisteredTool[] = [];
+
+  // ─── amp_context (Tier 1) ───────────────────────────────────────────────
+  tier1.push(server.tool(
     'amp_context',
     'Unified super-load: assembles context combining architecture (hierarchy, dependencies, aspects), code (symbols, signatures, docs), and memory (semantic principles, episodic history) into a single response. Three strategies: "auto" (default — classifies query intent and routes automatically), "ranked" (hybrid search with RRF fusion, query expansion, and feedback boosts — best for exploration), "deterministic" (Yggdrasil-style 5-step assembly — same graph state always produces same output, best for architectural queries). Use this as your primary context-loading tool when you need a complete picture.',
     {
@@ -73,6 +83,7 @@ export function registerRetrievalTools(server: McpServer): void {
       tag_scope: z.array(z.string()).optional().describe('Scope to specific tags'),
       project_name: z.string().max(2000).optional().describe('Project name for scoping'),
     },
+    { readOnlyHint: true, idempotentHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!assembler) throw new Error('Retrieval services not initialised');
       const ctx = await assembler.assemble(args.task, {
@@ -88,10 +99,10 @@ export function registerRetrievalTools(server: McpServer): void {
       const md = assembler.renderMarkdown(ctx);
       return textContent(md);
     },
-  );
+  ));
 
-  // ─── amp_feedback ───────────────────────────────────────────────────────
-  server.tool(
+  // ─── amp_feedback (Tier 2 — retrieval domain) ──────────────────────────
+  tier2.push(server.tool(
     'amp_feedback',
     'Record feedback on retrieval results. Tell AMP which results were useful and which were not. This improves future retrieval rankings over time.',
     {
@@ -102,6 +113,7 @@ export function registerRetrievalTools(server: McpServer): void {
       source_type: z.enum(['semantic', 'episodic', 'symbol', 'arch_entity', 'aspect']).optional().default('semantic')
         .describe('Type of the result'),
     },
+    { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!feedbackTracker) throw new Error('Retrieval services not initialised');
       await feedbackTracker.recordFeedback({
@@ -114,5 +126,7 @@ export function registerRetrievalTools(server: McpServer): void {
       });
       return textContent(JSON.stringify({ recorded: true, result_id: args.result_id, was_useful: args.was_useful }));
     },
-  );
+  ));
+
+  return { tier1, tier2 };
 }

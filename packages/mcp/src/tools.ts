@@ -1,8 +1,11 @@
 // packages/mcp/src/tools.ts
 import { z } from 'zod';
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
+
+export type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
 
@@ -90,7 +93,52 @@ export const TOOL_NAMES = [
   'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
   'amp_memory_promote', 'amp_memory_archive',
   'amp_timeline', 'amp_fact_diff',
+  'amp_tools',
 ] as const;
+
+// ─── Progressive disclosure types ────────────────────────────────────────────
+
+/** Domain names for progressive disclosure grouping. */
+export type ToolDomain =
+  | 'memory' | 'temporal' | 'admin' | 'research'
+  | 'code' | 'arch' | 'wiki' | 'retrieval';
+
+/** The full domain registry: maps domain name → registered tool handles. */
+export type ToolRegistry = Map<ToolDomain, RegisteredTool[]>;
+
+/** Domain metadata for the amp_tools list action. */
+export interface DomainInfo {
+  domain: ToolDomain;
+  description: string;
+  tools: string[];
+  enabled: boolean;
+}
+
+/** Domain descriptions for documentation. */
+export const DOMAIN_DESCRIPTIONS: Record<ToolDomain, string> = {
+  memory: 'Block memory operations: replace, rewrite, promote, archive',
+  temporal: 'Temporal queries: timeline, fact diff',
+  admin: 'Administrative: raw queries, consolidation, bootstrap, resolve, provenance',
+  research: 'Research campaigns: init, log, context, tree, contradictions, consolidate',
+  code: 'Code intelligence: index, search, symbols, deps, context',
+  arch: 'Architecture: register, relate, aspects, impact, drift, context',
+  wiki: 'Wiki: compile, ingest, lint',
+  retrieval: 'Retrieval feedback (amp_context stays in Tier 1)',
+};
+
+/** Which core tools go into which Tier 2 domain. */
+export const CORE_DOMAIN_TOOLS: Record<string, ToolDomain> = {
+  amp_memory_replace: 'memory',
+  amp_memory_rewrite: 'memory',
+  amp_memory_promote: 'memory',
+  amp_memory_archive: 'memory',
+  amp_timeline: 'temporal',
+  amp_fact_diff: 'temporal',
+  amp_query: 'admin',
+  amp_consolidate: 'admin',
+  amp_bootstrap: 'admin',
+  amp_resolve: 'admin',
+};
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -227,6 +275,11 @@ const AmpFactDiffSchema = {
   entity: z.string().max(200).describe('Entity name to diff'),
   from: z.string().describe('Start timestamp (ISO format)'),
   to: z.string().describe('End timestamp (ISO format)'),
+};
+
+const AmpToolsSchema = {
+  action: z.enum(['list', 'enable', 'disable']).describe('Action to perform'),
+  domain: z.string().optional().describe('Domain name: memory, temporal, admin, research, code, arch, wiki, retrieval. Or "all" to enable/disable everything.'),
 };
 
 // ─── Handler implementations ─────────────────────────────────────────────────
@@ -519,106 +572,269 @@ export function buildToolHandlers(): ToolHandlers {
   };
 }
 
+// ─── Tool annotations ────────────────────────────────────────────────────────
+
+const ANN_READONLY: ToolAnnotations = { readOnlyHint: true };
+const ANN_READONLY_IDEMPOTENT: ToolAnnotations = { readOnlyHint: true, idempotentHint: true };
+const ANN_IDEMPOTENT: ToolAnnotations = { idempotentHint: true };
+const ANN_DESTRUCTIVE: ToolAnnotations = { destructiveHint: true };
+
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerTools(server: McpServer): void {
-  const handlers = buildToolHandlers();
+export interface RegisteredToolSet {
+  /** Tier 1 tools — always enabled. */
+  tier1: RegisteredTool[];
+  /** Tier 2 tools from core package, grouped by domain. */
+  domains: Map<ToolDomain, RegisteredTool[]>;
+  /** All registered tool handles (Tier 1 + Tier 2). */
+  all: RegisteredTool[];
+}
 
-  server.tool(
+/**
+ * Register core AMP tools on the given server.
+ * Returns handles grouped by tier for progressive disclosure.
+ */
+export function registerTools(
+  server: McpServer,
+  toolRegistry?: ToolRegistry,
+): RegisteredToolSet {
+  const handlers = buildToolHandlers();
+  const tier1: RegisteredTool[] = [];
+  const domains = new Map<ToolDomain, RegisteredTool[]>();
+
+  // Helper to push to domain bucket
+  function addToDomain(domain: ToolDomain, handle: RegisteredTool): void {
+    let list = domains.get(domain);
+    if (!list) { list = []; domains.set(domain, list); }
+    list.push(handle);
+  }
+
+  // ─── Tier 1 — always enabled ─────────────────────────────────────────────
+
+  tier1.push(server.tool(
     'amp_load',
     'Load memory context for a task. Returns assembled markdown ready for the context window.',
     AmpLoadSchema,
+    ANN_READONLY_IDEMPOTENT,
     handlers.amp_load,
-  );
+  ));
 
-  server.tool(
+  tier1.push(server.tool(
     'amp_store',
     'Store an episodic memory. Returns the new episode ID.',
     AmpStoreSchema,
+    {},
     handlers.amp_store,
-  );
+  ));
 
-  server.tool(
-    'amp_query',
-    'Run a raw Cypher query against the Neo4j knowledge graph. Returns JSON rows.',
-    AmpQuerySchema,
-    handlers.amp_query,
-  );
-
-  server.tool(
-    'amp_consolidate',
-    'Manage memory consolidation: run a consolidation pass, check status, or review a proposal.',
-    AmpConsolidateSchema,
-    handlers.amp_consolidate,
-  );
-
-  server.tool(
-    'amp_resolve',
-    'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
-    AmpResolveSchema,
-    handlers.amp_resolve,
-  );
-
-  server.tool(
-    'amp_bootstrap',
-    'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that amp_store/amp_load/amp_consolidate have structure to work with.',
-    AmpBootstrapSchema,
-    handlers.amp_bootstrap,
-  );
-
-  server.tool(
+  tier1.push(server.tool(
     'amp_memory_read',
     'Read a memory block by name. Returns the block content, tier, and metadata.',
     AmpMemoryReadSchema,
+    ANN_READONLY_IDEMPOTENT,
     handlers.amp_memory_read,
-  );
+  ));
 
-  server.tool(
+  tier1.push(server.tool(
     'amp_memory_insert',
     'Append text to a memory block. Creates the block if it does not exist.',
     AmpMemoryInsertSchema,
+    {},
     handlers.amp_memory_insert,
-  );
+  ));
 
-  server.tool(
+  // ─── Tier 2 — memory domain ──────────────────────────────────────────────
+
+  addToDomain('memory', server.tool(
     'amp_memory_replace',
     'Find and replace text within a memory block. Throws if old_text is not found.',
     AmpMemoryReplaceSchema,
+    {},
     handlers.amp_memory_replace,
-  );
+  ));
 
-  server.tool(
+  addToDomain('memory', server.tool(
     'amp_memory_rewrite',
     'Overwrite the entire content of a memory block. Creates the block if it does not exist.',
     AmpMemoryRewriteSchema,
+    {},
     handlers.amp_memory_rewrite,
-  );
+  ));
 
-  server.tool(
+  addToDomain('memory', server.tool(
     'amp_memory_promote',
     'Change the tier of a memory block (e.g. working → core). Promoting to core persists to Neo4j.',
     AmpMemoryPromoteSchema,
+    {},
     handlers.amp_memory_promote,
-  );
+  ));
 
-  server.tool(
+  addToDomain('memory', server.tool(
     'amp_memory_archive',
     'Archive a memory block: returns its content for the caller to store as an episodic entry, then deletes the block.',
     AmpMemoryArchiveSchema,
+    ANN_DESTRUCTIVE,
     handlers.amp_memory_archive,
-  );
+  ));
 
-  server.tool(
+  // ─── Tier 2 — temporal domain ────────────────────────────────────────────
+
+  addToDomain('temporal', server.tool(
     'amp_timeline',
     'Chronological fact history for an entity. Shows all facts with creation, invalidation, dispute, and supersession events ordered by time.',
     AmpTimelineSchema,
+    ANN_READONLY_IDEMPOTENT,
     handlers.amp_timeline,
-  );
+  ));
 
-  server.tool(
+  addToDomain('temporal', server.tool(
     'amp_fact_diff',
     'Show what facts changed about an entity between two timestamps. Returns added, invalidated, and changed facts.',
     AmpFactDiffSchema,
+    ANN_READONLY_IDEMPOTENT,
     handlers.amp_fact_diff,
-  );
+  ));
+
+  // ─── Tier 2 — admin domain ───────────────────────────────────────────────
+
+  addToDomain('admin', server.tool(
+    'amp_query',
+    'Run a raw Cypher query against the Neo4j knowledge graph. Returns JSON rows.',
+    AmpQuerySchema,
+    ANN_READONLY_IDEMPOTENT,
+    handlers.amp_query,
+  ));
+
+  addToDomain('admin', server.tool(
+    'amp_consolidate',
+    'Manage memory consolidation: run a consolidation pass, check status, or review a proposal.',
+    AmpConsolidateSchema,
+    {},
+    handlers.amp_consolidate,
+  ));
+
+  addToDomain('admin', server.tool(
+    'amp_bootstrap',
+    'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that amp_store/amp_load/amp_consolidate have structure to work with.',
+    AmpBootstrapSchema,
+    ANN_IDEMPOTENT,
+    handlers.amp_bootstrap,
+  ));
+
+  addToDomain('admin', server.tool(
+    'amp_resolve',
+    'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
+    AmpResolveSchema,
+    ANN_READONLY,
+    handlers.amp_resolve,
+  ));
+
+  // ─── Tier 1 — amp_tools gateway ──────────────────────────────────────────
+
+  tier1.push(server.tool(
+    'amp_tools',
+    'Progressive disclosure gateway. List available tool domains and enable/disable them on demand. Tier 1 tools (amp_load, amp_store, amp_memory_read, amp_memory_insert, amp_context, amp_tools) are always available. All other tools are grouped into domains that start disabled to reduce context window pollution.',
+    AmpToolsSchema,
+    ANN_READONLY_IDEMPOTENT,
+    async (args: { action: 'list' | 'enable' | 'disable'; domain?: string }) => {
+      // Use the registry passed at server creation time
+      const registry = toolRegistry;
+      if (!registry) {
+        return textContent(JSON.stringify({ error: 'Tool registry not available' }));
+      }
+
+      switch (args.action) {
+        case 'list': {
+          const domainList: DomainInfo[] = [];
+          for (const [domainName, handles] of registry.entries()) {
+            const desc = DOMAIN_DESCRIPTIONS[domainName] ?? domainName;
+            const toolNames = DOMAIN_TOOL_NAMES_MAP[domainName] ?? [];
+            const enabled = handles.length > 0 && handles[0].enabled;
+            domainList.push({
+              domain: domainName,
+              description: desc,
+              tools: toolNames,
+              enabled,
+            });
+          }
+          return textContent(JSON.stringify({ domains: domainList }, null, 2));
+        }
+        case 'enable': {
+          if (!args.domain) {
+            return textContent(JSON.stringify({ error: 'domain parameter required for enable action' }));
+          }
+          if (args.domain === 'all') {
+            for (const handles of registry.values()) {
+              for (const h of handles) h.enable();
+            }
+            server.sendToolListChanged();
+            return textContent(JSON.stringify({ ok: true, action: 'enabled', domain: 'all' }));
+          }
+          const handles = registry.get(args.domain as ToolDomain);
+          if (!handles) {
+            return textContent(JSON.stringify({ error: `Unknown domain: ${args.domain}. Available: ${[...registry.keys()].join(', ')}` }));
+          }
+          for (const h of handles) h.enable();
+          server.sendToolListChanged();
+          return textContent(JSON.stringify({ ok: true, action: 'enabled', domain: args.domain }));
+        }
+        case 'disable': {
+          if (!args.domain) {
+            return textContent(JSON.stringify({ error: 'domain parameter required for disable action' }));
+          }
+          if (args.domain === 'all') {
+            for (const handles of registry.values()) {
+              for (const h of handles) h.disable();
+            }
+            server.sendToolListChanged();
+            return textContent(JSON.stringify({ ok: true, action: 'disabled', domain: 'all' }));
+          }
+          const handles = registry.get(args.domain as ToolDomain);
+          if (!handles) {
+            return textContent(JSON.stringify({ error: `Unknown domain: ${args.domain}. Available: ${[...registry.keys()].join(', ')}` }));
+          }
+          for (const h of handles) h.disable();
+          server.sendToolListChanged();
+          return textContent(JSON.stringify({ ok: true, action: 'disabled', domain: args.domain }));
+        }
+        default: {
+          return textContent(JSON.stringify({ error: `Unknown action: ${args.action}` }));
+        }
+      }
+    },
+  ));
+
+  // Merge core domains into toolRegistry if provided
+  if (toolRegistry) {
+    for (const [domain, handles] of domains.entries()) {
+      const existing = toolRegistry.get(domain);
+      if (existing) {
+        existing.unshift(...handles);
+      } else {
+        toolRegistry.set(domain, handles);
+      }
+    }
+  }
+
+  const all = [...tier1];
+  for (const handles of domains.values()) {
+    all.push(...handles);
+  }
+
+  return { tier1, domains, all };
 }
+
+// ─── Domain tool name mapping ────────────────────────────────────────────────
+
+/** Map of domain → tool names, for listing in amp_tools. */
+const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
+  memory: ['amp_memory_replace', 'amp_memory_rewrite', 'amp_memory_promote', 'amp_memory_archive'],
+  temporal: ['amp_timeline', 'amp_fact_diff'],
+  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve'],
+  research: ['amp_research_init', 'amp_research_log', 'amp_research_context', 'amp_research_tree', 'amp_research_contradictions', 'amp_research_consolidate'],
+  code: ['amp_code_index', 'amp_code_search', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context'],
+  arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
+  wiki: ['amp_compile', 'amp_ingest', 'amp_lint'],
+  retrieval: ['amp_feedback'],
+};
+

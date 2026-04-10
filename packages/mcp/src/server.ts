@@ -5,10 +5,12 @@ import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
+import type { ToolRegistry } from './tools.js';
 import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@amp/research';
 import { registerArchTools, ARCH_TOOL_NAMES } from '@amp/arch';
 import { registerCodeTools, CODE_TOOL_NAMES } from '@amp/code';
 import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@amp/retrieval';
+import { registerWikiTools, WIKI_TOOL_NAMES } from '@amp/wiki';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -34,15 +36,48 @@ export interface AMPMCPServer {
 
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
+/**
+ * Register all tools on a server with progressive disclosure.
+ * Returns the ToolRegistry for the amp_tools gateway.
+ */
+function registerAllTools(server: McpServer): ToolRegistry {
+  const toolRegistry: ToolRegistry = new Map();
+
+  // Register core tools — returns Tier 1 (always-on) + core domains (Tier 2)
+  registerTools(server, toolRegistry);
+
+  // Register satellite domain tools — all Tier 2
+  const researchHandles = registerResearchTools(server);
+  toolRegistry.set('research', researchHandles);
+
+  const archHandles = registerArchTools(server);
+  toolRegistry.set('arch', archHandles);
+
+  const codeHandles = registerCodeTools(server);
+  toolRegistry.set('code', codeHandles);
+
+  const retrievalResult = registerRetrievalTools(server);
+  // amp_context is Tier 1, amp_feedback is Tier 2
+  const existingRetrieval = toolRegistry.get('retrieval') ?? [];
+  existingRetrieval.push(...retrievalResult.tier2);
+  toolRegistry.set('retrieval', existingRetrieval);
+
+  const wikiHandles = registerWikiTools(server);
+  toolRegistry.set('wiki', wikiHandles);
+
+  // Disable all Tier 2 tools by default
+  for (const handles of toolRegistry.values()) {
+    for (const h of handles) h.disable();
+  }
+
+  return toolRegistry;
+}
+
 export function createAMPServer(): AMPMCPServer {
   const server = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
 
-  // Register all AMP tools (core + research + arch + code + retrieval)
-  registerTools(server);
-  registerResearchTools(server);
-  registerArchTools(server);
-  registerCodeTools(server);
-  registerRetrievalTools(server);
+  // Register all AMP tools with progressive disclosure
+  registerAllTools(server);
 
   // ─── SSE transport ────────────────────────────────────────────────────────
 
@@ -148,11 +183,7 @@ export function createAMPServer(): AMPMCPServer {
           if (req.method === 'GET' && url === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
             const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
-            registerTools(perSessionServer);
-            registerResearchTools(perSessionServer);
-            registerArchTools(perSessionServer);
-            registerCodeTools(perSessionServer);
-            registerRetrievalTools(perSessionServer);
+            registerAllTools(perSessionServer);
 
             const transport = new SSEServerTransport('/messages', res);
             transports.set(transport.sessionId, transport);
@@ -214,7 +245,7 @@ export function createAMPServer(): AMPMCPServer {
 
   return {
     server,
-    toolNames: [...TOOL_NAMES, ...RESEARCH_TOOL_NAMES, ...ARCH_TOOL_NAMES, ...CODE_TOOL_NAMES, ...RETRIEVAL_TOOL_NAMES],
+    toolNames: [...TOOL_NAMES, ...RESEARCH_TOOL_NAMES, ...ARCH_TOOL_NAMES, ...CODE_TOOL_NAMES, ...RETRIEVAL_TOOL_NAMES, ...WIKI_TOOL_NAMES],
     startSSE,
     startStdio,
   };

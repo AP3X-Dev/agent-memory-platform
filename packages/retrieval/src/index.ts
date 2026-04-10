@@ -47,4 +47,4 @@ export type { AssemblerCodeLayer, AssemblerMemoryLayer } from './assembler.js';
 
 // MCP tools
 export { registerRetrievalTools, setRetrievalServiceInstances, RETRIEVAL_TOOL_NAMES } from './tools.js';
-export type { IUnifiedAssembler, IFeedbackTracker } from './tools.js';
+export type { IUnifiedAssembler, IFeedbackTracker, RetrievalRegisteredTools } from './tools.js';
