@@ -452,10 +452,10 @@ describe('AMPService.load with memory blocks', () => {
     expect(result.markdown).not.toContain('## Core Memory');
   });
 
-  it('does not count block tokens against budget', async () => {
+  it('applies per-tier token budgets to blocks', async () => {
     const bigBlock = makeMemoryBlock({
       name: 'persona',
-      content: 'X'.repeat(1000), // ~250 tokens
+      content: 'X'.repeat(1000), // ~250 tokens, will be truncated to 15% of budget
     });
     const nodes: SemanticNode[] = [
       makeSemanticNode({ id: 'sem-1', content: 'A'.repeat(200) }),
@@ -477,14 +477,14 @@ describe('AMPService.load with memory blocks', () => {
     const embedding = makeEmbedding();
     const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
 
-    // Low budget — but blocks should still be included
-    const scope: LoadScope = { task: 'test', tags: ['project:test'], max_tokens: 100 };
+    // With a 2000-token budget, core gets 15% = 300 tokens
+    const scope: LoadScope = { task: 'test', tags: ['project:test'], max_tokens: 2000 };
     const result = await service.load(scope);
 
     expect(result.markdown).toContain('## Core Memory');
-    expect(result.markdown).toContain('X'.repeat(100)); // block content present
-    // Total tokens includes block tokens
-    expect(result.tokens).toBeGreaterThan(100);
+    expect(result.markdown).toContain('persona');
+    // Block content is included (fits within 300-token core budget)
+    expect(result.markdown).toContain('X'.repeat(100));
   });
 
   it('uses project tag from tags array', async () => {

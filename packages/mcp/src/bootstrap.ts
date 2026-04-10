@@ -111,10 +111,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     exportPath,
   };
 
-  // Build memory block stores
+  // Build memory block stores with cache invalidation hook
   const redisBlockStore = new RedisBlockStore(redis);
   const neo4jBlockStore = new Neo4jBlockStore(driver);
-  const memoryBlockServiceInstance = new MemoryBlockService(redisBlockStore, neo4jBlockStore);
+  const cacheInvalidator = { invalidateByScope: (scope: string) => cache.invalidateByScope(scope) };
+  const memoryBlockServiceInstance = new MemoryBlockService(redisBlockStore, neo4jBlockStore, cacheInvalidator);
 
   // Build services
   const ampService = new AMPService(

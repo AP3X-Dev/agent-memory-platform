@@ -55,12 +55,24 @@ export class FactStore {
         );
       }
 
-      // Link FACT_ABOUT → Entity (MERGE on subject name)
+      // Link FACT_ABOUT → Entity — case-insensitive match to prevent
+      // fragmentation (e.g., "AMP", "amp", "Agent Memory Protocol" all merge
+      // to the same entity when an exact match exists). Falls back to creating
+      // a new entity with the original subject name if no match is found.
       await tx.run(
         `MATCH (f:Fact {id: $factId})
-         MERGE (e:Entity {name: $subject})
-         ON CREATE SET e.id = $entityId, e.type = 'concept', e.created_at = $now
-         MERGE (f)-[:FACT_ABOUT]->(e)`,
+         WITH f
+         OPTIONAL MATCH (existing:Entity) WHERE toLower(existing.name) = toLower($subject)
+         WITH f, existing ORDER BY existing.created_at ASC LIMIT 1
+         WITH f, CASE WHEN existing IS NOT NULL THEN existing
+                      ELSE NULL END AS matched
+         FOREACH (_ IN CASE WHEN matched IS NOT NULL THEN [1] ELSE [] END |
+           MERGE (f)-[:FACT_ABOUT]->(matched)
+         )
+         FOREACH (_ IN CASE WHEN matched IS NULL THEN [1] ELSE [] END |
+           CREATE (e:Entity {id: $entityId, name: $subject, type: 'concept', created_at: $now})
+           MERGE (f)-[:FACT_ABOUT]->(e)
+         )`,
         {
           factId: fact.id,
           subject: fact.subject,
@@ -119,10 +131,11 @@ export class FactStore {
 
       switch (timeMode) {
         case 'current':
-          // Active facts with no invalidation date
+          // Active facts with no invalidation date (case-insensitive entity match)
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-            WHERE f.status = 'active' AND f.invalid_at IS NULL
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+            WHERE toLower(e.name) = toLower($entityName)
+              AND f.status = 'active' AND f.invalid_at IS NULL
             RETURN f
             ORDER BY f.valid_at DESC`;
           break;
@@ -131,8 +144,9 @@ export class FactStore {
           // Facts valid at a specific point in time
           params.as_of = options?.as_of ?? new Date().toISOString();
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-            WHERE f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+            WHERE toLower(e.name) = toLower($entityName)
+              AND f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
             RETURN f
             ORDER BY f.valid_at DESC`;
           break;
@@ -142,8 +156,9 @@ export class FactStore {
           params.from = options?.from ?? '1970-01-01T00:00:00.000Z';
           params.to = options?.to ?? new Date().toISOString();
           cypher = `
-            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-            WHERE f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+            MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+            WHERE toLower(e.name) = toLower($entityName)
+              AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
             RETURN f
             ORDER BY f.valid_at DESC`;
           break;
@@ -152,13 +167,15 @@ export class FactStore {
           // All facts, ordered chronologically, optionally including invalidated
           if (options?.include_invalidated) {
             cypher = `
-              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+              WHERE toLower(e.name) = toLower($entityName)
               RETURN f
               ORDER BY f.valid_at ASC`;
           } else {
             cypher = `
-              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-              WHERE f.status <> 'invalidated'
+              MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+              WHERE toLower(e.name) = toLower($entityName)
+                AND f.status <> 'invalidated'
               RETURN f
               ORDER BY f.valid_at ASC`;
           }
@@ -217,7 +234,8 @@ export class FactStore {
     const session = this.driver.session();
     try {
       const result = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+         WHERE toLower(e.name) = toLower($entityName)
          RETURN f
          ORDER BY f.valid_at ASC`,
         { entityName },
@@ -251,10 +269,11 @@ export class FactStore {
   async diff(entityName: string, from: string, to: string): Promise<FactDiff> {
     const session = this.driver.session();
     try {
-      // Facts active at 'from' timestamp
+      // Facts active at 'from' timestamp (case-insensitive entity match)
       const fromResult = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-         WHERE f.valid_at <= $from AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+         WHERE toLower(e.name) = toLower($entityName)
+           AND f.valid_at <= $from AND (f.invalid_at IS NULL OR f.invalid_at > $from)
          RETURN f`,
         { entityName, from },
       );
@@ -262,8 +281,9 @@ export class FactStore {
 
       // Facts active at 'to' timestamp
       const toResult = await session.run(
-        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
-         WHERE f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $to)
+        `MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity)
+         WHERE toLower(e.name) = toLower($entityName)
+           AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $to)
          RETURN f`,
         { entityName, to },
       );
@@ -311,7 +331,7 @@ export class FactStore {
     try {
       const result = await session.run(
         `MATCH (f:Fact)
-         WHERE f.subject = $subject AND f.predicate = $predicate AND f.status = 'active'
+         WHERE toLower(f.subject) = toLower($subject) AND toLower(f.predicate) = toLower($predicate) AND f.status = 'active'
          RETURN f
          ORDER BY f.valid_at DESC`,
         { subject, predicate },

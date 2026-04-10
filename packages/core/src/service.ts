@@ -24,7 +24,8 @@ import { MemoryBlockService } from './blocks.js';
 export interface RedisLayer {
   cache: {
     get(scopeHash: string): Promise<MemoryContext | null>;
-    set(scopeHash: string, ctx: MemoryContext, sources: string[], ttl?: number): Promise<void>;
+    set(scopeHash: string, ctx: MemoryContext, sources: string[], ttl?: number, scopeTags?: string[]): Promise<void>;
+    invalidateByScope(scope: string): Promise<number>;
     invalidateByNodeId(nodeId: string): Promise<number>;
   };
   embeddings: {
@@ -93,6 +94,11 @@ export class AMPService {
     if (cached) return cached;
 
     // 2. Fetch memory blocks (if blocks service available)
+    // Budget: core=15%, working=10%, facts=15%, archive=60% of max_tokens
+    const CORE_BUDGET_RATIO = 0.15;
+    const WORKING_BUDGET_RATIO = 0.10;
+    const FACT_BUDGET_RATIO = 0.15;
+
     let coreBlocks: MemoryBlock[] = [];
     let workingBlocks: MemoryBlock[] = [];
     const projectTag = scope.tags?.find((t) => t.startsWith('project:')) ?? scope.tags?.[0];
@@ -106,6 +112,12 @@ export class AMPService {
       ]);
       coreBlocks = blockResults[0].filter((b) => b.content.length > 0);
       workingBlocks = blockResults[1].filter((b) => b.content.length > 0);
+
+      // Truncate blocks that exceed their tier budget
+      const coreBudget = Math.floor(maxTokens * CORE_BUDGET_RATIO);
+      const workingBudget = Math.floor(maxTokens * WORKING_BUDGET_RATIO);
+      coreBlocks = truncateBlocksToTokenBudget(coreBlocks, coreBudget);
+      workingBlocks = truncateBlocksToTokenBudget(workingBlocks, workingBudget);
     }
 
     // 3. Cache miss → query Neo4j (semantics + vector)
@@ -155,9 +167,10 @@ export class AMPService {
     // 4. Rank
     const ranked = rankMemories(merged);
 
-    // 5. Budget tokens — reserve 20% for facts, remainder for semantics
-    const factBudget = Math.floor(maxTokens * 0.2);
-    const semanticBudget = maxTokens - factBudget;
+    // 5. Budget tokens — per-tier allocation
+    const factBudget = Math.floor(maxTokens * FACT_BUDGET_RATIO);
+    const blockTokensUsed = estimateTokens(renderBlocksMarkdown(coreBlocks, workingBlocks));
+    const semanticBudget = maxTokens - factBudget - blockTokensUsed;
 
     const withTokens = ranked.map((m) => ({
       ...m,
@@ -196,12 +209,13 @@ export class AMPService {
       assembled_at: new Date().toISOString(),
     };
 
-    // 7. Cache
+    // 7. Cache (include scope tags for block-mutation invalidation)
     await this.redis.cache.set(
       scopeHash,
       ctx,
       sources,
       this.config.cache.contextTTL,
+      scope.tags,
     );
 
     return ctx;
@@ -407,4 +421,30 @@ function renderMarkdown(
   }
 
   return lines.join('\n');
+}
+
+function truncateBlocksToTokenBudget(blocks: MemoryBlock[], budget: number): MemoryBlock[] {
+  const result: MemoryBlock[] = [];
+  let tokensUsed = 0;
+
+  for (const block of blocks) {
+    const blockTokens = estimateTokens(block.content);
+    if (tokensUsed + blockTokens <= budget) {
+      result.push(block);
+      tokensUsed += blockTokens;
+    } else {
+      // Truncate the block content to fit remaining budget
+      const remaining = budget - tokensUsed;
+      if (remaining > 50) { // Only include if there's meaningful space
+        const charLimit = remaining * 4; // ~4 chars per token
+        result.push({
+          ...block,
+          content: block.content.slice(0, charLimit) + '\n[truncated]',
+        });
+      }
+      break; // Budget exhausted
+    }
+  }
+
+  return result;
 }

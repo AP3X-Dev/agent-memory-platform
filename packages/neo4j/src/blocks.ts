@@ -8,8 +8,14 @@ export class BlockStore {
   async save(block: MemoryBlock): Promise<void> {
     const session = this.driver.session();
     try {
+      // Session-scoped blocks (working tier) include session_id in the MERGE key
+      // to prevent cross-session overwrites. Core blocks use scope+name only.
+      const mergeKey = block.session_id
+        ? '{scope: $scope, name: $name, session_id: $session_id}'
+        : '{scope: $scope, name: $name}';
+
       await session.run(
-        `MERGE (b:MemoryBlock {scope: $scope, name: $name})
+        `MERGE (b:MemoryBlock ${mergeKey})
          SET b.id = $id,
              b.tier = $tier,
              b.content = $content,
@@ -78,13 +84,15 @@ export class BlockStore {
     }
   }
 
-  async delete(scope: string, name: string): Promise<void> {
+  async delete(scope: string, name: string, sessionId?: string): Promise<void> {
     const session = this.driver.session();
     try {
-      await session.run(
-        'MATCH (b:MemoryBlock {scope: $scope, name: $name}) DETACH DELETE b',
-        { scope, name },
-      );
+      const query = sessionId
+        ? 'MATCH (b:MemoryBlock {scope: $scope, name: $name}) WHERE b.session_id = $sessionId DETACH DELETE b'
+        : 'MATCH (b:MemoryBlock {scope: $scope, name: $name}) WHERE b.session_id IS NULL DETACH DELETE b';
+      const params: Record<string, unknown> = { scope, name };
+      if (sessionId) params.sessionId = sessionId;
+      await session.run(query, params);
     } finally {
       await session.close();
     }

@@ -249,7 +249,7 @@ describe('MemoryBlockService.archive', () => {
     const content = await service.archive('project:test', 'persona');
     expect(content).toBe('important data');
     expect(redis.delete).toHaveBeenCalledWith('project:test', 'persona', undefined);
-    expect(neo4j.delete).toHaveBeenCalledWith('project:test', 'persona');
+    expect(neo4j.delete).toHaveBeenCalledWith('project:test', 'persona', undefined);
   });
 
   it('throws when block not found', async () => {

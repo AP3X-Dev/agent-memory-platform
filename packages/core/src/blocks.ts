@@ -18,16 +18,35 @@ export interface Neo4jBlockLayer {
   save(block: MemoryBlock): Promise<void>;
   get(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null>;
   list(scope: string, tier?: MemoryTier, sessionId?: string): Promise<MemoryBlock[]>;
-  delete(scope: string, name: string): Promise<void>;
+  delete(scope: string, name: string, sessionId?: string): Promise<void>;
+}
+
+export interface CacheInvalidator {
+  invalidateByScope(scope: string): Promise<void>;
 }
 
 // ─── MemoryBlockService ─────────────────────────────────────────────────────
 
 export class MemoryBlockService {
+  private cacheInvalidator?: CacheInvalidator;
+
   constructor(
     private redisBlocks: RedisBlockLayer,
     private neo4jBlocks: Neo4jBlockLayer,
-  ) {}
+    cacheInvalidator?: CacheInvalidator,
+  ) {
+    this.cacheInvalidator = cacheInvalidator;
+  }
+
+  private async _invalidateContext(scope: string): Promise<void> {
+    if (this.cacheInvalidator) {
+      try {
+        await this.cacheInvalidator.invalidateByScope(scope);
+      } catch (err) {
+        console.warn('[MemoryBlockService] Context cache invalidation failed:', err);
+      }
+    }
+  }
 
   async read(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null> {
     // Try Redis first, fall back to Neo4j
@@ -102,7 +121,8 @@ export class MemoryBlockService {
       content: newContent,
       updated_at: new Date().toISOString(),
     };
-    await this._persist(updated);
+    // Optimistic concurrency: verify block wasn't modified between read and write
+    await this._persistWithVersionCheck(updated, block.updated_at);
     return updated;
   }
 
@@ -170,6 +190,7 @@ export class MemoryBlockService {
       await this.neo4jBlocks.save(updated);
     }
 
+    await this._invalidateContext(scope);
     return updated;
   }
 
@@ -181,10 +202,11 @@ export class MemoryBlockService {
 
     const content = block.content;
 
-    // Delete from both stores
+    // Delete from both stores (pass sessionId to scope deletion correctly)
     await this.redisBlocks.delete(scope, name, sessionId);
-    await this.neo4jBlocks.delete(scope, name);
+    await this.neo4jBlocks.delete(scope, name, sessionId);
 
+    await this._invalidateContext(scope);
     return content;
   }
 
@@ -250,5 +272,26 @@ export class MemoryBlockService {
         throw err;
       }
     }
+
+    // Invalidate assembled context cache so next load() picks up changes
+    await this._invalidateContext(block.scope);
+  }
+
+  /**
+   * Persist with optimistic concurrency check.
+   * Re-reads the block and verifies updated_at matches expectedVersion.
+   * Throws if another writer modified the block between our read and write.
+   */
+  private async _persistWithVersionCheck(block: MemoryBlock, expectedVersion: string): Promise<void> {
+    // Re-read current state to detect concurrent modification
+    const current = await this.redisBlocks.get(block.scope, block.name, block.session_id);
+    if (current && current.updated_at !== expectedVersion) {
+      throw new Error(
+        `Concurrent modification detected on block "${block.name}": ` +
+        `expected version ${expectedVersion}, found ${current.updated_at}. ` +
+        `Read the block again and retry.`,
+      );
+    }
+    await this._persist(block);
   }
 }

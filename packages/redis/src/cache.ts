@@ -16,6 +16,7 @@ export class ContextCache {
     context: MemoryContext,
     sourceNodeIds: string[],
     ttl: number = 300,
+    scopeTags?: string[],
   ): Promise<void> {
     const key = `amp:ctx:${scopeHash}`;
     await this.redis.setex(key, ttl, JSON.stringify(context));
@@ -28,7 +29,28 @@ export class ContextCache {
       pipeline.sadd(`amp:deps:${nodeId}`, key);
       pipeline.expire(`amp:deps:${nodeId}`, depsTtl);
     }
+    // Track scope→cache-keys mapping for block mutation invalidation
+    if (scopeTags) {
+      for (const tag of scopeTags) {
+        pipeline.sadd(`amp:scope-deps:${tag}`, key);
+        pipeline.expire(`amp:scope-deps:${tag}`, depsTtl);
+      }
+    }
     await pipeline.exec();
+  }
+
+  async invalidateByScope(scope: string): Promise<number> {
+    const depsKey = `amp:scope-deps:${scope}`;
+    const cacheKeys = await this.redis.smembers(depsKey);
+    if (cacheKeys.length === 0) return 0;
+
+    const pipeline = this.redis.pipeline();
+    for (const key of cacheKeys) {
+      pipeline.del(key);
+    }
+    pipeline.del(depsKey);
+    await pipeline.exec();
+    return cacheKeys.length;
   }
 
   async invalidateByNodeId(nodeId: string): Promise<number> {
