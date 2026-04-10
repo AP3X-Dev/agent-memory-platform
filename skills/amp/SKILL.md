@@ -1,11 +1,43 @@
 ---
 name: amp
-description: "Agent Memory Protocol — persistent memory with temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 37 MCP tools across 6 domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
+description: "Agent Memory Protocol — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 6 always-visible tools + 8 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
 ---
 
 # AMP — Agent Memory Protocol
 
-Persistent memory system for AI agents. 37 MCP tools across 6 domains: Core Memory, Architecture, Code Intelligence, Research, Unified Retrieval, and Wiki. Knowledge compounds across sessions — the agent on day 10 starts with everything it learned on days 1-9.
+Persistent memory system for AI agents. Knowledge compounds across sessions — the agent on day 10 starts with everything it learned on days 1-9.
+
+## Progressive Disclosure
+
+AMP uses progressive disclosure to avoid overwhelming agents with 37+ tools at once. **6 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
+
+### Always-Visible Tools (Tier 1)
+
+| Tool | Purpose |
+|------|---------|
+| `amp_load` | Load memory context (accepts temporal param for time-aware retrieval) |
+| `amp_store` | Store episodic memory with signals |
+| `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
+| `amp_memory_insert` | Insert or append to a memory block |
+| `amp_context` | Super-load: blends architecture + code + memory |
+| `amp_tools` | Enable/disable/list on-demand tool domains |
+
+These 6 tools cover session start, storing decisions, and reading/writing memory — the most common operations.
+
+### On-Demand Domains
+
+Call `amp_tools(action: "enable", domain: "<name>")` to activate a domain's tools. Call `amp_tools(action: "list")` to see what is currently enabled.
+
+| Domain | Tools (count) | When to enable |
+|--------|---------------|----------------|
+| `memory` | `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive` (4) | Session end — promoting/archiving memory blocks |
+| `temporal` | `amp_timeline`, `amp_fact_diff` (2) | Investigating fact history or change tracking |
+| `admin` | `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_provenance` (5) | Graph queries, project setup, provenance tracing |
+| `research` | `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate` (6) | Experiment campaigns |
+| `code` | `amp_code_index`, `amp_code_search`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context` (5) | Code search, symbol lookup, dependency analysis |
+| `arch` | `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context` (6) | Architecture context, blast radius, drift detection |
+| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint` (3) | Wiki compilation, source ingestion, health checks |
+| `retrieval` | `amp_feedback` (1) | Recording retrieval usefulness for ranking improvement |
 
 ## Quickstart — 5 Rules
 
@@ -22,55 +54,57 @@ Persistent memory system for AI agents. 37 MCP tools across 6 domains: Core Memo
 ```
 What do you need?
 │
-├─ General context for a task ──────────── amp_context (super-load, blends all sources)
+├─ General context for a task ──────────── amp_context [always visible]
+│
+├─ Enable a tool domain ────────────────── amp_tools [always visible]
 │
 ├─ Memory specifically
-│  ├─ Load relevant memories ────────────── amp_load (accepts temporal param for time-aware retrieval)
-│  ├─ Store a decision/learning ─────────── amp_store
-│  ├─ Ad-hoc graph query ────────────────── amp_query
-│  ├─ Resolve amp:// URI ────────────────── amp_resolve
-│  ├─ Consolidation ─────────────────────── amp_consolidate
-│  └─ Trace knowledge lifecycle ─────────── amp_provenance
+│  ├─ Load relevant memories ────────────── amp_load [always visible]
+│  ├─ Store a decision/learning ─────────── amp_store [always visible]
+│  ├─ Ad-hoc graph query ────────────────── amp_query [enable: admin]
+│  ├─ Resolve amp:// URI ────────────────── amp_resolve [enable: admin]
+│  ├─ Consolidation ─────────────────────── amp_consolidate [enable: admin]
+│  └─ Trace knowledge lifecycle ─────────── amp_provenance [enable: admin]
 │
 ├─ Temporal facts
-│  ├─ Fact history for an entity ────────── amp_timeline
-│  └─ What changed between dates ────────── amp_fact_diff
+│  ├─ Fact history for an entity ────────── amp_timeline [enable: temporal]
+│  └─ What changed between dates ────────── amp_fact_diff [enable: temporal]
 │
 ├─ Memory tiers (core / working / archive)
-│  ├─ Read blocks from a tier ───────────── amp_memory_read
-│  ├─ Insert/append to a block ──────────── amp_memory_insert
-│  ├─ Replace content in a block ────────── amp_memory_replace
-│  ├─ Full rewrite of a block ──────────── amp_memory_rewrite
-│  ├─ Move block between tiers ──────────── amp_memory_promote
-│  └─ Archive a block ──────────────────── amp_memory_archive
+│  ├─ Read blocks from a tier ───────────── amp_memory_read [always visible]
+│  ├─ Insert/append to a block ──────────── amp_memory_insert [always visible]
+│  ├─ Replace content in a block ────────── amp_memory_replace [enable: memory]
+│  ├─ Full rewrite of a block ──────────── amp_memory_rewrite [enable: memory]
+│  ├─ Move block between tiers ──────────── amp_memory_promote [enable: memory]
+│  └─ Archive a block ──────────────────── amp_memory_archive [enable: memory]
 │
 ├─ Code search / symbols
-│  ├─ Find implementations ──────────────── amp_code_search
-│  ├─ List symbols in a file ────────────── amp_code_symbols
-│  ├─ Who calls / imports X? ────────────── amp_code_deps
-│  ├─ Code context for a task ───────────── amp_code_context
-│  └─ Index a project ──────────────────── amp_code_index
+│  ├─ Find implementations ──────────────── amp_code_search [enable: code]
+│  ├─ List symbols in a file ────────────── amp_code_symbols [enable: code]
+│  ├─ Who calls / imports X? ────────────── amp_code_deps [enable: code]
+│  ├─ Code context for a task ───────────── amp_code_context [enable: code]
+│  └─ Index a project ──────────────────── amp_code_index [enable: code]
 │
 ├─ Architecture
-│  ├─ Context for an entity ─────────────── amp_arch_context
-│  ├─ What breaks if X changes? ─────────── amp_impact
-│  ├─ Register entity details ───────────── amp_arch_register
-│  ├─ Create entity relationships ───────── amp_arch_relate
-│  ├─ Cross-cutting concerns ────────────── amp_arch_aspect
-│  └─ Drift detection ──────────────────── amp_arch_drift
+│  ├─ Context for an entity ─────────────── amp_arch_context [enable: arch]
+│  ├─ What breaks if X changes? ─────────── amp_impact [enable: arch]
+│  ├─ Register entity details ───────────── amp_arch_register [enable: arch]
+│  ├─ Create entity relationships ───────── amp_arch_relate [enable: arch]
+│  ├─ Cross-cutting concerns ────────────── amp_arch_aspect [enable: arch]
+│  └─ Drift detection ──────────────────── amp_arch_drift [enable: arch]
 │
 ├─ Research experiments
-│  ├─ Start a campaign ──────────────────── amp_research_init
-│  ├─ Log an experiment ─────────────────── amp_research_log
-│  ├─ Research context (THINK phase) ────── amp_research_context
-│  ├─ Hypothesis tree ───────────────────── amp_research_tree
-│  ├─ Find contradictions ───────────────── amp_research_contradictions
-│  └─ Consolidate patterns ──────────────── amp_research_consolidate
+│  ├─ Start a campaign ──────────────────── amp_research_init [enable: research]
+│  ├─ Log an experiment ─────────────────── amp_research_log [enable: research]
+│  ├─ Research context (THINK phase) ────── amp_research_context [enable: research]
+│  ├─ Hypothesis tree ───────────────────── amp_research_tree [enable: research]
+│  ├─ Find contradictions ───────────────── amp_research_contradictions [enable: research]
+│  └─ Consolidate patterns ──────────────── amp_research_consolidate [enable: research]
 │
 └─ Wiki / knowledge base
-   ├─ Compile graph into wiki ───────────── amp_compile
-   ├─ Ingest source documents ──────────── amp_ingest
-   └─ Graph health checks ──────────────── amp_lint
+   ├─ Compile graph into wiki ───────────── amp_compile [enable: wiki]
+   ├─ Ingest source documents ──────────── amp_ingest [enable: wiki]
+   └─ Graph health checks ──────────────── amp_lint [enable: wiki]
 ```
 
 ---
@@ -81,7 +115,7 @@ These are not slash commands. Follow these rules automatically during normal wor
 
 ### Session Start
 
-1. Check for `## AMP Memory` config in the project's agent config file (CLAUDE.md, .cursorrules, AGENTS.md, etc.). If missing, bootstrap it — scan the repo and call `amp_bootstrap`.
+1. Check for `## AMP Memory` config in the project's agent config file (CLAUDE.md, .cursorrules, AGENTS.md, etc.). If missing, enable the `admin` domain (`amp_tools(action: "enable", domain: "admin")`), then bootstrap — scan the repo and call `amp_bootstrap`.
 2. Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`. Reuse for all stores this session.
 3. Read core memory for always-visible context:
    ```
@@ -98,9 +132,16 @@ These are not slash commands. Follow these rules automatically during normal wor
    ```
 5. Let loaded memory silently inform your work.
 
+**No domain enablement needed at session start.** All tools used here (`amp_memory_read`, `amp_context`, `amp_load`) are Tier 1 (always visible).
+
 ### Before Modifying Code
 
 When changing code in a module you haven't touched this session:
+- Enable the needed domain first:
+  ```
+  amp_tools(action: "enable", domain: "arch")   // for architecture context
+  amp_tools(action: "enable", domain: "code")   // for code symbols/search
+  ```
 - Load context: `amp_arch_context(entity_name: "<module>")` for architecture, or `amp_code_context(task: "modifying <module>")` for relevant symbols.
 - Check for: conventions, past decisions, known gotchas, architectural constraints.
 - Apply silently. Only surface memory when it changes your approach.
@@ -109,11 +150,12 @@ When changing code in a module you haven't touched this session:
 
 - Load context for the affected area before diving in.
 - AMP may know: past bugs with similar symptoms, root causes, fragile components.
-- Check blast radius: `amp_impact(entity_name: "<affected module>")`.
-- After resolution, store the root cause.
+- Enable arch domain for blast radius: `amp_tools(action: "enable", domain: "arch")`, then `amp_impact(entity_name: "<affected module>")`.
+- After resolution, store the root cause (`amp_store` — always visible).
 
 ### When Planning / Making Decisions
 
+- Enable arch domain: `amp_tools(action: "enable", domain: "arch")`.
 - Load architecture context: `amp_arch_context(entity_name: "<module>")`.
 - Check for prior decisions, stated preferences, conventions, past attempts.
 - Cite memory when relevant: "The project uses X pattern for this kind of thing."
@@ -152,15 +194,15 @@ Don't store: routine edits, things derivable from code/git, raw code blocks, eph
 
 ### Memory Tier Management
 
-During a session, use the memory tier tools to maintain structured state:
+During a session, use the memory tier tools to maintain structured state. Note that `amp_memory_read` and `amp_memory_insert` are always visible, but `amp_memory_replace`, `amp_memory_promote`, and `amp_memory_archive` require enabling the `memory` domain first.
 
-| When | Action |
-|------|--------|
-| Session start | `amp_memory_read(tier: "core")` — read always-visible blocks |
-| During work | `amp_memory_insert(tier: "working", block: "working_state", content: "...")` — update session context |
-| User states preference | `amp_memory_replace(tier: "core", block: "user", old: "...", new: "...")` — update user preferences |
-| Session end | `amp_memory_promote(block: "...", from_tier: "working", to_tier: "core")` — keep valuable discoveries |
-| Session end | `amp_memory_archive(block: "working_state")` — clean up session-scoped blocks |
+| When | Action | Domain |
+|------|--------|--------|
+| Session start | `amp_memory_read(tier: "core")` — read always-visible blocks | always visible |
+| During work | `amp_memory_insert(tier: "working", block: "working_state", content: "...")` — update session context | always visible |
+| User states preference | Enable `memory` domain, then `amp_memory_replace(tier: "core", block: "user", old: "...", new: "...")` | memory |
+| Session end | Enable `memory` domain, then `amp_memory_promote(block: "...", from_tier: "working", to_tier: "core")` | memory |
+| Session end | `amp_memory_archive(block: "working_state")` — clean up session-scoped blocks | memory |
 
 Three tiers:
 - **Core** (always visible, ~15% token budget) — persona, user preferences, project state
@@ -174,21 +216,42 @@ Default blocks: `persona`, `user`, `current_objective`, `working_state`, `projec
 Facts are subject-predicate-object triples with `valid_at`/`invalid_at`/`status` fields. Canonical entity resolution prevents fragmentation across name variants.
 
 - When existing knowledge is contradicted, facts get **invalidated** (not just overwritten) — the old fact is marked with `invalid_at` and a new fact is created.
+- Enable the `temporal` domain first: `amp_tools(action: "enable", domain: "temporal")`.
 - Use `amp_timeline(entity: "<name>")` to see how facts about an entity evolved chronologically.
 - Use `amp_fact_diff(entity: "<name>", from: "<timestamp>", to: "<timestamp>")` to see what changed between two points in time.
-- `amp_load` now accepts a `temporal` param for time-aware retrieval: `current` (default), `historical`, `interval`, `evolution`.
+- `amp_load` (always visible) accepts a `temporal` param for time-aware retrieval: `current` (default), `historical`, `interval`, `evolution`.
 
 ### Session End / Handoff
 
-- Store a session summary: what was accomplished, key decisions, open items.
+- Store a session summary: what was accomplished, key decisions, open items (`amp_store` — always visible).
+- Enable the `memory` domain: `amp_tools(action: "enable", domain: "memory")`.
 - Promote valuable working memory to core: `amp_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
 - Clean up session-scoped blocks: `amp_memory_archive(block: "working_state")`.
 - If spawning sub-agents, include relevant AMP context in their prompts.
+- Enable the `admin` domain: `amp_tools(action: "enable", domain: "admin")`.
 - Check consolidation: `amp_consolidate(action: "status")`. If 10+ unprocessed episodes, run it.
 
 ---
 
+## Tool Reference — Always Visible (6 tools)
+
+### amp_tools
+
+Gateway to on-demand tool domains. Enable, disable, or list available domains.
+
+```json
+{ "action": "enable", "domain": "code" }
+{ "action": "disable", "domain": "code" }
+{ "action": "list" }
+```
+
+Domains: `memory`, `temporal`, `admin`, `research`, `code`, `arch`, `wiki`, `retrieval`.
+
+---
+
 ## Tool Reference — Core Memory (15 tools)
+
+> **Note:** `amp_load`, `amp_store`, `amp_memory_read`, and `amp_memory_insert` are always visible. All other tools in this section require enabling their respective domain first (`admin` for query/consolidate/resolve/bootstrap/provenance, `temporal` for timeline/fact_diff, `memory` for replace/rewrite/promote/archive).
 
 ### amp_load
 
@@ -377,6 +440,8 @@ Archive a memory block. Moves it to the archive tier for future searchability.
 
 ## Tool Reference — Unified Retrieval (2 tools)
 
+> **Note:** `amp_context` is always visible. `amp_feedback` requires enabling the `retrieval` domain.
+
 ### amp_context
 
 The "super-load" — blends architecture + code + memory into one response. Use this as your default context loader.
@@ -414,6 +479,8 @@ Record whether retrieval results were useful. Improves future rankings.
 ---
 
 ## Tool Reference — Code Intelligence (5 tools)
+
+> **Requires:** `amp_tools(action: "enable", domain: "code")`
 
 ### amp_code_index
 
@@ -472,6 +539,8 @@ Build code-aware context for a task. Returns relevant symbols + semantic memorie
 ---
 
 ## Tool Reference — Architecture (6 tools)
+
+> **Requires:** `amp_tools(action: "enable", domain: "arch")`
 
 ### amp_arch_register
 
@@ -546,6 +615,8 @@ Returns: responsibility, interface, internals, hierarchy, children, dependencies
 ---
 
 ## Tool Reference — Research (6 tools)
+
+> **Requires:** `amp_tools(action: "enable", domain: "research")`
 
 For autonomous experiment campaigns. See the amp-researcher skill for the full protocol.
 
@@ -623,6 +694,8 @@ Detect patterns across experiments and promote to semantic knowledge.
 ---
 
 ## Tool Reference — Wiki (3 tools)
+
+> **Requires:** `amp_tools(action: "enable", domain: "wiki")`
 
 ### amp_compile
 
@@ -736,18 +809,19 @@ MATCH (e:Entity {name: 'auth-module'})-[r]->(dep:Entity) RETURN type(r), dep.nam
 
 ## Best Practices
 
-1. **Prefer `amp_context` over `amp_load`** when you need code + architecture + memory blended together.
-2. **Use `amp_arch_context` for planning** — it gives you the full structural picture of a module.
-3. **Use `amp_code_search` over grep** when you need semantic understanding, not just text matching.
-4. **Run `amp_code_index` once** when first working with a project, then re-index after significant changes.
-5. **Check `amp_arch_drift` periodically** to know if your architectural model is stale.
-6. **Use `amp_impact` before risky changes** to understand the blast radius.
-7. **Store what would be lost** if someone only read the commit. The decision, the tradeoff, the context.
-8. **Write prose, not code.** AMP stores reasoning and decisions, not implementations.
-9. **Project tags are mandatory.** Every load/store includes `project:<name>`.
-10. **Entity linking is mandatory.** Every store includes entity names. Without them, episodes are orphaned.
-11. **Read core memory at session start.** Core blocks (persona, user, project_state) provide always-visible context.
-12. **Update working memory during sessions.** Use `amp_memory_insert` to maintain `working_state` so handoffs are smooth.
-13. **Promote, don't lose.** At session end, promote valuable working memory to core before archiving.
-14. **Invalidate, don't overwrite.** When facts are contradicted, they get invalidated with timestamps — preserving history.
-15. **Use `amp_timeline` for fact archaeology.** When you need to understand how knowledge about an entity evolved over time.
+1. **Enable domains before using their tools.** Call `amp_tools(action: "enable", domain: "<name>")` first. The 6 Tier 1 tools need no enablement.
+2. **Prefer `amp_context` over `amp_load`** when you need code + architecture + memory blended together.
+3. **Use `amp_arch_context` for planning** — enable `arch` domain, then get the full structural picture.
+4. **Use `amp_code_search` over grep** when you need semantic understanding, not just text matching. Enable `code` domain first.
+5. **Run `amp_code_index` once** when first working with a project, then re-index after significant changes.
+6. **Check `amp_arch_drift` periodically** to know if your architectural model is stale.
+7. **Use `amp_impact` before risky changes** to understand the blast radius.
+8. **Store what would be lost** if someone only read the commit. The decision, the tradeoff, the context.
+9. **Write prose, not code.** AMP stores reasoning and decisions, not implementations.
+10. **Project tags are mandatory.** Every load/store includes `project:<name>`.
+11. **Entity linking is mandatory.** Every store includes entity names. Without them, episodes are orphaned.
+12. **Read core memory at session start.** Core blocks (persona, user, project_state) provide always-visible context.
+13. **Update working memory during sessions.** Use `amp_memory_insert` (always visible) to maintain `working_state` so handoffs are smooth.
+14. **Promote, don't lose.** At session end, enable `memory` domain, promote valuable working memory to core before archiving.
+15. **Invalidate, don't overwrite.** When facts are contradicted, they get invalidated with timestamps — preserving history.
+16. **Use `amp_timeline` for fact archaeology.** Enable `temporal` domain when you need to understand how knowledge about an entity evolved over time.
