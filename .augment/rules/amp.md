@@ -5,13 +5,14 @@ description: AMP persistent memory — autonomous usage rules for all coding tas
 
 # AMP — Agent Memory Protocol
 
-Use AMP MCP tools autonomously during all work. Progressive disclosure: 6 always-visible tools + 8 on-demand domains.
+Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always-visible tools + 8 on-demand domains.
 
 ## Always-Visible Tools (Tier 1)
 - `amp_load` — load memory context
 - `amp_store` — store episodic memory
 - `amp_memory_read` — read memory blocks (core/working/archive)
 - `amp_memory_insert` — insert or append to a memory block
+- `amp_grep` — search memory by text pattern (exact or regex) across all node types
 - `amp_context` — super-load blending architecture + code + memory
 - `amp_tools` — enable/disable/list on-demand tool domains
 

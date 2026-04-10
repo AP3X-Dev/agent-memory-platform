@@ -4,7 +4,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to manage its tool surface. **6 tools are always visible:**
+AMP uses progressive disclosure to manage its tool surface. **7 tools are always visible:**
 
 | Always-Visible Tool | Purpose |
 |---------------------|---------|
@@ -12,6 +12,7 @@ AMP uses progressive disclosure to manage its tool surface. **6 tools are always
 | `amp_store` | Store episodic memory |
 | `amp_memory_read` | Read memory blocks (core/working/archive) |
 | `amp_memory_insert` | Insert or append to a memory block |
+| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: architecture + code + memory blended |
 | `amp_tools` | Enable/disable/list domain-specific tool groups |
 

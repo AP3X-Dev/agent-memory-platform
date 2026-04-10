@@ -1,12 +1,12 @@
 # AMP — Agent Memory Protocol
 
-You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **37 tools** across **6 domains**, exposed via **progressive disclosure** — only 6 core tools are visible by default; enable additional domains on demand with `amp_tools`.
+You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **38 tools** across **6 domains**, exposed via **progressive disclosure** — only 7 core tools are visible by default; enable additional domains on demand with `amp_tools`.
 
 ---
 
 ## Tool Visibility — Progressive Disclosure
 
-**6 tools always visible** (Tier 1 — the daily drivers):
+**7 tools always visible** (Tier 1 — the daily drivers):
 
 | Tool | Purpose |
 |------|---------|
@@ -15,6 +15,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 | `amp_memory_read` | Read a structured memory block (core/working tier). |
 | `amp_memory_insert` | Append text to a memory block. Creates if new. |
 | `amp_context` | Unified context assembly blending architecture + code + memory. |
+| `amp_grep` | Search memory by text pattern (exact or regex) across all node types. |
 | `amp_tools` | **Gateway** — list, enable, or disable tool domains. |
 
 **31 tools available on demand** (Tier 2 — enable when needed):

@@ -89,7 +89,7 @@ export function setServiceInstances(services: {
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
-  'amp_load', 'amp_store', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
+  'amp_load', 'amp_store', 'amp_grep', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
   'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
   'amp_memory_promote', 'amp_memory_archive',
   'amp_timeline', 'amp_fact_diff',
@@ -282,6 +282,16 @@ const AmpToolsSchema = {
   domain: z.string().optional().describe('Domain name: memory, temporal, admin, research, code, arch, wiki, retrieval. Or "all" to enable/disable everything.'),
 };
 
+const AmpGrepSchema = {
+  pattern: z.string().max(500).describe('Text pattern to search for. Supports exact string or regex (when regex=true).'),
+  regex: z.boolean().optional().describe('Treat pattern as a regular expression. Default: false (exact substring match).'),
+  node_types: z.array(z.enum(['episodic', 'semantic', 'fact', 'block', 'entity'])).optional()
+    .describe('Node types to search. Default: all types.'),
+  scope: z.string().optional().describe('Project scope tag to filter by (e.g., "project:amp").'),
+  case_sensitive: z.boolean().optional().describe('Case-sensitive matching. Default: false.'),
+  limit: z.number().max(50).optional().describe('Max results to return. Default: 20.'),
+};
+
 // ─── Handler implementations ─────────────────────────────────────────────────
 
 type ToolResult = Promise<{ content: Array<{ type: 'text'; text: string }> }>;
@@ -300,6 +310,14 @@ export type ToolHandlers = {
     content: string;
     outcome?: 'approved' | 'revised' | 'rejected' | 'abandoned';
     signals?: Array<{ type: 'reinforcement' | 'correction' | 'contradiction'; target_id: string; detail: string }>;
+  }) => ToolResult;
+  amp_grep: (args: {
+    pattern: string;
+    regex?: boolean;
+    node_types?: Array<'episodic' | 'semantic' | 'fact' | 'block' | 'entity'>;
+    scope?: string;
+    case_sensitive?: boolean;
+    limit?: number;
   }) => ToolResult;
   amp_query: (args: { query: string; limit?: number }) => ToolResult;
   amp_consolidate: (args: {
@@ -366,6 +384,283 @@ export function buildToolHandlers(): ToolHandlers {
         return textContent('duplicate:true');
       }
       return textContent(`id:${result.id}`);
+    },
+
+    async amp_grep(args) {
+      if (!scopedQuery) throw new Error('ScopedQuery not initialised');
+
+      const pattern = args.pattern;
+      const isRegex = args.regex ?? false;
+      const caseSensitive = args.case_sensitive ?? false;
+      const limit = args.limit ?? 20;
+      const nodeTypes = args.node_types ?? ['episodic', 'semantic', 'fact', 'block', 'entity'];
+
+      // Validate regex if regex mode
+      if (isRegex) {
+        try {
+          new RegExp(pattern);
+        } catch (e) {
+          return textContent(`**Error:** Invalid regular expression: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+
+      // Escape a string for safe inline use in a Cypher string literal
+      function cypherEscape(str: string): string {
+        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
+      }
+
+      // Build the Neo4j match expression for a given field
+      const escaped = cypherEscape(pattern);
+      function matchExpr(field: string): string {
+        if (isRegex) {
+          const regexLiteral = caseSensitive ? `'.*${escaped}.*'` : `'(?i).*${escaped}.*'`;
+          return `${field} =~ ${regexLiteral}`;
+        }
+        if (caseSensitive) {
+          return `${field} CONTAINS '${escaped}'`;
+        }
+        return `toLower(${field}) CONTAINS toLower('${escaped}')`;
+      }
+
+      interface GrepResult {
+        id: string;
+        node_type: string;
+        matched_field: string;
+        snippet: string;
+        score: number;
+        meta?: Record<string, unknown>;
+      }
+
+      const results: GrepResult[] = [];
+      const seenIds = new Set<string>();
+
+      // Helper: extract snippet around match
+      function extractSnippet(text: string, pat: string, isRx: boolean, isCaseSens: boolean): string {
+        if (!text) return '';
+        let matchIdx = -1;
+        let matchLen = pat.length;
+
+        if (isRx) {
+          try {
+            const flags = isCaseSens ? '' : 'i';
+            const rx = new RegExp(pat, flags);
+            const m = rx.exec(text);
+            if (m) {
+              matchIdx = m.index;
+              matchLen = m[0].length;
+            }
+          } catch {
+            matchIdx = -1;
+          }
+        } else {
+          if (isCaseSens) {
+            matchIdx = text.indexOf(pat);
+          } else {
+            matchIdx = text.toLowerCase().indexOf(pat.toLowerCase());
+          }
+        }
+
+        if (matchIdx === -1) {
+          return text.length > 200 ? text.slice(0, 200) + '...' : text;
+        }
+
+        const contextChars = 100;
+        const start = Math.max(0, matchIdx - contextChars);
+        const end = Math.min(text.length, matchIdx + matchLen + contextChars);
+        let snippet = text.slice(start, end);
+
+        if (start > 0) snippet = '...' + snippet;
+        if (end < text.length) snippet = snippet + '...';
+
+        // Bold the matched text in the snippet
+        const matchedText = text.slice(matchIdx, matchIdx + matchLen);
+        snippet = snippet.replace(matchedText, `**${matchedText}**`);
+
+        return snippet;
+      }
+
+      // Helper: add result with dedup
+      function addResult(id: string, nodeType: string, matchedField: string, fieldValue: string, score: number, meta?: Record<string, unknown>): void {
+        if (seenIds.has(id) || results.length >= limit) return;
+        seenIds.add(id);
+        results.push({
+          id,
+          node_type: nodeType,
+          matched_field: matchedField,
+          snippet: extractSnippet(fieldValue, pattern, isRegex, caseSensitive),
+          score,
+          meta,
+        });
+      }
+
+      // Execute queries per node type
+      const perTypeLimit = Math.min(limit, 50);
+      const escapedScope = args.scope ? cypherEscape(args.scope) : '';
+
+      if (nodeTypes.includes('episodic')) {
+        const scopeFilter = args.scope ? ` AND e.task CONTAINS '${escapedScope}'` : '';
+        const cypher = `MATCH (e:Episodic) WHERE (${matchExpr('e.content')} OR ${matchExpr('e.task')})${scopeFilter} RETURN e ORDER BY e.created_at DESC`;
+        try {
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          for (const row of rows) {
+            const e = row.e as Record<string, unknown>;
+            const content = (e.content as string) ?? '';
+            const task = (e.task as string) ?? '';
+            const contentMatch = isRegex
+              ? new RegExp(pattern, caseSensitive ? '' : 'i').test(content)
+              : caseSensitive ? content.includes(pattern) : content.toLowerCase().includes(pattern.toLowerCase());
+            const matchedField = contentMatch ? 'content' : 'task';
+            const matchedValue = contentMatch ? content : task;
+            addResult(
+              e.id as string, 'episodic', matchedField, matchedValue, 1,
+              { task, created_at: e.created_at },
+            );
+          }
+        } catch {
+          // Skip if query fails (e.g., regex syntax unsupported by Neo4j)
+        }
+      }
+
+      if (nodeTypes.includes('semantic')) {
+        const scopeFilter = args.scope ? ` AND '${escapedScope}' IN s.tags` : '';
+        const cypher = `MATCH (s:Semantic) WHERE ${matchExpr('s.content')}${scopeFilter} RETURN s ORDER BY s.confidence DESC`;
+        try {
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          for (const row of rows) {
+            const s = row.s as Record<string, unknown>;
+            addResult(
+              s.id as string, 'semantic', 'content', (s.content as string) ?? '', 2,
+              { confidence: s.confidence },
+            );
+          }
+        } catch {
+          // Skip on failure
+        }
+      }
+
+      if (nodeTypes.includes('fact')) {
+        const scopeFilter = args.scope ? ` AND f.scope = '${escapedScope}'` : '';
+        const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter} RETURN f ORDER BY f.updated_at DESC`;
+        try {
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          for (const row of rows) {
+            const f = row.f as Record<string, unknown>;
+            const sub = (f.subject as string) ?? '';
+            const pred = (f.predicate as string) ?? '';
+            const obj = (f.object as string) ?? '';
+            const combined = `${sub} ${pred} ${obj}`;
+            const subMatch = isRegex
+              ? new RegExp(pattern, caseSensitive ? '' : 'i').test(sub)
+              : caseSensitive ? sub.includes(pattern) : sub.toLowerCase().includes(pattern.toLowerCase());
+            addResult(
+              f.id as string, 'fact', subMatch ? 'subject' : 'predicate/object', combined, 1,
+              { status: f.status, valid_at: f.valid_at },
+            );
+          }
+        } catch {
+          // Skip on failure
+        }
+      }
+
+      if (nodeTypes.includes('block')) {
+        const scopeFilter = args.scope ? ` AND b.scope = '${escapedScope}'` : '';
+        const cypher = `MATCH (b:MemoryBlock) WHERE (${matchExpr('b.content')} OR ${matchExpr('b.name')})${scopeFilter} RETURN b ORDER BY b.updated_at DESC`;
+        try {
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          for (const row of rows) {
+            const b = row.b as Record<string, unknown>;
+            const content = (b.content as string) ?? '';
+            const name = (b.name as string) ?? '';
+            const nameMatch = isRegex
+              ? new RegExp(pattern, caseSensitive ? '' : 'i').test(name)
+              : caseSensitive ? name.includes(pattern) : name.toLowerCase().includes(pattern.toLowerCase());
+            addResult(
+              `${b.scope}/${b.name}`, 'block', nameMatch ? 'name' : 'content',
+              nameMatch ? name : content, nameMatch ? 2 : 1,
+              { scope: b.scope, tier: b.tier },
+            );
+          }
+        } catch {
+          // Skip on failure
+        }
+      }
+
+      if (nodeTypes.includes('entity')) {
+        // Search name, description, and aliases
+        const aliasMatch = isRegex
+          ? `any(a IN COALESCE(ent.aliases, []) WHERE a =~ '${caseSensitive ? `.*${escaped}.*` : `(?i).*${escaped}.*`}')`
+          : caseSensitive
+            ? `any(a IN COALESCE(ent.aliases, []) WHERE a CONTAINS '${escaped}')`
+            : `any(a IN COALESCE(ent.aliases, []) WHERE toLower(a) CONTAINS toLower('${escaped}'))`;
+        const descMatch = `ent.description IS NOT NULL AND ${matchExpr('ent.description')}`;
+        const cypher = `MATCH (ent:Entity) WHERE ${matchExpr('ent.name')} OR (${descMatch}) OR ${aliasMatch} RETURN ent`;
+        try {
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          for (const row of rows) {
+            const ent = row.ent as Record<string, unknown>;
+            const name = (ent.name as string) ?? '';
+            const desc = (ent.description as string) ?? '';
+            const nameMatch = isRegex
+              ? new RegExp(pattern, caseSensitive ? '' : 'i').test(name)
+              : caseSensitive ? name.includes(pattern) : name.toLowerCase().includes(pattern.toLowerCase());
+            addResult(
+              ent.id as string, 'entity', nameMatch ? 'name' : 'description',
+              nameMatch ? name : (desc || name), nameMatch ? 3 : 1,
+              { type: ent.type },
+            );
+          }
+        } catch {
+          // Skip on failure
+        }
+      }
+
+      // Sort by score (higher = more relevant), then by node type priority
+      results.sort((a, b) => b.score - a.score);
+
+      // Render markdown
+      if (results.length === 0) {
+        return textContent(`## Grep Results: "${pattern}" (0 matches)\n\n_No matches found._`);
+      }
+
+      const lines: string[] = [`## Grep Results: "${pattern}" (${results.length} match${results.length === 1 ? '' : 'es'})\n`];
+
+      // Group by node type
+      const grouped = new Map<string, GrepResult[]>();
+      for (const r of results) {
+        const list = grouped.get(r.node_type) ?? [];
+        list.push(r);
+        grouped.set(r.node_type, list);
+      }
+
+      const typeOrder = ['entity', 'semantic', 'fact', 'episodic', 'block'];
+      const typeLabels: Record<string, string> = {
+        entity: 'Entities',
+        semantic: 'Semantic',
+        fact: 'Facts',
+        episodic: 'Episodic',
+        block: 'Blocks',
+      };
+
+      for (const type of typeOrder) {
+        const items = grouped.get(type);
+        if (!items || items.length === 0) continue;
+
+        lines.push(`### ${typeLabels[type]}`);
+        for (const item of items) {
+          const metaStr = item.meta
+            ? Object.entries(item.meta)
+                .filter(([, v]) => v != null)
+                .map(([k, v]) => `${k}: ${v}`)
+                .join(', ')
+            : '';
+          const metaPart = metaStr ? ` (${metaStr})` : '';
+          lines.push(`- **[${item.id}]**${metaPart}`);
+          lines.push(`  ${item.snippet}`);
+        }
+        lines.push('');
+      }
+
+      return textContent(lines.join('\n'));
     },
 
     async amp_query(args) {
@@ -643,6 +938,14 @@ export function registerTools(
     handlers.amp_memory_insert,
   ));
 
+  tier1.push(server.tool(
+    'amp_grep',
+    'Search memory content by text pattern (exact string or regex) across all node types: episodic, semantic, fact, block, entity. Returns matched snippets with context.',
+    AmpGrepSchema,
+    ANN_READONLY_IDEMPOTENT,
+    handlers.amp_grep,
+  ));
+
   // ─── Tier 2 — memory domain ──────────────────────────────────────────────
 
   addToDomain('memory', server.tool(
@@ -733,7 +1036,7 @@ export function registerTools(
 
   tier1.push(server.tool(
     'amp_tools',
-    'Progressive disclosure gateway. List available tool domains and enable/disable them on demand. Tier 1 tools (amp_load, amp_store, amp_memory_read, amp_memory_insert, amp_context, amp_tools) are always available. All other tools are grouped into domains that start disabled to reduce context window pollution.',
+    'Progressive disclosure gateway. List available tool domains and enable/disable them on demand. Tier 1 tools (amp_load, amp_store, amp_grep, amp_memory_read, amp_memory_insert, amp_context, amp_tools) are always available. All other tools are grouped into domains that start disabled to reduce context window pollution.',
     AmpToolsSchema,
     ANN_READONLY_IDEMPOTENT,
     async (args: { action: 'list' | 'enable' | 'disable'; domain?: string }) => {

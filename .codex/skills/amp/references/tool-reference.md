@@ -2,7 +2,7 @@
 
 ## Progressive Disclosure
 
-6 tools are always visible. All others require enabling their domain first via `amp_tools(action: "enable", domain: "<name>")`.
+7 tools are always visible. All others require enabling their domain first via `amp_tools(action: "enable", domain: "<name>")`.
 
 ## Always Visible (Tier 1)
 
@@ -12,6 +12,7 @@
 | `amp_store` | Store episodic memory with signals |
 | `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
 | `amp_memory_insert` | Insert or append to a memory block |
+| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: blends architecture + code + memory |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 

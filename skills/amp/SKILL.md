@@ -9,7 +9,7 @@ Persistent memory system for AI agents. Knowledge compounds across sessions — 
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to avoid overwhelming agents with 37+ tools at once. **6 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
+AMP uses progressive disclosure to avoid overwhelming agents with 38 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
 
 ### Always-Visible Tools (Tier 1)
 
@@ -19,10 +19,11 @@ AMP uses progressive disclosure to avoid overwhelming agents with 37+ tools at o
 | `amp_store` | Store episodic memory with signals |
 | `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
 | `amp_memory_insert` | Insert or append to a memory block |
+| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: blends architecture + code + memory |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 
-These 6 tools cover session start, storing decisions, and reading/writing memory — the most common operations.
+These 7 tools cover session start, storing decisions, searching memory, and reading/writing blocks — the most common operations.
 
 ### On-Demand Domains
 
@@ -60,6 +61,7 @@ What do you need?
 │
 ├─ Memory specifically
 │  ├─ Load relevant memories ────────────── amp_load [always visible]
+│  ├─ Search by text/regex ──────────────── amp_grep [always visible]
 │  ├─ Store a decision/learning ─────────── amp_store [always visible]
 │  ├─ Ad-hoc graph query ────────────────── amp_query [enable: admin]
 │  ├─ Resolve amp:// URI ────────────────── amp_resolve [enable: admin]

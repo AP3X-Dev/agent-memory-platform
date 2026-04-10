@@ -1,8 +1,8 @@
 ---
 name: amp
 description: "AMP admin and explicit queries. Use when the user explicitly asks about AMP: 'amp status', 'amp query', 'show the graph', 'run consolidation', 'review proposals', 'what's in amp', 'provenance', 'compile wiki', 'ingest', 'lint'. NOT needed for normal coding — the agent uses AMP autonomously via CLAUDE.md instructions."
-allowed-tools: Read, Glob, mcp__amp__amp_load, mcp__amp__amp_store, mcp__amp__amp_query, mcp__amp__amp_consolidate, mcp__amp__amp_resolve, mcp__amp__amp_provenance, mcp__amp__amp_compile, mcp__amp__amp_ingest, mcp__amp__amp_lint, mcp__amp__amp_context, mcp__amp__amp_feedback, mcp__amp__amp_bootstrap, mcp__amp__amp_timeline, mcp__amp__amp_fact_diff, mcp__amp__amp_memory_read, mcp__amp__amp_memory_insert, mcp__amp__amp_memory_replace, mcp__amp__amp_memory_rewrite, mcp__amp__amp_memory_promote, mcp__amp__amp_memory_archive
-argument-hint: "status | query <q> | consolidate [run|review] | recall [topic] | remember <what> | provenance <id> | compile | ingest <path> | lint | timeline <entity> | fact-diff <entity> | memory [read|write|promote] <block>"
+allowed-tools: Read, Glob, mcp__amp__amp_load, mcp__amp__amp_store, mcp__amp__amp_query, mcp__amp__amp_consolidate, mcp__amp__amp_resolve, mcp__amp__amp_provenance, mcp__amp__amp_compile, mcp__amp__amp_ingest, mcp__amp__amp_lint, mcp__amp__amp_context, mcp__amp__amp_feedback, mcp__amp__amp_bootstrap, mcp__amp__amp_timeline, mcp__amp__amp_fact_diff, mcp__amp__amp_memory_read, mcp__amp__amp_memory_insert, mcp__amp__amp_memory_replace, mcp__amp__amp_memory_rewrite, mcp__amp__amp_memory_promote, mcp__amp__amp_memory_archive, mcp__amp__amp_grep, mcp__amp__amp_tools
+argument-hint: "status | query <q> | consolidate [run|review] | recall [topic] | remember <what> | provenance <id> | compile | ingest <path> | lint | timeline <entity> | fact-diff <entity> | memory [read|write|promote] <block> | grep <pattern>"
 ---
 
 # AMP — Admin & Explicit Queries
