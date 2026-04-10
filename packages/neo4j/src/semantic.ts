@@ -1,6 +1,7 @@
 // packages/neo4j/src/semantic.ts
 import { type Driver } from 'neo4j-driver';
 import type { SemanticNode } from '@amp/core';
+import { temporalSetClause } from './temporal-edges.js';
 
 export class SemanticStore {
   constructor(private driver: Driver) {}
@@ -83,6 +84,7 @@ export class SemanticStore {
   async supersede(oldId: string, newNode: SemanticNode): Promise<string> {
     const session = this.driver.session();
     try {
+      const now = new Date().toISOString();
       const query = `
         CREATE (new:Semantic {
           id: $id,
@@ -97,6 +99,11 @@ export class SemanticStore {
         WITH new
         MATCH (old:Semantic {id: $oldId})
         CREATE (new)-[:SUPERSEDES]->(old)
+        WITH new, old
+        // Invalidate the old node's ABOUT relationships
+        OPTIONAL MATCH (old)-[oldR:ABOUT]->(e:Entity)
+        WHERE oldR.invalid_at IS NULL
+        SET oldR.invalid_at = $now
         RETURN new.id AS id
       `;
       const result = await session.run(query, {
@@ -109,6 +116,7 @@ export class SemanticStore {
         decay_class: newNode.decay_class,
         tags: newNode.tags,
         oldId,
+        now,
       });
       return result.records[0].get('id') as string;
     } finally {
@@ -157,8 +165,9 @@ export class SemanticStore {
     try {
       await session.run(
         `MATCH (s:Semantic {id: $semanticId}), (e:Entity {id: $entityId})
-         MERGE (s)-[:ABOUT]->(e)`,
-        { semanticId, entityId }
+         MERGE (s)-[r:ABOUT]->(e)
+         ${temporalSetClause('r')}`,
+        { semanticId, entityId, now: new Date().toISOString() }
       );
     } finally {
       await session.close();

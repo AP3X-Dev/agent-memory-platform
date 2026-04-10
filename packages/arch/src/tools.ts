@@ -26,13 +26,13 @@ export interface IAspectStore {
 
 export interface IStructuralRelationStore {
   create(from: string, to: string, type: StructuralRelationType, properties?: Record<string, string>): Promise<boolean>;
-  getDependents(entityName: string): Promise<Array<{ name: string; relation: string }>>;
-  getDependencies(entityName: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>>;
-  getCallGraph(entityName: string, depth?: number): Promise<Array<{ from: string; to: string; relation: string; depth: number }>>;
+  getDependents(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string }>>;
+  getDependencies(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>>;
+  getCallGraph(entityName: string, depth?: number, asOf?: string): Promise<Array<{ from: string; to: string; relation: string; depth: number }>>;
 }
 
 export interface IImpactAnalyzer {
-  blastRadius(entityName: string): Promise<ImpactResult>;
+  blastRadius(entityName: string, asOf?: string): Promise<ImpactResult>;
 }
 
 export interface IDriftDetector {
@@ -42,7 +42,7 @@ export interface IDriftDetector {
 }
 
 export interface IArchContextBuilder {
-  renderMarkdown(entityName: string, maxTokens?: number): Promise<string>;
+  renderMarkdown(entityName: string, maxTokens?: number, asOf?: string): Promise<string>;
 }
 
 // ─── Injected instances ──────────────────────────────────────────────────────
@@ -209,14 +209,15 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
   // ─── amp_impact ─────────────────────────────────────────────────────────
   handles.push(server.tool(
     'amp_impact',
-    'Blast radius analysis: what breaks if this entity changes? Returns direct dependents, transitive dependents, co-aspect entities, affected aspects, and an overall change risk assessment (low/medium/high/critical).',
+    'Blast radius analysis: what breaks if this entity changes? Returns direct dependents, transitive dependents, co-aspect entities, affected aspects, and an overall change risk assessment (low/medium/high/critical). Optionally query as of a specific time.',
     {
       entity_name: z.string().max(2000).describe('Entity to analyze'),
+      as_of: z.string().optional().describe('ISO timestamp — only traverse relationships active at this time (default: current)'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!impactAnalyzer) throw new Error('Arch services not initialised');
-      const result = await impactAnalyzer.blastRadius(args.entity_name);
+      const result = await impactAnalyzer.blastRadius(args.entity_name, args.as_of);
       return textContent(JSON.stringify(result, null, 2));
     },
   ));
@@ -264,18 +265,19 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
   // ─── amp_arch_context ───────────────────────────────────────────────────
   handles.push(server.tool(
     'amp_arch_context',
-    'Deterministic architectural context assembly for an entity. Returns: responsibility, interface, internals, hierarchy (ancestors), children, dependencies with their interfaces, dependents (what breaks), and cross-cutting aspects. Same graph state always produces the same output — no ranking heuristics.',
+    'Deterministic architectural context assembly for an entity. Returns: responsibility, interface, internals, hierarchy (ancestors), children, dependencies with their interfaces, dependents (what breaks), and cross-cutting aspects. Same graph state always produces the same output — no ranking heuristics. Optionally query as of a specific time.',
     {
       entity_name: z.string().max(2000).describe('Entity to build context for'),
       max_tokens: z.number().int().positive().optional().default(6000)
         .describe('Max tokens for the context package'),
       include_children: z.boolean().optional().default(false)
         .describe('Include direct children of this entity in the context'),
+      as_of: z.string().optional().describe('ISO timestamp — only traverse relationships active at this time (default: current)'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!archContextBuilder) throw new Error('Arch services not initialised');
-      let md = await archContextBuilder.renderMarkdown(args.entity_name, args.max_tokens);
+      let md = await archContextBuilder.renderMarkdown(args.entity_name, args.max_tokens, args.as_of);
 
       // Append children section if requested
       if (args.include_children && archEntityStore) {

@@ -3,6 +3,7 @@
 
 import { type Driver } from 'neo4j-driver';
 import type { ImpactResult } from './types.js';
+import { activeRelationshipFilter } from '@amp/neo4j';
 
 export class ImpactAnalyzer {
   constructor(private driver: Driver) {}
@@ -11,24 +12,38 @@ export class ImpactAnalyzer {
    * Compute full blast radius for an entity.
    * Traverses structural relations, co-aspect membership, and containment.
    */
-  async blastRadius(entityName: string): Promise<ImpactResult> {
+  /**
+   * Compute full blast radius for an entity.
+   * Traverses structural relations, co-aspect membership, and containment.
+   *
+   * @param entityName  Entity to analyze
+   * @param asOf        Optional ISO timestamp — only traverse relationships active at this time
+   */
+  async blastRadius(entityName: string, asOf?: string): Promise<ImpactResult> {
     const session = this.driver.session();
     try {
+      const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { name: entityName };
+      if (asOf) params.asOf = asOf;
+
       // Direct dependents (1 hop)
       const directResult = await session.run(
         `MATCH (dep:Entity)-[r]->(target:Entity {name: $name})
          WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
+           AND ${filter}
          RETURN DISTINCT dep.name AS name`,
-        { name: entityName },
+        params,
       );
       const directDependents = directResult.records.map((r) => r.get('name') as string);
 
       // Transitive dependents (up to 5 hops)
+      // For transitive traversal, filter each hop's relationship
       const transitiveResult = await session.run(
-        `MATCH (dep:Entity)-[:USES|CALLS|EXTENDS|IMPLEMENTS|LISTENS*2..5]->(target:Entity {name: $name})
+        `MATCH path = (dep:Entity)-[:USES|CALLS|EXTENDS|IMPLEMENTS|LISTENS*2..5]->(target:Entity {name: $name})
          WHERE dep.name <> $name
+           AND ALL(r IN relationships(path) WHERE ${activeRelationshipFilter('r', asOf ? 'asOf' : undefined)})
          RETURN DISTINCT dep.name AS name`,
-        { name: entityName },
+        params,
       );
       const transitiveDependents = transitiveResult.records
         .map((r) => r.get('name') as string)

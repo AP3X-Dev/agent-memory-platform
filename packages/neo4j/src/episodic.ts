@@ -1,6 +1,7 @@
 // packages/neo4j/src/episodic.ts
 import { type Driver } from 'neo4j-driver';
 import type { EpisodicNode, Signal } from '@amp/core';
+import { temporalSetClause } from './temporal-edges.js';
 
 export class EpisodicStore {
   constructor(private driver: Driver) {}
@@ -91,8 +92,9 @@ export class EpisodicStore {
     try {
       await session.run(
         `MATCH (e:Episodic {id: $episodicId}), (ent:Entity {id: $entityId})
-         MERGE (e)-[:REFERENCES]->(ent)`,
-        { episodicId, entityId },
+         MERGE (e)-[r:REFERENCES]->(ent)
+         ${temporalSetClause('r')}`,
+        { episodicId, entityId, now: new Date().toISOString() },
       );
     } finally {
       await session.close();
@@ -129,8 +131,9 @@ export class EpisodicStore {
       await session.run(
         `MATCH (e:Episodic {id: $episodicId}), (s:Semantic {id: $targetId})
          MERGE (e)-[r:${relType}]->(s)
-         SET r.detail = $detail`,
-        { episodicId, targetId: signal.target_id, detail: signal.detail },
+         SET r.detail = $detail
+         ${temporalSetClause('r')}`,
+        { episodicId, targetId: signal.target_id, detail: signal.detail, now: new Date().toISOString() },
       );
     } finally {
       await session.close();

@@ -27,8 +27,12 @@ export class ArchContextBuilder {
    * 3. Dependency expansion (typed structural relations)
    * 4. Aspect overlay (cross-cutting concerns)
    * 5. Token budgeting (fill from most-specific to least-specific)
+   *
+   * @param entityName  The entity to build context for
+   * @param maxTokens   Token budget
+   * @param asOf        Optional ISO timestamp — only traverse relationships active at this time
    */
-  async build(entityName: string, maxTokens = 6000): Promise<ArchContext> {
+  async build(entityName: string, maxTokens = 6000, asOf?: string): Promise<ArchContext> {
     // Step 1: Target entity
     const entity = await this.entities.getFullEntity(entityName);
     if (!entity) {
@@ -51,9 +55,9 @@ export class ArchContextBuilder {
     // Step 2: Hierarchy walk
     const ancestors = await this.entities.getAncestors(entityName);
 
-    // Step 3: Dependency expansion
-    const dependencies = await this.relations.getDependencies(entityName);
-    const dependents = await this.relations.getDependents(entityName);
+    // Step 3: Dependency expansion (filter by temporal validity)
+    const dependencies = await this.relations.getDependencies(entityName, asOf);
+    const dependents = await this.relations.getDependents(entityName, asOf);
 
     // Step 4: Aspect overlay
     const effectiveAspects = await this.aspects.getEffectiveAspects(entityName);
@@ -91,8 +95,8 @@ export class ArchContextBuilder {
   /**
    * Render context as markdown.
    */
-  async renderMarkdown(entityName: string, maxTokens = 6000): Promise<string> {
-    const ctx = await this.build(entityName, maxTokens);
+  async renderMarkdown(entityName: string, maxTokens = 6000, asOf?: string): Promise<string> {
+    const ctx = await this.build(entityName, maxTokens, asOf);
     const lines: string[] = [];
 
     // Target

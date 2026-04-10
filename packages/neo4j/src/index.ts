@@ -15,3 +15,9 @@ export { FactStore } from './fact.js';
 export { EntityResolver } from './entity-resolver.js';
 export type { ResolvedEntity } from './entity-resolver.js';
 export type { SimilarPair, RankedNode, CommunityNode } from './gds.js';
+export {
+  temporalSetClause,
+  activeRelationshipFilter,
+  invalidateRelationship,
+} from './temporal-edges.js';
+export type { TemporalEdgeProperties } from './temporal-edges.js';

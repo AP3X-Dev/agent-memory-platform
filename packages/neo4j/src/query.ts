@@ -1,11 +1,14 @@
 // packages/neo4j/src/query.ts
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@amp/core';
+import { activeRelationshipFilter } from './temporal-edges.js';
 
 export interface QueryScope {
   entities?: string[];
   tags?: string[];
   limit: number;
+  /** ISO timestamp — when provided, only traverse relationships active at this time */
+  asOf?: string;
 }
 
 // ─── Cypher read-only validation ─────────────────────────────────────────────
@@ -78,15 +81,20 @@ export function validateReadOnlyCypher(cypher: string): void {
 export class ScopedQuery {
   constructor(private driver: Driver) {}
 
-  async byEntity(entityName: string, limit: number): Promise<SemanticNode[]> {
+  async byEntity(entityName: string, limit: number, asOf?: string): Promise<SemanticNode[]> {
     const session = this.driver.session();
     try {
+      const relFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { entityName, limit: neo4j.int(limit) };
+      if (asOf) params.asOf = asOf;
+
       const result = await session.run(
-        `MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $entityName})
+        `MATCH (s:Semantic)-[r:ABOUT]->(e:Entity {name: $entityName})
+         WHERE ${relFilter}
          RETURN s
          ORDER BY s.confidence DESC, s.updated_at DESC
          LIMIT $limit`,
-        { entityName, limit: neo4j.int(limit) },
+        params,
       );
       return result.records.map((r) => mapSemanticNode(r.get('s').properties));
     } finally {
@@ -112,27 +120,32 @@ export class ScopedQuery {
   }
 
   async byScope(scope: QueryScope): Promise<SemanticNode[]> {
-    const { entities = [], tags = [], limit } = scope;
+    const { entities = [], tags = [], limit, asOf } = scope;
     const session = this.driver.session();
     try {
       // Build query that handles entities and/or tags with DISTINCT results
       let cypher: string;
       const params: Record<string, unknown> = { limit: neo4j.int(limit) };
+      if (asOf) params.asOf = asOf;
+
+      const relFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
 
       if (entities.length > 0 && tags.length > 0) {
         params.entities = entities;
         params.tags = tags;
         cypher = `
-          MATCH (s:Semantic)-[:ABOUT]->(e:Entity)
+          MATCH (s:Semantic)-[r:ABOUT]->(e:Entity)
           WHERE e.name IN $entities AND ANY(t IN $tags WHERE t IN s.tags)
+            AND ${relFilter}
           RETURN DISTINCT s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
       } else if (entities.length > 0) {
         params.entities = entities;
         cypher = `
-          MATCH (s:Semantic)-[:ABOUT]->(e:Entity)
+          MATCH (s:Semantic)-[r:ABOUT]->(e:Entity)
           WHERE e.name IN $entities
+            AND ${relFilter}
           RETURN DISTINCT s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
@@ -251,24 +264,36 @@ export class ScopedQuery {
     let semantics: SemanticNode[];
     let episodes: EpisodicNode[];
 
+    const asOf = options?.as_of;
+
     // Query semantics and episodes in one session
     const session = this.driver.session();
     try {
+      const aboutFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const semParams: Record<string, unknown> = { entityName };
+      if (asOf) semParams.asOf = asOf;
+
       const semanticResult = await session.run(
-        `MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $entityName})
+        `MATCH (s:Semantic)-[r:ABOUT]->(e:Entity {name: $entityName})
+         WHERE ${aboutFilter}
          RETURN s
          ORDER BY s.confidence DESC, s.updated_at DESC`,
-        { entityName },
+        semParams,
       );
       semantics = semanticResult.records.map((r) =>
         mapSemanticNode(r.get('s').properties),
       );
 
+      const refFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const epParams: Record<string, unknown> = { entityName };
+      if (asOf) epParams.asOf = asOf;
+
       const episodeResult = await session.run(
-        `MATCH (ep:Episodic)-[:REFERENCES]->(e:Entity {name: $entityName})
+        `MATCH (ep:Episodic)-[r:REFERENCES]->(e:Entity {name: $entityName})
+         WHERE ${refFilter}
          RETURN ep
          ORDER BY ep.created_at DESC`,
-        { entityName },
+        epParams,
       );
       episodes = episodeResult.records.map((r) =>
         mapEpisodicNode(r.get('ep').properties),

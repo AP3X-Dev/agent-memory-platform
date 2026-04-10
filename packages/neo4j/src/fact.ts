@@ -3,6 +3,7 @@ import { type Driver } from 'neo4j-driver';
 import { nanoid } from 'nanoid';
 import type { FactNode, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
 import { EntityResolver } from './entity-resolver.js';
+import { temporalSetClause } from './temporal-edges.js';
 
 export class FactStore {
   private resolver: EntityResolver;
@@ -69,8 +70,9 @@ export class FactStore {
       // Link FACT_ABOUT → canonical Entity (resolved by EntityResolver)
       await tx.run(
         `MATCH (f:Fact {id: $factId}), (e:Entity {id: $entityId})
-         MERGE (f)-[:FACT_ABOUT]->(e)`,
-        { factId: fact.id, entityId: resolved.id },
+         MERGE (f)-[r:FACT_ABOUT]->(e)
+         ${temporalSetClause('r')}`,
+        { factId: fact.id, entityId: resolved.id, now: new Date().toISOString() },
       );
 
       // Set embedding if provided

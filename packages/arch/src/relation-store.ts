@@ -3,6 +3,7 @@
 
 import { type Driver } from 'neo4j-driver';
 import type { StructuralRelationType } from './types.js';
+import { temporalSetClause, activeRelationshipFilter, invalidateRelationship } from '@amp/neo4j';
 
 const VALID_RELATION_TYPES: Set<string> = new Set([
   'USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS', 'LISTENS',
@@ -33,8 +34,9 @@ export class StructuralRelationStore {
         `MATCH (a:Entity {name: $from}), (b:Entity {name: $to})
          MERGE (a)-[r:${type}]->(b)
          SET r += $props
+         ${temporalSetClause('r')}
          RETURN a.name AS from, b.name AS to`,
-        { from: fromEntity, to: toEntity, props: properties ?? {} },
+        { from: fromEntity, to: toEntity, props: properties ?? {}, now: new Date().toISOString() },
       );
       return result.records.length > 0;
     } finally {
@@ -46,9 +48,13 @@ export class StructuralRelationStore {
     if (!VALID_RELATION_TYPES.has(type)) return; // Validated against enum — safe for interpolation
     const session = this.driver.session();
     try {
+      // Invalidate rather than delete — preserves temporal history
+      const now = new Date().toISOString();
       await session.run(
-        `MATCH (a:Entity {name: $from})-[r:${type}]->(b:Entity {name: $to}) DELETE r`,
-        { from: fromEntity, to: toEntity },
+        `MATCH (a:Entity {name: $from})-[r:${type}]->(b:Entity {name: $to})
+         WHERE r.invalid_at IS NULL
+         SET r.invalid_at = $now`,
+        { from: fromEntity, to: toEntity, now },
       );
     } finally {
       await session.close();
@@ -58,15 +64,20 @@ export class StructuralRelationStore {
   /**
    * Get all entities that depend ON the given entity (entities that USE/CALL/EXTEND/LISTEN to it).
    */
-  async getDependents(entityName: string): Promise<Array<{ name: string; relation: string }>> {
+  async getDependents(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string }>> {
     const session = this.driver.session();
     try {
+      const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { name: entityName };
+      if (asOf) params.asOf = asOf;
+
       const result = await session.run(
         `MATCH (dependent:Entity)-[r]->(target:Entity {name: $name})
          WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
+           AND ${filter}
          RETURN dependent.name AS name, type(r) AS relation
          ORDER BY dependent.name ASC`,
-        { name: entityName },
+        params,
       );
       return result.records.map((r) => ({
         name: r.get('name') as string,
@@ -80,16 +91,21 @@ export class StructuralRelationStore {
   /**
    * Get all entities that the given entity depends ON.
    */
-  async getDependencies(entityName: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>> {
+  async getDependencies(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>> {
     const session = this.driver.session();
     try {
+      const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { name: entityName };
+      if (asOf) params.asOf = asOf;
+
       const result = await session.run(
         `MATCH (source:Entity {name: $name})-[r]->(dep:Entity)
          WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS']
+           AND ${filter}
          RETURN dep.name AS name, type(r) AS relation,
                 COALESCE(dep.interface_desc, '') AS interface_desc
          ORDER BY dep.name ASC`,
-        { name: entityName },
+        params,
       );
       return result.records.map((r) => ({
         name: r.get('name') as string,
@@ -107,6 +123,7 @@ export class StructuralRelationStore {
   async getCallGraph(
     entityName: string,
     maxDepth = 3,
+    asOf?: string,
   ): Promise<Array<{ from: string; to: string; relation: string; depth: number }>> {
     const depth = Math.floor(Number(maxDepth));
     if (!Number.isFinite(depth) || depth < 1 || depth > 20) {
@@ -114,13 +131,18 @@ export class StructuralRelationStore {
     }
     const session = this.driver.session();
     try {
+      const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { name: entityName };
+      if (asOf) params.asOf = asOf;
+
       const result = await session.run(
         `MATCH path = (start:Entity {name: $name})-[:USES|CALLS*1..${depth}]->(dep:Entity)
          UNWIND range(0, length(path)-1) AS idx
          WITH relationships(path)[idx] AS r, nodes(path)[idx] AS from, nodes(path)[idx+1] AS to, idx+1 AS depth
+         WHERE ${filter}
          RETURN DISTINCT from.name AS fromName, to.name AS toName, type(r) AS relation, depth
          ORDER BY depth ASC, fromName ASC`,
-        { name: entityName },
+        params,
       );
       return result.records.map((r) => ({
         from: r.get('fromName') as string,
@@ -136,18 +158,24 @@ export class StructuralRelationStore {
   /**
    * Get all structural relationships for a given entity (both directions).
    */
-  async getAllRelations(entityName: string): Promise<Array<{ from: string; to: string; relation: string }>> {
+  async getAllRelations(entityName: string, asOf?: string): Promise<Array<{ from: string; to: string; relation: string }>> {
     const session = this.driver.session();
     try {
+      const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = { name: entityName };
+      if (asOf) params.asOf = asOf;
+
       const result = await session.run(
         `MATCH (e:Entity {name: $name})-[r]->(other:Entity)
          WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS', 'LISTENS']
+           AND ${filter}
          RETURN e.name AS from, other.name AS to, type(r) AS relation
          UNION
          MATCH (other:Entity)-[r]->(e:Entity {name: $name})
          WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS', 'LISTENS']
+           AND ${filter}
          RETURN other.name AS from, e.name AS to, type(r) AS relation`,
-        { name: entityName },
+        params,
       );
       return result.records.map((r) => ({
         from: r.get('from') as string,
