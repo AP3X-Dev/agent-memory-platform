@@ -43,7 +43,7 @@ const FACT_EXTRACTION_PROMPT = `You are a knowledge extraction system. Given pro
 Rules:
 - Extract only factual claims, not opinions or speculation.
 - Use concise entity names for subjects (e.g. "auth-module", not "the authentication module").
-- Use lowercase verb phrases for predicates (e.g. "uses", "prefers", "depends_on", "located_at").
+- Use ONLY these canonical predicates: "uses", "prefers", "located_at", "implements", "owns", "is", "version_is", "has", "produces", "consumes", "calls", "extends", "rate_limit_is", "configured_as", "depends_on", "replaces", "blocks", "enables".
 - Keep objects concise but complete (e.g. "JWT", "PostgreSQL 15", "event sourcing pattern").
 - If no clear facts can be extracted, return an empty array.
 

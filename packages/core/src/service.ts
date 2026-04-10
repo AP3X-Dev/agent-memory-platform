@@ -125,11 +125,14 @@ export class AMPService {
     }
 
     // 3. Cache miss → query Neo4j (semantics + vector)
+    // Pass asOf from temporal options so semantic queries filter inactive ABOUT edges consistently
+    const asOf = scope.temporal?.as_of;
     const [byScope, byVector] = await Promise.all([
       this.neo4j.query.byScope({
         entities: scope.entities,
         tags: scope.tags,
         limit: 50,
+        asOf,
       }),
       this._vectorSearch(scope.task, 20),
     ]);
@@ -302,56 +305,74 @@ export class AMPService {
 
     // 6. Dedup mark already done atomically in step 1 via checkAndMark
 
-    // 7. Real-time fact extraction (non-blocking, non-fatal)
+    // 7. Real-time fact extraction — fire-and-forget so store() returns immediately.
+    // The episode is already persisted; fact extraction is a background enhancement.
     const factLayer = this.neo4j.fact;
     if (factLayer && this.config.embedding.apiKey) {
-      try {
-        const factInputs = await extractFacts(input.content, this.config.embedding.apiKey);
-        const now = new Date().toISOString();
-        for (const fi of factInputs) {
-          // Check for existing active fact with same subject+predicate
-          const existing = await factLayer.findBySubjectPredicate(fi.subject, fi.predicate);
-          const conflicting = existing.find(f => f.object !== fi.object);
-          const reinforcing = existing.find(f => f.object === fi.object);
-
-          if (reinforcing) {
-            // Same fact already exists — skip (consolidation can boost confidence later)
-            continue;
-          }
-
-          const newFactId = `fact-${nanoid(12)}`;
-          const newFact: FactNode = {
-            id: newFactId,
-            subject: fi.subject,
-            predicate: fi.predicate,
-            object: fi.object,
-            entity_id: null,
-            source_episode_ids: [id],
-            valid_at: now,
-            invalid_at: null,
-            confidence: fi.confidence ?? 0.5,
-            status: 'active',
-            supersedes_fact_id: conflicting?.id ?? null,
-            scope: fi.scope ?? 'project',
-            tags: fi.tags ?? [],
-            created_at: now,
-            updated_at: now,
-          };
-
-          // Auto-invalidate conflicting fact before creating replacement
-          if (conflicting) {
-            await factLayer.invalidate(conflicting.id, now, newFactId);
-          }
-
-          await factLayer.create(newFact);
-        }
-      } catch (err) {
-        // Non-fatal — episode is stored regardless
+      const apiKey = this.config.embedding.apiKey;
+      const episodeId = id;
+      // Detach from the request path — caller gets response without waiting for extraction
+      void this._extractFactsBackground(factLayer, apiKey, input.content, episodeId).catch((err) => {
         console.error('[amp-store] Fact extraction failed (non-fatal):', err instanceof Error ? err.message : err);
-      }
+      });
     }
 
     return { id, duplicate: false };
+  }
+
+  /**
+   * Background fact extraction and auto-invalidation.
+   * Runs after store() has already returned the episode ID to the caller.
+   */
+  private async _extractFactsBackground(
+    factLayer: FactLayer,
+    apiKey: string,
+    content: string,
+    episodeId: string,
+  ): Promise<void> {
+    const factInputs = await extractFacts(content, apiKey);
+    const now = new Date().toISOString();
+
+    for (const fi of factInputs) {
+      // Normalize predicate before comparison
+      const normalizedPredicate = normalizePredicate(fi.predicate);
+
+      // Check for existing active fact with same subject + normalized predicate
+      const existing = await factLayer.findBySubjectPredicate(fi.subject, normalizedPredicate);
+      const conflicting = existing.find(f => f.object !== fi.object);
+      const reinforcing = existing.find(f => f.object === fi.object);
+
+      if (reinforcing) {
+        // Same fact already exists — skip (consolidation can boost confidence later)
+        continue;
+      }
+
+      const newFactId = `fact-${nanoid(12)}`;
+      const newFact: FactNode = {
+        id: newFactId,
+        subject: fi.subject,
+        predicate: normalizedPredicate,
+        object: fi.object,
+        entity_id: null,
+        source_episode_ids: [episodeId],
+        valid_at: now,
+        invalid_at: null,
+        confidence: fi.confidence ?? 0.5,
+        status: 'active',
+        supersedes_fact_id: conflicting?.id ?? null,
+        scope: fi.scope ?? 'project',
+        tags: fi.tags ?? [],
+        created_at: now,
+        updated_at: now,
+      };
+
+      // Auto-invalidate conflicting fact before creating replacement
+      if (conflicting) {
+        await factLayer.invalidate(conflicting.id, now, newFactId);
+      }
+
+      await factLayer.create(newFact);
+    }
   }
 
   // ─── Private helpers ───────────────────────────────────────────────────────
@@ -474,6 +495,68 @@ function renderMarkdown(
   }
 
   return lines.join('\n');
+}
+
+// ─── Predicate normalization ────────────────────────────────────────────────
+// Maps synonym predicates to canonical forms so "uses", "depends on", "relies on"
+// all compare as the same predicate. Prevents false-negative conflict detection.
+
+const PREDICATE_SYNONYMS: Record<string, string> = {
+  // uses / depends-on family
+  'uses': 'uses',
+  'depends_on': 'uses',
+  'depends on': 'uses',
+  'relies_on': 'uses',
+  'relies on': 'uses',
+  'requires': 'uses',
+  'built_with': 'uses',
+  'built with': 'uses',
+  'powered_by': 'uses',
+  'powered by': 'uses',
+  'utilizes': 'uses',
+  // prefers family
+  'prefers': 'prefers',
+  'favors': 'prefers',
+  'defaults_to': 'prefers',
+  'defaults to': 'prefers',
+  'chooses': 'prefers',
+  // located-at family
+  'located_at': 'located_at',
+  'located at': 'located_at',
+  'deployed_at': 'located_at',
+  'deployed at': 'located_at',
+  'deployed_to': 'located_at',
+  'deployed to': 'located_at',
+  'hosted_on': 'located_at',
+  'hosted on': 'located_at',
+  'runs_on': 'located_at',
+  'runs on': 'located_at',
+  // implements family
+  'implements': 'implements',
+  'provides': 'implements',
+  'exposes': 'implements',
+  'offers': 'implements',
+  // owns / maintains family
+  'owns': 'owns',
+  'maintains': 'owns',
+  'manages': 'owns',
+  'responsible_for': 'owns',
+  'responsible for': 'owns',
+  // is / identity family
+  'is': 'is',
+  'is_a': 'is',
+  'is a': 'is',
+  'type_is': 'is',
+  // version family
+  'version_is': 'version_is',
+  'version is': 'version_is',
+  'at_version': 'version_is',
+  'at version': 'version_is',
+};
+
+export function normalizePredicate(predicate: string): string {
+  const lower = predicate.toLowerCase().trim();
+  return PREDICATE_SYNONYMS[lower] ?? lower;
 }
 
 function truncateBlocksToTokenBudget(blocks: MemoryBlock[], budget: number): MemoryBlock[] {

@@ -541,6 +541,11 @@ function makeFactNode(overrides: Partial<FactNode> = {}): FactNode {
   };
 }
 
+// Helper to flush fire-and-forget promises (fact extraction runs in background)
+async function flushAsync(): Promise<void> {
+  await new Promise((r) => setTimeout(r, 10));
+}
+
 describe('AMPService.store — real-time fact extraction', () => {
   beforeEach(() => {
     mockExtractFacts.mockReset();
@@ -566,6 +571,7 @@ describe('AMPService.store — real-time fact extraction', () => {
     };
 
     const result = await service.store(input);
+    await flushAsync(); // Wait for fire-and-forget extraction
 
     expect(result.duplicate).toBe(false);
     expect(result.id).toBeTruthy();
@@ -605,6 +611,7 @@ describe('AMPService.store — real-time fact extraction', () => {
     };
 
     const result = await service.store(input);
+    await flushAsync(); // Wait for fire-and-forget extraction
 
     expect(result.duplicate).toBe(false);
     // Old fact should be invalidated
@@ -720,6 +727,7 @@ describe('AMPService.store — real-time fact extraction', () => {
     };
 
     const result = await service.store(input);
+    await flushAsync(); // Wait for fire-and-forget extraction to fail
 
     expect(result.duplicate).toBe(false);
     expect(result.id).toBeTruthy();
@@ -754,8 +762,10 @@ describe('AMPService.store — real-time fact extraction', () => {
     };
 
     const result = await service.store(input);
+    await flushAsync(); // Wait for fire-and-forget extraction
 
     expect(result.duplicate).toBe(false);
+    // "depends_on" normalizes to "uses", so both facts use "uses" predicate
     expect(factLayer.create).toHaveBeenCalledTimes(2);
     expect(factLayer.findBySubjectPredicate).toHaveBeenCalledTimes(2);
   });
