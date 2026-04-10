@@ -1,6 +1,6 @@
 // packages/core/src/__tests__/blocks.test.ts
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { MemoryBlockService } from '../blocks.js';
+import { MemoryBlockService, MAX_BLOCK_SIZE } from '../blocks.js';
 import type { RedisBlockLayer, Neo4jBlockLayer } from '../blocks.js';
 import type { MemoryBlock } from '../types.js';
 
@@ -65,7 +65,7 @@ describe('MemoryBlockService.read', () => {
 
     const result = await service.read('project:test', 'persona');
     expect(result).toBe(block);
-    expect(neo4j.get).toHaveBeenCalledWith('project:test', 'persona');
+    expect(neo4j.get).toHaveBeenCalledWith('project:test', 'persona', undefined);
   });
 
   it('returns null when block not found in either store', async () => {
@@ -290,7 +290,7 @@ describe('MemoryBlockService.listBlocks', () => {
 
     await service.listBlocks('project:test', 'core', 'sess-1');
     expect(redis.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1');
-    expect(neo4j.list).toHaveBeenCalledWith('project:test', 'core');
+    expect(neo4j.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1');
   });
 });
 
@@ -323,5 +323,141 @@ describe('MemoryBlockService.initDefaults', () => {
     expect(created.length).toBe(5); // 6 - 1 existing
     const names = created.map((b) => b.name);
     expect(names).not.toContain('persona');
+  });
+});
+
+describe('MemoryBlockService.promote with sessionId', () => {
+  it('finds session-scoped block when sessionId is provided', async () => {
+    const block = makeBlock({ tier: 'working', session_id: 'sess-promo' });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.promote('project:test', 'persona', 'working', 'core', 'sess-promo');
+    expect(result.tier).toBe('core');
+    expect(redis.get).toHaveBeenCalledWith('project:test', 'persona', 'sess-promo');
+  });
+
+  it('strips session_id when promoting to core', async () => {
+    const block = makeBlock({ tier: 'working', session_id: 'sess-strip' });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.promote('project:test', 'persona', 'working', 'core', 'sess-strip');
+    expect(result.tier).toBe('core');
+    expect(result.session_id).toBeUndefined();
+    // Verify the block saved to Neo4j also has no session_id
+    const savedBlock = vi.mocked(neo4j.save).mock.calls[0][0];
+    expect(savedBlock.session_id).toBeUndefined();
+  });
+
+  it('preserves session_id when promoting to working', async () => {
+    const block = makeBlock({ tier: 'archive', session_id: 'sess-keep' });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.promote('project:test', 'persona', 'archive', 'working', 'sess-keep');
+    expect(result.tier).toBe('working');
+    expect(result.session_id).toBe('sess-keep');
+  });
+});
+
+describe('MemoryBlockService.replace replaces all occurrences', () => {
+  it('replaces all occurrences of old text, not just the first', async () => {
+    const block = makeBlock({ content: 'foo bar foo baz foo' });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.replace('project:test', 'persona', 'foo', 'qux');
+    expect(result.content).toBe('qux bar qux baz qux');
+  });
+});
+
+describe('MemoryBlockService content size limit', () => {
+  it('throws on insert when appending would exceed max size', async () => {
+    const existing = makeBlock({ content: 'x'.repeat(MAX_BLOCK_SIZE - 5) });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(existing) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    await expect(
+      service.insert('project:test', 'persona', 'x'.repeat(10)),
+    ).rejects.toThrow('would exceed max size');
+  });
+
+  it('throws on insert for new block exceeding max size', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    await expect(
+      service.insert('project:test', 'custom', 'x'.repeat(MAX_BLOCK_SIZE + 1)),
+    ).rejects.toThrow('would exceed max size');
+  });
+
+  it('throws on rewrite exceeding max size', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    await expect(
+      service.rewrite('project:test', 'persona', 'x'.repeat(MAX_BLOCK_SIZE + 1)),
+    ).rejects.toThrow('would exceed max size');
+  });
+
+  it('throws on replace when result would exceed max size', async () => {
+    const block = makeBlock({ content: 'a'.repeat(MAX_BLOCK_SIZE - 1) });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    await expect(
+      service.replace('project:test', 'persona', 'a', 'bbb'),
+    ).rejects.toThrow('would exceed max size');
+  });
+
+  it('allows content exactly at max size', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.insert('project:test', 'custom', 'x'.repeat(MAX_BLOCK_SIZE));
+    expect(result.content.length).toBe(MAX_BLOCK_SIZE);
+  });
+});
+
+describe('MemoryBlockService.read caches Neo4j fallback in Redis', () => {
+  it('writes block to Redis after Neo4j cache miss', async () => {
+    const block = makeBlock();
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ get: vi.fn().mockResolvedValue(block) });
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.read('project:test', 'persona');
+    expect(result).toBe(block);
+    expect(redis.set).toHaveBeenCalledWith(block);
+  });
+
+  it('does not write to Redis when block not found in either store', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    await service.read('project:test', 'nonexistent');
+    expect(redis.set).not.toHaveBeenCalled();
+  });
+
+  it('does not crash if Redis cache-aside write fails', async () => {
+    const block = makeBlock();
+    const redis = makeRedis({ set: vi.fn().mockRejectedValue(new Error('Redis down')) });
+    const neo4j = makeNeo4j({ get: vi.fn().mockResolvedValue(block) });
+    const service = new MemoryBlockService(redis, neo4j);
+
+    // Should not throw — just logs a warning
+    const result = await service.read('project:test', 'persona');
+    expect(result).toBe(block);
   });
 });

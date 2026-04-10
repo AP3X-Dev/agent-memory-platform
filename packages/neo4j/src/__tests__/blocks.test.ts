@@ -150,4 +150,41 @@ describe('BlockStore (Neo4j)', () => {
     expect(result?.session_id).toBe('sess-1');
     expect(result?.max_tokens).toBe(500);
   });
+
+  it('should get a block filtered by session_id', async () => {
+    if (!neo4jAvailable) return;
+    await store.save(makeBlock({ name: 'sess-get-test', session_id: 'sess-A', content: 'session A data' }));
+    // get with matching session_id should return the block
+    const found = await store.get(TEST_SCOPE, 'sess-get-test', 'sess-A');
+    expect(found).not.toBeNull();
+    expect(found!.content).toBe('session A data');
+    // get with non-matching session_id should return null
+    const notFound = await store.get(TEST_SCOPE, 'sess-get-test', 'sess-B');
+    expect(notFound).toBeNull();
+    // get without session_id should still return the block
+    const anySession = await store.get(TEST_SCOPE, 'sess-get-test');
+    expect(anySession).not.toBeNull();
+  });
+
+  it('should list blocks filtered by session_id', async () => {
+    if (!neo4jAvailable) return;
+    await store.save(makeBlock({ id: 'sess-list-1', name: 'sess-list-a', session_id: 'sess-X' }));
+    await store.save(makeBlock({ id: 'sess-list-2', name: 'sess-list-b', session_id: 'sess-Y' }));
+    await store.save(makeBlock({ id: 'sess-list-3', name: 'sess-list-c' }));
+    const filtered = await store.list(TEST_SCOPE, undefined, 'sess-X');
+    const names = filtered.map((b) => b.name);
+    expect(names).toContain('sess-list-a');
+    expect(names).not.toContain('sess-list-b');
+    expect(names).not.toContain('sess-list-c');
+  });
+
+  it('should list blocks filtered by both tier and session_id', async () => {
+    if (!neo4jAvailable) return;
+    await store.save(makeBlock({ id: 'combo-1', name: 'combo-a', tier: 'working', session_id: 'sess-Z' }));
+    await store.save(makeBlock({ id: 'combo-2', name: 'combo-b', tier: 'core', session_id: 'sess-Z' }));
+    const filtered = await store.list(TEST_SCOPE, 'working', 'sess-Z');
+    const names = filtered.map((b) => b.name);
+    expect(names).toContain('combo-a');
+    expect(names).not.toContain('combo-b');
+  });
 });

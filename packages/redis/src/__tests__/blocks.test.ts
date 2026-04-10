@@ -175,4 +175,33 @@ describe('BlockStore (Redis)', () => {
     const result = await store.get(TEST_SCOPE, 'persona');
     expect(result?.content).toBe('updated');
   });
+
+  it('should return null on corrupted JSON in get()', async () => {
+    if (!redisAvailable) return;
+    // Write corrupted data directly
+    await redis.set(`amp:block:${TEST_SCOPE}:corrupted`, '{not valid json!!!');
+    const result = await store.get(TEST_SCOPE, 'corrupted');
+    expect(result).toBeNull();
+  });
+
+  it('should skip corrupted entries in list()', async () => {
+    if (!redisAvailable) return;
+    // Write a valid block
+    await store.set(makeBlock({ id: 'valid-1', name: 'valid' }));
+    // Write corrupted data directly
+    await redis.set(`amp:block:${TEST_SCOPE}:corrupted`, 'not json at all');
+    const blocks = await store.list(TEST_SCOPE);
+    // Should only return the valid block, not crash
+    expect(blocks.length).toBeGreaterThanOrEqual(1);
+    const names = blocks.map((b) => b.name);
+    expect(names).toContain('valid');
+  });
+
+  it('should handle empty scope gracefully', async () => {
+    if (!redisAvailable) return;
+    const result = await store.get('', 'anything');
+    expect(result).toBeNull();
+    const blocks = await store.list('');
+    expect(blocks).toEqual([]);
+  });
 });

@@ -36,13 +36,15 @@ export class BlockStore {
     }
   }
 
-  async get(scope: string, name: string): Promise<MemoryBlock | null> {
+  async get(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null> {
     const session = this.driver.session();
     try {
-      const result = await session.run(
-        'MATCH (b:MemoryBlock {scope: $scope, name: $name}) RETURN b',
-        { scope, name },
-      );
+      const query = sessionId
+        ? 'MATCH (b:MemoryBlock {scope: $scope, name: $name}) WHERE b.session_id = $sessionId RETURN b'
+        : 'MATCH (b:MemoryBlock {scope: $scope, name: $name}) RETURN b';
+      const params: Record<string, unknown> = { scope, name };
+      if (sessionId) params.sessionId = sessionId;
+      const result = await session.run(query, params);
       if (result.records.length === 0) return null;
       const props = result.records[0].get('b').properties as Record<string, unknown>;
       return toMemoryBlock(props);
@@ -51,14 +53,24 @@ export class BlockStore {
     }
   }
 
-  async list(scope: string, tier?: MemoryTier): Promise<MemoryBlock[]> {
+  async list(scope: string, tier?: MemoryTier, sessionId?: string): Promise<MemoryBlock[]> {
     const session = this.driver.session();
     try {
-      const query = tier
-        ? 'MATCH (b:MemoryBlock {scope: $scope, tier: $tier}) RETURN b ORDER BY b.name'
-        : 'MATCH (b:MemoryBlock {scope: $scope}) RETURN b ORDER BY b.name';
+      let query = 'MATCH (b:MemoryBlock {scope: $scope})';
+      const conditions: string[] = [];
       const params: Record<string, unknown> = { scope };
-      if (tier) params.tier = tier;
+      if (tier) {
+        conditions.push('b.tier = $tier');
+        params.tier = tier;
+      }
+      if (sessionId) {
+        conditions.push('b.session_id = $sessionId');
+        params.sessionId = sessionId;
+      }
+      if (conditions.length > 0) {
+        query += ' WHERE ' + conditions.join(' AND ');
+      }
+      query += ' RETURN b ORDER BY b.name';
       const result = await session.run(query, params);
       return result.records.map((r) => toMemoryBlock(r.get('b').properties as Record<string, unknown>));
     } finally {
@@ -80,16 +92,17 @@ export class BlockStore {
 }
 
 function toMemoryBlock(props: Record<string, unknown>): MemoryBlock {
+  const now = new Date().toISOString();
   return {
-    id: props.id as string,
-    name: props.name as string,
-    tier: props.tier as MemoryTier,
-    content: props.content as string,
-    scope: props.scope as string,
+    id: (props.id as string) ?? '',
+    name: (props.name as string) ?? '',
+    tier: (props.tier as MemoryTier) ?? 'core',
+    content: (props.content as string) ?? '',
+    scope: (props.scope as string) ?? '',
     ...(props.agent_id != null && { agent_id: props.agent_id as string }),
     ...(props.session_id != null && { session_id: props.session_id as string }),
     ...(props.max_tokens != null && { max_tokens: props.max_tokens as number }),
-    created_at: props.created_at as string,
-    updated_at: props.updated_at as string,
+    created_at: (props.created_at as string) ?? now,
+    updated_at: (props.updated_at as string) ?? now,
   };
 }

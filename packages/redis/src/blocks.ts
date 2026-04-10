@@ -17,7 +17,12 @@ export class BlockStore {
   async get(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null> {
     const raw = await this.redis.get(keyFor(scope, name, sessionId));
     if (!raw) return null;
-    return JSON.parse(raw) as MemoryBlock;
+    try {
+      return JSON.parse(raw) as MemoryBlock;
+    } catch (err) {
+      console.error(`[BlockStore] Failed to parse block ${scope}:${name}:`, err);
+      return null;
+    }
   }
 
   async set(block: MemoryBlock): Promise<void> {
@@ -54,7 +59,13 @@ export class BlockStore {
         if (results) {
           for (const [err, raw] of results) {
             if (err || !raw) continue;
-            const block = JSON.parse(raw as string) as MemoryBlock;
+            let block: MemoryBlock;
+            try {
+              block = JSON.parse(raw as string) as MemoryBlock;
+            } catch (parseErr) {
+              console.error(`[BlockStore] Failed to parse block in list():`, parseErr);
+              continue;
+            }
             if (tier && block.tier !== tier) continue;
             if (sessionId && block.session_id !== sessionId) continue;
             blocks.push(block);

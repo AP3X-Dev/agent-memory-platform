@@ -27,7 +27,7 @@ export interface IMemoryBlockService {
   insert(scope: string, name: string, text: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
   replace(scope: string, name: string, oldText: string, newText: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
   rewrite(scope: string, name: string, content: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
-  promote(scope: string, name: string, fromTier: string, toTier: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  promote(scope: string, name: string, fromTier: string, toTier: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
   archive(scope: string, name: string, sessionId?: string): Promise<string>;
 }
 
@@ -208,6 +208,7 @@ const AmpMemoryPromoteSchema = {
   from_tier: z.enum(['core', 'working', 'archive']).describe('Current tier of the block'),
   to_tier: z.enum(['core', 'working', 'archive']).describe('Target tier to promote/demote to'),
   scope: z.string().max(500).optional().describe('Project scope tag'),
+  session_id: z.string().max(500).optional().describe('Session ID for finding working-tier blocks'),
 };
 
 const AmpMemoryArchiveSchema = {
@@ -272,7 +273,7 @@ export type ToolHandlers = {
   amp_memory_insert: (args: { block: string; text: string; scope?: string; session_id?: string }) => ToolResult;
   amp_memory_replace: (args: { block: string; old_text: string; new_text: string; scope?: string; session_id?: string }) => ToolResult;
   amp_memory_rewrite: (args: { block: string; content: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string }) => ToolResult;
+  amp_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string; session_id?: string }) => ToolResult;
   amp_memory_archive: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
   amp_timeline: (args: { entity: string; include_episodes?: boolean; limit?: number }) => ToolResult;
   amp_fact_diff: (args: { entity: string; from: string; to: string }) => ToolResult;
@@ -391,6 +392,9 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_memory_read(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_read] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.read(scope, args.block, args.session_id);
       if (!block) {
@@ -401,6 +405,9 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_memory_insert(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_insert] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.insert(scope, args.block, args.text, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
@@ -408,6 +415,9 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_memory_replace(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_replace] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.replace(scope, args.block, args.old_text, args.new_text, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
@@ -415,6 +425,9 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_memory_rewrite(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_rewrite] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.rewrite(scope, args.block, args.content, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
@@ -422,13 +435,19 @@ export function buildToolHandlers(): ToolHandlers {
 
     async amp_memory_promote(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_promote] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier);
+      const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier }));
     },
 
     async amp_memory_archive(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
+      if (!args.scope) {
+        console.warn('[amp_memory_archive] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+      }
       const scope = args.scope ?? 'default';
       const content = await memoryBlockService.archive(scope, args.block, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: args.block, archived_length: content.length }));

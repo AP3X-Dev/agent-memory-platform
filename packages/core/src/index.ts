@@ -13,7 +13,7 @@ export type { ExportResult, ExportFilter } from './export.js';
 export { importFromPath } from './import.js';
 export type { ImportOptions, ImportResult, ImportStrategy } from './import.js';
 export { BootstrapGraphService } from './bootstrap-graph.js';
-export { MemoryBlockService } from './blocks.js';
+export { MemoryBlockService, MAX_BLOCK_SIZE } from './blocks.js';
 export type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 export type { BootstrapInput, BootstrapResult, BootstrapEntity, BootstrapSemantic, BootstrapAgent } from './bootstrap-graph.js';
 export { extractFacts } from './extract.js';

@@ -22,6 +22,7 @@ const INDEXES: string[] = [
   'CREATE INDEX fact_scope IF NOT EXISTS FOR (f:Fact) ON (f.scope)',
   'CREATE INDEX fact_invalid_at IF NOT EXISTS FOR (f:Fact) ON (f.invalid_at)',
   'CREATE INDEX fact_updated_at IF NOT EXISTS FOR (f:Fact) ON (f.updated_at)',
+  'CREATE INDEX memblock_session IF NOT EXISTS FOR (b:MemoryBlock) ON (b.session_id)',
 ];
 
 const FULLTEXT_INDEXES: string[] = [

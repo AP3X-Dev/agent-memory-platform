@@ -3,6 +3,8 @@ import { nanoid } from 'nanoid';
 import type { MemoryBlock, MemoryTier } from './types.js';
 import { DEFAULT_BLOCKS } from './types.js';
 
+export const MAX_BLOCK_SIZE = 50_000;
+
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
 export interface RedisBlockLayer {
@@ -14,8 +16,8 @@ export interface RedisBlockLayer {
 
 export interface Neo4jBlockLayer {
   save(block: MemoryBlock): Promise<void>;
-  get(scope: string, name: string): Promise<MemoryBlock | null>;
-  list(scope: string, tier?: MemoryTier): Promise<MemoryBlock[]>;
+  get(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null>;
+  list(scope: string, tier?: MemoryTier, sessionId?: string): Promise<MemoryBlock[]>;
   delete(scope: string, name: string): Promise<void>;
 }
 
@@ -31,7 +33,16 @@ export class MemoryBlockService {
     // Try Redis first, fall back to Neo4j
     const cached = await this.redisBlocks.get(scope, name, sessionId);
     if (cached) return cached;
-    return this.neo4jBlocks.get(scope, name);
+    const block = await this.neo4jBlocks.get(scope, name, sessionId);
+    if (block) {
+      // Cache-aside: write back to Redis on cache miss
+      try {
+        await this.redisBlocks.set(block);
+      } catch (err) {
+        console.warn('[MemoryBlockService] Failed to cache Neo4j block in Redis:', err);
+      }
+    }
+    return block;
   }
 
   async insert(scope: string, name: string, text: string, sessionId?: string): Promise<MemoryBlock> {
@@ -39,9 +50,13 @@ export class MemoryBlockService {
     const now = new Date().toISOString();
 
     if (existing) {
+      const newContent = existing.content + text;
+      if (newContent.length > MAX_BLOCK_SIZE) {
+        throw new Error(`Block "${name}" would exceed max size (${newContent.length} > ${MAX_BLOCK_SIZE} chars)`);
+      }
       const updated: MemoryBlock = {
         ...existing,
-        content: existing.content + text,
+        content: newContent,
         updated_at: now,
       };
       await this._persist(updated);
@@ -49,6 +64,9 @@ export class MemoryBlockService {
     }
 
     // Create new block — determine tier from defaults or default to working
+    if (text.length > MAX_BLOCK_SIZE) {
+      throw new Error(`Block "${name}" would exceed max size (${text.length} > ${MAX_BLOCK_SIZE} chars)`);
+    }
     const defaultDef = DEFAULT_BLOCKS.find((d) => d.name === name);
     const tier: MemoryTier = defaultDef?.tier ?? 'working';
 
@@ -75,9 +93,13 @@ export class MemoryBlockService {
     if (!block.content.includes(oldText)) {
       throw new Error(`old_text not found in block "${name}"`);
     }
+    const newContent = block.content.replaceAll(oldText, newText);
+    if (newContent.length > MAX_BLOCK_SIZE) {
+      throw new Error(`Block "${name}" would exceed max size (${newContent.length} > ${MAX_BLOCK_SIZE} chars)`);
+    }
     const updated: MemoryBlock = {
       ...block,
-      content: block.content.replace(oldText, newText),
+      content: newContent,
       updated_at: new Date().toISOString(),
     };
     await this._persist(updated);
@@ -85,6 +107,9 @@ export class MemoryBlockService {
   }
 
   async rewrite(scope: string, name: string, content: string, sessionId?: string): Promise<MemoryBlock> {
+    if (content.length > MAX_BLOCK_SIZE) {
+      throw new Error(`Block "${name}" would exceed max size (${content.length} > ${MAX_BLOCK_SIZE} chars)`);
+    }
     const block = await this.read(scope, name, sessionId);
     const now = new Date().toISOString();
 
@@ -117,8 +142,8 @@ export class MemoryBlockService {
     return newBlock;
   }
 
-  async promote(scope: string, name: string, fromTier: MemoryTier, toTier: MemoryTier): Promise<MemoryBlock> {
-    const block = await this.read(scope, name);
+  async promote(scope: string, name: string, fromTier: MemoryTier, toTier: MemoryTier, sessionId?: string): Promise<MemoryBlock> {
+    const block = await this.read(scope, name, sessionId);
     if (!block) {
       throw new Error(`Block "${name}" not found in scope "${scope}"`);
     }
@@ -131,6 +156,11 @@ export class MemoryBlockService {
       tier: toTier,
       updated_at: new Date().toISOString(),
     };
+
+    // Strip session_id when promoting to core — core blocks are session-agnostic
+    if (toTier === 'core') {
+      delete updated.session_id;
+    }
 
     // Always write to Redis
     await this.redisBlocks.set(updated);
@@ -161,7 +191,7 @@ export class MemoryBlockService {
   async listBlocks(scope: string, tier?: MemoryTier, sessionId?: string): Promise<MemoryBlock[]> {
     const [redisBlocks, neo4jBlocks] = await Promise.all([
       this.redisBlocks.list(scope, tier, sessionId),
-      this.neo4jBlocks.list(scope, tier),
+      this.neo4jBlocks.list(scope, tier, sessionId),
     ]);
 
     // Dedup by name — Redis wins on conflict
@@ -203,12 +233,22 @@ export class MemoryBlockService {
   // ─── Private helpers ───────────────────────────────────────────────────────
 
   private async _persist(block: MemoryBlock): Promise<void> {
-    // Always write to Redis
-    await this.redisBlocks.set(block);
-
-    // Write to Neo4j if core tier
+    // Write to Neo4j first (source of truth) for core tier
     if (block.tier === 'core') {
       await this.neo4jBlocks.save(block);
+    }
+
+    // Then write to Redis (cache) — if this fails, Neo4j still has the data
+    try {
+      await this.redisBlocks.set(block);
+    } catch (err) {
+      if (block.tier === 'core') {
+        // Neo4j succeeded, Redis failed — log warning but don't fail
+        console.warn('[MemoryBlockService] Redis cache write failed, Neo4j has the data:', err);
+      } else {
+        // Non-core blocks only live in Redis, so this is a real failure
+        throw err;
+      }
     }
   }
 }

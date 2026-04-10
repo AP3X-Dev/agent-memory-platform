@@ -456,7 +456,7 @@ describe('amp_memory_promote handler', () => {
       to_tier: 'core',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.promote).toHaveBeenCalledWith('project:test', 'working_state', 'working', 'core');
+    expect(mockMemoryBlockService.promote).toHaveBeenCalledWith('project:test', 'working_state', 'working', 'core', undefined);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
     expect(parsed.tier).toBe('core');
