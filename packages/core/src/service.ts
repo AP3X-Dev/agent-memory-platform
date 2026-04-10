@@ -51,6 +51,10 @@ export interface FactLayer {
   create(fact: FactNode): Promise<string>;
   findBySubjectPredicate(subject: string, predicate: string): Promise<FactNode[]>;
   invalidate(id: string, invalidAt: string, supersededById?: string): Promise<void>;
+  /** Link two co-extracted facts from the same episode (optional — degrades gracefully) */
+  linkCoExtracted?(factId1: string, factId2: string, episodeId: string): Promise<void>;
+  /** Update confidence score of a fact (optional — used by staleness detection) */
+  updateConfidence?(id: string, confidence: number): Promise<void>;
 }
 
 export interface Neo4jLayer {
@@ -64,6 +68,8 @@ export interface Neo4jLayer {
   query: {
     byScope(scope: { entities?: string[]; tags?: string[]; limit: number }): Promise<SemanticNode[]>;
     byVector(embedding: number[], limit: number): Promise<Array<SemanticNode & { score: number }>>;
+    /** Graph-structural retrieval: expand from seed entities via ABOUT and SAME_EPISODE edges (optional) */
+    expandByGraph?(entityNames: string[], depth?: number, maxPerHop?: number, asOf?: string): Promise<SemanticNode[]>;
   };
   fact?: FactLayer;
 }
@@ -168,6 +174,24 @@ export class AMPService {
       if (!seen.has(node.id)) {
         seen.add(node.id);
         merged.push({ ...node, relevanceScore: node.score });
+      }
+    }
+
+    // 3c. Graph expansion — pull in structurally connected knowledge
+    if (merged.length > 0 && this.neo4j.query.expandByGraph) {
+      const seedEntities = extractEntityNames(merged);
+      if (seedEntities.length > 0) {
+        try {
+          const expanded = await this.neo4j.query.expandByGraph(seedEntities, 1, 5, asOf);
+          for (const node of expanded) {
+            if (!seen.has(node.id)) {
+              seen.add(node.id);
+              merged.push({ ...node, relevanceScore: 0.3 });
+            }
+          }
+        } catch {
+          // Graph expansion is best-effort — don't fail the load
+        }
       }
     }
 
@@ -337,6 +361,7 @@ export class AMPService {
       try {
         const factInputs = await extractFacts(content, apiKey);
         const now = new Date().toISOString();
+        const createdFactIds: string[] = [];
 
         for (const fi of factInputs) {
           // Normalize predicate before comparison
@@ -380,6 +405,43 @@ export class AMPService {
           }
 
           await factLayer.create(newFact);
+          createdFactIds.push(newFactId);
+        }
+
+        // Feature 1: Link co-extracted facts with SAME_EPISODE edges
+        if (createdFactIds.length > 1 && factLayer.linkCoExtracted) {
+          for (let i = 0; i < createdFactIds.length; i++) {
+            for (let j = i + 1; j < createdFactIds.length; j++) {
+              await factLayer.linkCoExtracted(createdFactIds[i]!, createdFactIds[j]!, episodeId);
+            }
+          }
+        }
+
+        // Feature 3: Staleness detection for unmentioned facts
+        if (factLayer.updateConfidence && factInputs.length > 0) {
+          const mentionedEntities = new Set(factInputs.map(f => f.subject));
+          for (const entityName of mentionedEntities) {
+            const factsAboutEntity = factInputs.filter(f => f.subject === entityName);
+            // Only apply staleness decay when the episode had thorough coverage
+            // (at least 2 facts extracted about the entity)
+            if (factsAboutEntity.length < 2) continue;
+
+            const mentionedPredicates = new Set(
+              factsAboutEntity.map(f => normalizePredicate(f.predicate)),
+            );
+
+            // Get all active facts for this entity
+            const activeFacts = await factLayer.getActive(entityName);
+
+            for (const fact of activeFacts) {
+              const normalizedPred = normalizePredicate(fact.predicate);
+              // Facts with predicates NOT mentioned in this episode — potential staleness
+              if (!mentionedPredicates.has(normalizedPred) && fact.confidence > 0.1) {
+                const newConfidence = Math.max(0.1, fact.confidence * 0.9); // 10% decay
+                await factLayer.updateConfidence!(fact.id, newConfidence);
+              }
+            }
+          }
         }
 
         return; // Success — exit retry loop
@@ -590,6 +652,31 @@ export function normalizePredicate(predicate: string): string {
  */
 export function getPredicateSynonyms(): Record<string, string> {
   return { ...PREDICATE_SYNONYMS };
+}
+
+/**
+ * Extract entity names referenced in semantic node content or tags.
+ * Uses simple heuristic: looks for **bold** terms and known entity patterns.
+ */
+function extractEntityNames(nodes: Array<SemanticNode & { relevanceScore?: number }>): string[] {
+  const names = new Set<string>();
+  for (const node of nodes) {
+    // Extract from tags that look like entity references (not project: prefixed)
+    for (const tag of node.tags) {
+      if (!tag.startsWith('project:') && !tag.includes(' ')) {
+        names.add(tag);
+      }
+    }
+    // Extract bold terms from content (common pattern: **entity-name**)
+    const boldMatches = node.content.matchAll(/\*\*([^*]+)\*\*/g);
+    for (const match of boldMatches) {
+      const term = match[1]!.trim();
+      if (term.length > 1 && term.length < 60 && !term.includes('\n')) {
+        names.add(term);
+      }
+    }
+  }
+  return Array.from(names);
 }
 
 function truncateBlocksToTokenBudget(blocks: MemoryBlock[], budget: number): MemoryBlock[] {

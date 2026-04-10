@@ -521,6 +521,8 @@ function makeFactLayer(): FactLayer {
     create: vi.fn().mockResolvedValue('fact-1'),
     findBySubjectPredicate: vi.fn().mockResolvedValue([]),
     invalidate: vi.fn().mockResolvedValue(undefined),
+    linkCoExtracted: vi.fn().mockResolvedValue(undefined),
+    updateConfidence: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -832,5 +834,361 @@ describe('AMPService.store — real-time fact extraction', () => {
     // "depends_on" normalizes to "uses", so both facts use "uses" predicate
     expect(factLayer.create).toHaveBeenCalledTimes(2);
     expect(factLayer.findBySubjectPredicate).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── Feature 1: Co-extracted fact linkage (SAME_EPISODE edges) ──────────────
+
+describe('AMPService.store — co-extracted fact linkage', () => {
+  beforeEach(() => {
+    mockExtractFacts.mockReset();
+    mockExtractFacts.mockResolvedValue([]);
+  });
+
+  it('links co-extracted facts with SAME_EPISODE edges when 3 facts are produced', async () => {
+    const factLayer = makeFactLayer();
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'api-module', predicate: 'uses', object: 'Express', source_episode_ids: [] },
+      { subject: 'api-module', predicate: 'implements', object: 'REST', source_episode_ids: [] },
+      { subject: 'api-module', predicate: 'has', object: 'rate-limiting', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-co-1',
+      agent_id: 'agent-1',
+      task: 'document api',
+      content: 'API module uses Express, implements REST, and has rate-limiting',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // 3 facts created
+    expect(factLayer.create).toHaveBeenCalledTimes(3);
+    // 3 SAME_EPISODE edges: (0,1), (0,2), (1,2)
+    expect(factLayer.linkCoExtracted).toHaveBeenCalledTimes(3);
+  });
+
+  it('does not call linkCoExtracted when only 1 fact is produced', async () => {
+    const factLayer = makeFactLayer();
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'api-module', predicate: 'uses', object: 'Express', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-co-2',
+      agent_id: 'agent-1',
+      task: 'note',
+      content: 'API uses Express',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    expect(factLayer.create).toHaveBeenCalledTimes(1);
+    expect(factLayer.linkCoExtracted).not.toHaveBeenCalled();
+  });
+
+  it('degrades gracefully when linkCoExtracted is not implemented', async () => {
+    const factLayer = makeFactLayer();
+    delete (factLayer as unknown as Record<string, unknown>).linkCoExtracted;
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'api-module', predicate: 'uses', object: 'Express', source_episode_ids: [] },
+      { subject: 'api-module', predicate: 'has', object: 'middleware', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-co-3',
+      agent_id: 'agent-1',
+      task: 'note',
+      content: 'API uses Express and has middleware',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // Facts still created even without linkCoExtracted
+    expect(factLayer.create).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── Feature 2: Graph-structural retrieval (neighbor expansion) ─────────────
+
+describe('AMPService.load — graph expansion', () => {
+  it('calls expandByGraph with entity names from semantic results', async () => {
+    const expandedNode = makeSemanticNode({
+      id: 'sem-expanded',
+      content: 'Related knowledge from graph neighbor',
+      tags: ['related-entity'],
+    });
+    const directNode = makeSemanticNode({
+      id: 'sem-direct',
+      content: 'Direct match for **auth-module** usage',
+      tags: ['auth-module'],
+    });
+
+    const expandByGraph = vi.fn().mockResolvedValue([expandedNode]);
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockResolvedValue([directNode]),
+        byVector: vi.fn().mockResolvedValue([]),
+        expandByGraph,
+      },
+    });
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+    const scope: LoadScope = { task: 'test expansion', max_tokens: 4000 };
+    const result = await service.load(scope);
+
+    expect(expandByGraph).toHaveBeenCalledOnce();
+    // The expanded node should be included in the results
+    expect(result.sources).toContain('sem-expanded');
+    expect(result.sources).toContain('sem-direct');
+  });
+
+  it('skips graph expansion when expandByGraph is not available', async () => {
+    const directNode = makeSemanticNode({
+      id: 'sem-direct',
+      content: 'Direct match content',
+      tags: ['test-tag'],
+    });
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockResolvedValue([directNode]),
+        byVector: vi.fn().mockResolvedValue([]),
+        // No expandByGraph
+      },
+    });
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+    const scope: LoadScope = { task: 'test', max_tokens: 4000 };
+    const result = await service.load(scope);
+
+    expect(result.sources).toContain('sem-direct');
+  });
+
+  it('handles expandByGraph errors gracefully', async () => {
+    const directNode = makeSemanticNode({
+      id: 'sem-direct',
+      content: 'Direct match content',
+      tags: ['test-tag'],
+    });
+
+    const expandByGraph = vi.fn().mockRejectedValue(new Error('Neo4j error'));
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockResolvedValue([directNode]),
+        byVector: vi.fn().mockResolvedValue([]),
+        expandByGraph,
+      },
+    });
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+    const scope: LoadScope = { task: 'test', max_tokens: 4000 };
+    const result = await service.load(scope);
+
+    // Should still return direct results despite expansion failure
+    expect(result.sources).toContain('sem-direct');
+  });
+
+  it('deduplicates expanded nodes against direct results', async () => {
+    const sharedNode = makeSemanticNode({
+      id: 'sem-shared',
+      content: 'Appears in both direct and expanded',
+      tags: ['test-tag'],
+    });
+
+    const expandByGraph = vi.fn().mockResolvedValue([sharedNode]);
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockResolvedValue([sharedNode]),
+        byVector: vi.fn().mockResolvedValue([]),
+        expandByGraph,
+      },
+    });
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+    const scope: LoadScope = { task: 'test dedup', max_tokens: 4000 };
+    const result = await service.load(scope);
+
+    // Should appear exactly once
+    expect(result.sources.filter((id) => id === 'sem-shared')).toHaveLength(1);
+  });
+});
+
+// ─── Feature 3: Staleness detection for unmentioned facts ───────────────────
+
+describe('AMPService.store — staleness detection', () => {
+  beforeEach(() => {
+    mockExtractFacts.mockReset();
+    mockExtractFacts.mockResolvedValue([]);
+  });
+
+  it('decays confidence of unmentioned facts when entity has thorough coverage', async () => {
+    const existingUnmentionedFact = makeFactNode({
+      id: 'fact-stale',
+      subject: 'auth-module',
+      predicate: 'has',
+      object: 'session-cookies',
+      confidence: 0.8,
+    });
+
+    const factLayer = makeFactLayer();
+    // getActive returns the existing unmentioned fact
+    (factLayer.getActive as ReturnType<typeof vi.fn>).mockResolvedValue([existingUnmentionedFact]);
+
+    // Extract 2 facts about auth-module (thorough coverage threshold)
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+      { subject: 'auth-module', predicate: 'implements', object: 'OAuth2', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-stale-1',
+      agent_id: 'agent-1',
+      task: 'update auth docs',
+      content: 'Auth module uses JWT and implements OAuth2',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // The unmentioned fact should have its confidence decayed (0.8 * 0.9 ≈ 0.72)
+    expect(factLayer.updateConfidence).toHaveBeenCalledTimes(1);
+    const [calledId, calledConfidence] = (factLayer.updateConfidence as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(calledId).toBe('fact-stale');
+    expect(calledConfidence).toBeCloseTo(0.72, 10);
+  });
+
+  it('does not decay facts when entity has only 1 extracted fact (not thorough)', async () => {
+    const existingFact = makeFactNode({
+      id: 'fact-safe',
+      subject: 'auth-module',
+      predicate: 'has',
+      object: 'logging',
+      confidence: 0.8,
+    });
+
+    const factLayer = makeFactLayer();
+    (factLayer.getActive as ReturnType<typeof vi.fn>).mockResolvedValue([existingFact]);
+
+    // Only 1 fact about auth-module — below thorough coverage threshold
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-stale-2',
+      agent_id: 'agent-1',
+      task: 'note auth',
+      content: 'Auth module uses JWT',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // Should NOT decay — only 1 fact, not thorough coverage
+    expect(factLayer.updateConfidence).not.toHaveBeenCalled();
+  });
+
+  it('does not decay facts below the 0.1 floor', async () => {
+    const lowConfidenceFact = makeFactNode({
+      id: 'fact-low',
+      subject: 'auth-module',
+      predicate: 'has',
+      object: 'old-feature',
+      confidence: 0.1,
+    });
+
+    const factLayer = makeFactLayer();
+    (factLayer.getActive as ReturnType<typeof vi.fn>).mockResolvedValue([lowConfidenceFact]);
+
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+      { subject: 'auth-module', predicate: 'implements', object: 'OAuth2', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-stale-3',
+      agent_id: 'agent-1',
+      task: 'update auth',
+      content: 'Auth uses JWT and implements OAuth2',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // confidence is already at 0.1 — should not be decayed further
+    expect(factLayer.updateConfidence).not.toHaveBeenCalled();
+  });
+
+  it('degrades gracefully when updateConfidence is not implemented', async () => {
+    const factLayer = makeFactLayer();
+    delete (factLayer as unknown as Record<string, unknown>).updateConfidence;
+    (factLayer.getActive as ReturnType<typeof vi.fn>).mockResolvedValue([
+      makeFactNode({ id: 'fact-x', confidence: 0.8 }),
+    ]);
+
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+      { subject: 'auth-module', predicate: 'has', object: 'tokens', source_episode_ids: [] },
+    ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-stale-4',
+      agent_id: 'agent-1',
+      task: 'test',
+      content: 'Auth uses JWT and has tokens',
+    };
+
+    await service.store(input);
+    await flushAsync();
+
+    // Should not throw — facts still created
+    expect(factLayer.create).toHaveBeenCalledTimes(2);
   });
 });

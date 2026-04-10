@@ -308,6 +308,98 @@ export class ScopedQuery {
     return { semantics, facts, episodes };
   }
 
+  /**
+   * Graph-structural retrieval: expand from seed entities via ABOUT and SAME_EPISODE edges.
+   * Pulls in connected knowledge that vector/fulltext search alone would miss.
+   *
+   * Traversal paths:
+   * - Entity <-[ABOUT]- Semantic -[ABOUT]-> Entity (semantic neighbors)
+   * - Entity <-[FACT_ABOUT]- Fact -[SAME_EPISODE]- Fact -[FACT_ABOUT]-> Entity (co-extracted fact neighbors)
+   *
+   * Returns deduplicated semantic nodes scored by distance from seed (closer = higher score).
+   */
+  async expandByGraph(
+    entityNames: string[],
+    depth: number = 1,
+    maxPerHop: number = 5,
+    asOf?: string,
+  ): Promise<SemanticNode[]> {
+    if (entityNames.length === 0) return [];
+
+    const session = this.driver.session();
+    try {
+      const relFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const params: Record<string, unknown> = {
+        entityNames,
+        maxPerHop: neo4j.int(maxPerHop),
+      };
+      if (asOf) params.asOf = asOf;
+
+      // Path 1: Semantic neighbors — find semantics ABOUT other entities connected
+      // via shared semantic nodes to the seed entities
+      const semanticNeighborCypher = depth >= 2
+        ? `MATCH (e:Entity)<-[r:ABOUT]-(s:Semantic)-[r2:ABOUT]->(e2:Entity)<-[r3:ABOUT]-(s2:Semantic)
+           WHERE toLower(e.name) IN $lowerNames
+             AND ${relFilter}
+             AND r2.invalid_at IS NULL
+             AND r3.invalid_at IS NULL
+             AND NOT toLower(e2.name) IN $lowerNames
+           RETURN DISTINCT s2 AS node, 0.2 AS hopScore
+           ORDER BY s2.confidence DESC
+           LIMIT $maxPerHop`
+        : `MATCH (e:Entity)<-[r:ABOUT]-(s:Semantic)-[r2:ABOUT]->(e2:Entity)<-[r3:ABOUT]-(s2:Semantic)
+           WHERE toLower(e.name) IN $lowerNames
+             AND ${relFilter}
+             AND r2.invalid_at IS NULL
+             AND r3.invalid_at IS NULL
+             AND NOT toLower(e2.name) IN $lowerNames
+           RETURN DISTINCT s2 AS node, 0.3 AS hopScore
+           ORDER BY s2.confidence DESC
+           LIMIT $maxPerHop`;
+
+      // Path 2: Co-extracted fact neighbors — traverse SAME_EPISODE edges on facts
+      const factNeighborCypher =
+        `MATCH (e:Entity)<-[:FACT_ABOUT]-(f1:Fact)-[:SAME_EPISODE]-(f2:Fact)-[:FACT_ABOUT]->(e2:Entity)<-[r:ABOUT]-(s:Semantic)
+         WHERE toLower(e.name) IN $lowerNames
+           AND NOT toLower(e2.name) IN $lowerNames
+           AND ${relFilter}
+         RETURN DISTINCT s AS node, 0.25 AS hopScore
+         ORDER BY s.confidence DESC
+         LIMIT $maxPerHop`;
+
+      const lowerNames = entityNames.map(n => n.toLowerCase());
+      const paramsWithLower = { ...params, lowerNames };
+
+      const [semResult, factResult] = await Promise.all([
+        session.run(semanticNeighborCypher, paramsWithLower),
+        session.run(factNeighborCypher, paramsWithLower),
+      ]);
+
+      const seen = new Set<string>();
+      const results: SemanticNode[] = [];
+
+      for (const record of semResult.records) {
+        const node = mapSemanticNode(record.get('node').properties);
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+
+      for (const record of factResult.records) {
+        const node = mapSemanticNode(record.get('node').properties);
+        if (!seen.has(node.id)) {
+          seen.add(node.id);
+          results.push(node);
+        }
+      }
+
+      return results;
+    } finally {
+      await session.close();
+    }
+  }
+
   async rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]> {
     // Validate that the query is read-only before executing
     validateReadOnlyCypher(cypher);

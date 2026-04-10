@@ -347,6 +347,40 @@ export class FactStore {
       await session.close();
     }
   }
+
+  /**
+   * Link two facts that were co-extracted from the same episode.
+   * Creates a bidirectional SAME_EPISODE edge (stored as undirected via single direction).
+   */
+  async linkCoExtracted(factId1: string, factId2: string, episodeId: string): Promise<void> {
+    const session = this.driver.session();
+    try {
+      await session.run(
+        `MATCH (f1:Fact {id: $id1}), (f2:Fact {id: $id2})
+         MERGE (f1)-[r:SAME_EPISODE]->(f2)
+         SET r.episode_id = $episodeId, r.created_at = COALESCE(r.created_at, $now)`,
+        { id1: factId1, id2: factId2, episodeId, now: new Date().toISOString() },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  /**
+   * Update the confidence score of a fact.
+   * Used by staleness detection to decay confidence of unmentioned facts.
+   */
+  async updateConfidence(id: string, confidence: number): Promise<void> {
+    const session = this.driver.session();
+    try {
+      await session.run(
+        'MATCH (f:Fact {id: $id}) SET f.confidence = $confidence, f.updated_at = $now',
+        { id, confidence, now: new Date().toISOString() },
+      );
+    } finally {
+      await session.close();
+    }
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
