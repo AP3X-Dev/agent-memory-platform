@@ -13,6 +13,7 @@ export type {
   IAMPService,
   IConsolidationEngine,
   IScopedQuery,
+  ICodeIndexerService,
   ToolHandlers,
   ToolDomain,
   ToolRegistry,
@@ -20,6 +21,9 @@ export type {
   RegisteredTool,
   RegisteredToolSet,
 } from './tools.js';
+
+export { scanCodebase } from './codebase-scanner.js';
+export type { CodebaseScan, DiscoveredModule, ScanOptions } from './codebase-scanner.js';
 
 export { parseAmpUri, uriToLoadScope } from './uri.js';
 export type { AmpUri } from './uri.js';

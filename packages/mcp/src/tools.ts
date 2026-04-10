@@ -4,6 +4,7 @@ import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
+import { scanCodebase, type CodebaseScan } from './codebase-scanner.js';
 
 export type { RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 
@@ -61,6 +62,17 @@ export interface IFactStore {
   diff(entityName: string, from: string, to: string): Promise<FactDiff>;
 }
 
+export interface ICodeIndexerService {
+  indexProject(rootPath: string, options?: { include?: string[]; exclude?: string[] }): Promise<{
+    files_parsed: number;
+    files_skipped: number;
+    symbols_created: number;
+    symbols_updated: number;
+    relations_created: number;
+    errors: Array<{ file: string; error: string }>;
+  }>;
+}
+
 // ─── Injected instances ───────────────────────────────────────────────────────
 
 let ampService: IAMPService | null = null;
@@ -69,6 +81,7 @@ let scopedQuery: IScopedQuery | null = null;
 let bootstrapService: IBootstrapGraphService | null = null;
 let memoryBlockService: IMemoryBlockService | null = null;
 let factStore: IFactStore | null = null;
+let codeIndexerService: ICodeIndexerService | null = null;
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
@@ -77,6 +90,7 @@ export function setServiceInstances(services: {
   bootstrapService: IBootstrapGraphService;
   memoryBlockService?: IMemoryBlockService;
   factStore?: IFactStore;
+  codeIndexer?: ICodeIndexerService;
 }): void {
   ampService = services.ampService;
   consolidationEngine = services.consolidationEngine;
@@ -84,12 +98,14 @@ export function setServiceInstances(services: {
   bootstrapService = services.bootstrapService;
   memoryBlockService = services.memoryBlockService ?? null;
   factStore = services.factStore ?? null;
+  codeIndexerService = services.codeIndexer ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
   'amp_load', 'amp_store', 'amp_grep', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
+  'amp_ingest_codebase',
   'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
   'amp_memory_promote', 'amp_memory_archive',
   'amp_timeline', 'amp_fact_diff',
@@ -138,6 +154,7 @@ export const CORE_DOMAIN_TOOLS: Record<string, ToolDomain> = {
   amp_consolidate: 'admin',
   amp_bootstrap: 'admin',
   amp_resolve: 'admin',
+  amp_ingest_codebase: 'admin',
 };
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -221,6 +238,18 @@ const AmpBootstrapSchema = {
     type: z.string().max(5000).describe('Agent type: assistant, sentinel, fixer, researcher'),
   })).optional().default([{ id: 'mcp', name: 'Claude Code', type: 'assistant' }])
     .describe('Agents that will interact with this project'),
+};
+
+const AmpIngestCodebaseSchema = {
+  path: z.string().max(500).describe('Root path of the codebase to ingest'),
+  project_name: z.string().max(200).optional().describe('Project name. Auto-detected from package.json/pyproject.toml if omitted.'),
+  project_tag: z.string().max(200).optional().describe('Project tag (e.g., "project:my-app"). Auto-generated from name if omitted.'),
+  description: z.string().max(1000).optional().describe('One-line project description. Auto-detected if omitted.'),
+  domain: z.string().max(200).optional().describe('Project domain (e.g., "web-app", "CLI tool"). Auto-detected if omitted.'),
+  languages: z.array(z.enum(['typescript', 'javascript', 'python', 'go', 'rust'])).optional()
+    .describe('Languages to index. Auto-detected if omitted.'),
+  exclude_patterns: z.array(z.string()).optional()
+    .describe('Glob patterns to exclude (e.g., ["node_modules", "dist"]). Defaults to common excludes.'),
 };
 
 const AmpMemoryReadSchema = {
@@ -339,6 +368,15 @@ export type ToolHandlers = {
     entities: Array<{ name: string; type: string; description?: string; parent?: string }>;
     semantic_seeds?: Array<{ claim: string; domain: string; confidence?: number; about?: string[]; tags?: string[] }>;
     agents?: Array<{ id: string; name: string; type: string }>;
+  }) => ToolResult;
+  amp_ingest_codebase: (args: {
+    path: string;
+    project_name?: string;
+    project_tag?: string;
+    description?: string;
+    domain?: string;
+    languages?: Array<'typescript' | 'javascript' | 'python' | 'go' | 'rust'>;
+    exclude_patterns?: string[];
   }) => ToolResult;
   amp_memory_read: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
   amp_memory_insert: (args: { block: string; text: string; scope?: string; session_id?: string }) => ToolResult;
@@ -738,6 +776,139 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(JSON.stringify(result, null, 2));
     },
 
+    async amp_ingest_codebase(args) {
+      if (!bootstrapService) throw new Error('BootstrapGraphService not initialised');
+
+      const absPath = args.path;
+
+      // Phase 1: Scan the codebase
+      const scan: CodebaseScan = await scanCodebase(absPath, {
+        languages: args.languages,
+        excludePatterns: args.exclude_patterns,
+      });
+
+      // Resolve final metadata (user overrides > scan detection)
+      const projectName = args.project_name ?? scan.name;
+      const projectTag = args.project_tag ?? `project:${projectName.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-')}`;
+      const description = args.description ?? scan.description;
+      const domain = args.domain ?? scan.domain;
+
+      // Phase 2: Bootstrap the graph
+      const projectEntity = { name: projectName, type: 'project' as const, description };
+      const moduleEntities = scan.modules.map((m) => ({
+        name: m.name,
+        type: m.type,
+        description: m.description,
+        parent: m.parent === scan.name ? projectName : m.parent,
+      }));
+
+      const semanticSeeds = [];
+      if (description) {
+        semanticSeeds.push({
+          claim: description,
+          domain: 'project-overview',
+          confidence: 0.3,
+          about: [projectName],
+        });
+      }
+      if (scan.languages.length > 0) {
+        semanticSeeds.push({
+          claim: `${projectName} is built with ${scan.languages.join(', ')}`,
+          domain: 'technology',
+          confidence: 0.5,
+          about: [projectName],
+        });
+      }
+
+      const bootstrapResult = await bootstrapService.bootstrap({
+        project_name: projectName,
+        project_tag: projectTag,
+        description,
+        domain,
+        entities: [projectEntity, ...moduleEntities],
+        semantic_seeds: semanticSeeds,
+        agents: [{ id: 'mcp', name: 'Claude Code', type: 'assistant' }],
+      });
+
+      // Phase 3: Recursive code indexing
+      let indexResult = {
+        files_parsed: 0,
+        files_skipped: 0,
+        symbols_created: 0,
+        symbols_updated: 0,
+        relations_created: 0,
+        errors: [] as Array<{ file: string; error: string }>,
+      };
+
+      if (codeIndexerService && scan.sourceFiles.length > 0) {
+        indexResult = await codeIndexerService.indexProject(absPath, {
+          exclude: args.exclude_patterns,
+        });
+      }
+
+      // Phase 4: Seed memory blocks
+      let blocksSeeded = 0;
+      if (memoryBlockService) {
+        const moduleList = scan.modules.map((m) => m.name).join(', ');
+        const projectStateText = [
+          `Project: ${projectName}`,
+          description ? `Description: ${description}` : null,
+          `Languages: ${scan.languages.join(', ')}`,
+          moduleList ? `Modules: ${moduleList}` : null,
+          `Files indexed: ${indexResult.files_parsed}`,
+          `Symbols: ${indexResult.symbols_created + indexResult.symbols_updated}`,
+        ].filter(Boolean).join('. ') + '.';
+
+        try {
+          await memoryBlockService.insert(projectTag, 'project_state', projectStateText);
+          blocksSeeded++;
+        } catch {
+          // Non-fatal — block may already exist
+        }
+
+        const personaText = `Agent working on ${projectName}. Domain: ${domain}. Languages: ${scan.languages.join(', ')}.`;
+        try {
+          await memoryBlockService.insert(projectTag, 'persona', personaText);
+          blocksSeeded++;
+        } catch {
+          // Non-fatal
+        }
+      }
+
+      // Phase 5: Return summary
+      const totalEntities = bootstrapResult.entities_created + bootstrapResult.entities_existing;
+      const lines = [
+        '## Codebase Ingestion Complete\n',
+        `**Project:** ${projectName} (${projectTag})`,
+        `**Domain:** ${domain}`,
+        `**Languages:** ${scan.languages.join(', ') || 'none detected'}`,
+        `**Source files found:** ${scan.sourceFiles.length}`,
+        `**Files indexed:** ${indexResult.files_parsed}`,
+        `**Files skipped:** ${indexResult.files_skipped}`,
+        `**Symbols created:** ${indexResult.symbols_created}`,
+        `**Symbols updated:** ${indexResult.symbols_updated}`,
+        `**Code relationships:** ${indexResult.relations_created}`,
+        `**Entities bootstrapped:** ${totalEntities} (${bootstrapResult.entities_created} new, ${bootstrapResult.entities_existing} existing)`,
+        `**Semantic seeds:** ${bootstrapResult.semantics_created}`,
+        `**Memory blocks seeded:** ${blocksSeeded}`,
+        `**Modules:** ${scan.modules.map((m) => m.name).join(', ') || 'none'}`,
+        `**Entry points:** ${scan.entryPoints.length > 0 ? scan.entryPoints.map((e) => e.replace(absPath + '/', '')).join(', ') : 'none found'}`,
+      ];
+
+      if (indexResult.errors.length > 0) {
+        lines.push('');
+        lines.push(`**Indexing errors:** ${indexResult.errors.length}`);
+        for (const err of indexResult.errors.slice(0, 10)) {
+          lines.push(`- ${err.file}: ${err.error}`);
+        }
+        if (indexResult.errors.length > 10) {
+          lines.push(`- ... and ${indexResult.errors.length - 10} more`);
+        }
+      }
+
+      return textContent(lines.join('\n'));
+    },
+
     async amp_memory_read(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
@@ -1032,6 +1203,14 @@ export function registerTools(
     handlers.amp_resolve,
   ));
 
+  addToDomain('admin', server.tool(
+    'amp_ingest_codebase',
+    'One-shot codebase ingestion: scans repo structure, bootstraps the knowledge graph with project/module entities, indexes all source code via tree-sitter, and seeds memory blocks. Use for first-time project setup. Combines amp_bootstrap + amp_code_index + memory seeding in one call.',
+    AmpIngestCodebaseSchema,
+    { openWorldHint: true } satisfies ToolAnnotations,
+    handlers.amp_ingest_codebase,
+  ));
+
   // ─── Tier 1 — amp_tools gateway ──────────────────────────────────────────
 
   tier1.push(server.tool(
@@ -1133,7 +1312,7 @@ export function registerTools(
 const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
   memory: ['amp_memory_replace', 'amp_memory_rewrite', 'amp_memory_promote', 'amp_memory_archive'],
   temporal: ['amp_timeline', 'amp_fact_diff'],
-  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve'],
+  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve', 'amp_ingest_codebase'],
   research: ['amp_research_init', 'amp_research_log', 'amp_research_context', 'amp_research_tree', 'amp_research_contradictions', 'amp_research_consolidate'],
   code: ['amp_code_index', 'amp_code_search', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context'],
   arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
