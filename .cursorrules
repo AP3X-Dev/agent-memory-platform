@@ -14,13 +14,18 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 
 - **General context for a task** → `amp_context` (super-load, blends architecture + code + memory)
 - **Memory load/store** → `amp_load`, `amp_store`, `amp_query`
+- **Trace knowledge history** → `amp_provenance` (full lifecycle of any semantic node)
+- **Temporal facts** → `amp_timeline` (chronological fact history), `amp_fact_diff` (what changed between timestamps)
+- **Memory tiers** → `amp_memory_read/insert/replace/rewrite/promote/archive` (core/working/archive memory blocks)
 - **Code search** → `amp_code_search`, `amp_code_symbols`, `amp_code_deps`
 - **Architecture** → `amp_arch_context`, `amp_impact`, `amp_arch_register`, `amp_arch_relate`
 - **Research experiments** → `amp_research_init`, `amp_research_log`, `amp_research_context`
+- **Wiki / knowledge base** → `amp_compile` (build wiki), `amp_ingest` (ingest sources), `amp_lint` (health checks)
 
 ## Autonomous Behavior
 
 ### Session Start
+- Read core memory: `amp_memory_read(tier: "core")` — always-visible persona, user preferences, project state.
 - Load memory with the user's first message as context.
 - Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`.
 
@@ -48,10 +53,16 @@ Store to AMP when:
 
 Format: `amp_store(session_id, task: "[project:<tag>] ...", content: "[project:<tag>] ...", entities: [...])`.
 
+**Memory tiers:** Use `amp_memory_insert` to update working memory during a session. Use `amp_memory_replace` to update core memory on user preferences. At session end, promote valuable working memory with `amp_memory_promote`.
+
+**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Use `amp_timeline` to trace how facts evolved.
+
 Don't store: routine edits, things derivable from code/git, raw code blocks.
 
 ### Session End
 - Store a session summary.
+- Promote valuable working memory: `amp_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
+- Clean up session-scoped blocks: `amp_memory_archive(block: "<block>")`.
 - Check consolidation: `amp_consolidate(action: "status")`.
 
 ## Project Setup
@@ -87,5 +98,17 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_research_tree` | Hypothesis tree visualization |
 | `amp_research_contradictions` | Find conflicting principles |
 | `amp_research_consolidate` | Research pattern consolidation |
+| `amp_provenance` | Trace full lifecycle of a semantic node |
+| `amp_timeline` | Chronological fact history for an entity |
+| `amp_fact_diff` | What changed between two timestamps |
+| `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
+| `amp_memory_insert` | Insert or append to a memory block |
+| `amp_memory_replace` | Replace content in a memory block |
+| `amp_memory_rewrite` | Full rewrite of a memory block |
+| `amp_memory_promote` | Move a block between tiers (e.g., working → core) |
+| `amp_memory_archive` | Archive a memory block |
+| `amp_compile` | Compile graph into interlinked markdown wiki |
+| `amp_ingest` | Ingest source documents (auto-extracts entities/claims) |
+| `amp_lint` | 10 graph health checks |
 
 For full tool documentation with parameters and examples, see `skills/amp/SKILL.md`.

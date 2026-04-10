@@ -1,11 +1,11 @@
 ---
 name: amp
-description: "Agent Memory Protocol — persistent memory, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 25 MCP tools across 5 domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
+description: "Agent Memory Protocol — persistent memory with temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 37 MCP tools across 6 domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
 ---
 
 # AMP — Agent Memory Protocol
 
-Persistent memory system for AI agents. 25 MCP tools across 5 domains: Core Memory, Architecture, Code Intelligence, Research, and Unified Retrieval. Knowledge compounds across sessions — the agent on day 10 starts with everything it learned on days 1-9.
+Persistent memory system for AI agents. 37 MCP tools across 6 domains: Core Memory, Architecture, Code Intelligence, Research, Unified Retrieval, and Wiki. Knowledge compounds across sessions — the agent on day 10 starts with everything it learned on days 1-9.
 
 ## Quickstart — 5 Rules
 
@@ -25,11 +25,24 @@ What do you need?
 ├─ General context for a task ──────────── amp_context (super-load, blends all sources)
 │
 ├─ Memory specifically
-│  ├─ Load relevant memories ────────────── amp_load
+│  ├─ Load relevant memories ────────────── amp_load (accepts temporal param for time-aware retrieval)
 │  ├─ Store a decision/learning ─────────── amp_store
 │  ├─ Ad-hoc graph query ────────────────── amp_query
 │  ├─ Resolve amp:// URI ────────────────── amp_resolve
-│  └─ Consolidation ─────────────────────── amp_consolidate
+│  ├─ Consolidation ─────────────────────── amp_consolidate
+│  └─ Trace knowledge lifecycle ─────────── amp_provenance
+│
+├─ Temporal facts
+│  ├─ Fact history for an entity ────────── amp_timeline
+│  └─ What changed between dates ────────── amp_fact_diff
+│
+├─ Memory tiers (core / working / archive)
+│  ├─ Read blocks from a tier ───────────── amp_memory_read
+│  ├─ Insert/append to a block ──────────── amp_memory_insert
+│  ├─ Replace content in a block ────────── amp_memory_replace
+│  ├─ Full rewrite of a block ──────────── amp_memory_rewrite
+│  ├─ Move block between tiers ──────────── amp_memory_promote
+│  └─ Archive a block ──────────────────── amp_memory_archive
 │
 ├─ Code search / symbols
 │  ├─ Find implementations ──────────────── amp_code_search
@@ -46,13 +59,18 @@ What do you need?
 │  ├─ Cross-cutting concerns ────────────── amp_arch_aspect
 │  └─ Drift detection ──────────────────── amp_arch_drift
 │
-└─ Research experiments
-   ├─ Start a campaign ──────────────────── amp_research_init
-   ├─ Log an experiment ─────────────────── amp_research_log
-   ├─ Research context (THINK phase) ────── amp_research_context
-   ├─ Hypothesis tree ───────────────────── amp_research_tree
-   ├─ Find contradictions ───────────────── amp_research_contradictions
-   └─ Consolidate patterns ──────────────── amp_research_consolidate
+├─ Research experiments
+│  ├─ Start a campaign ──────────────────── amp_research_init
+│  ├─ Log an experiment ─────────────────── amp_research_log
+│  ├─ Research context (THINK phase) ────── amp_research_context
+│  ├─ Hypothesis tree ───────────────────── amp_research_tree
+│  ├─ Find contradictions ───────────────── amp_research_contradictions
+│  └─ Consolidate patterns ──────────────── amp_research_consolidate
+│
+└─ Wiki / knowledge base
+   ├─ Compile graph into wiki ───────────── amp_compile
+   ├─ Ingest source documents ──────────── amp_ingest
+   └─ Graph health checks ──────────────── amp_lint
 ```
 
 ---
@@ -65,7 +83,12 @@ These are not slash commands. Follow these rules automatically during normal wor
 
 1. Check for `## AMP Memory` config in the project's agent config file (CLAUDE.md, .cursorrules, AGENTS.md, etc.). If missing, bootstrap it — scan the repo and call `amp_bootstrap`.
 2. Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`. Reuse for all stores this session.
-3. Load memory:
+3. Read core memory for always-visible context:
+   ```
+   amp_memory_read(tier: "core")
+   ```
+   This returns persona, user preferences, and project state blocks that persist across sessions.
+4. Load task-specific memory:
    ```
    amp_context(task: "<user's request>", project_name: "<project>", max_tokens: 8000)
    ```
@@ -73,7 +96,7 @@ These are not slash commands. Follow these rules automatically during normal wor
    ```
    amp_load(task: "<user's request>", tags: ["project:<tag>"], max_tokens: 4000)
    ```
-4. Let loaded memory silently inform your work.
+5. Let loaded memory silently inform your work.
 
 ### Before Modifying Code
 
@@ -127,15 +150,45 @@ amp_store(
 
 Don't store: routine edits, things derivable from code/git, raw code blocks, ephemeral debug state.
 
+### Memory Tier Management
+
+During a session, use the memory tier tools to maintain structured state:
+
+| When | Action |
+|------|--------|
+| Session start | `amp_memory_read(tier: "core")` — read always-visible blocks |
+| During work | `amp_memory_insert(tier: "working", block: "working_state", content: "...")` — update session context |
+| User states preference | `amp_memory_replace(tier: "core", block: "user", old: "...", new: "...")` — update user preferences |
+| Session end | `amp_memory_promote(block: "...", from_tier: "working", to_tier: "core")` — keep valuable discoveries |
+| Session end | `amp_memory_archive(block: "working_state")` — clean up session-scoped blocks |
+
+Three tiers:
+- **Core** (always visible, ~15% token budget) — persona, user preferences, project state
+- **Working** (session-scoped, ~10% token budget) — current objective, active state, open questions
+- **Archive** (searchable on demand, ~60% token budget) — historical sessions, past decisions
+
+Default blocks: `persona`, `user`, `current_objective`, `working_state`, `project_state`, `open_questions`.
+
+### Temporal Facts
+
+Facts are subject-predicate-object triples with `valid_at`/`invalid_at`/`status` fields. Canonical entity resolution prevents fragmentation across name variants.
+
+- When existing knowledge is contradicted, facts get **invalidated** (not just overwritten) — the old fact is marked with `invalid_at` and a new fact is created.
+- Use `amp_timeline(entity: "<name>")` to see how facts about an entity evolved chronologically.
+- Use `amp_fact_diff(entity: "<name>", from: "<timestamp>", to: "<timestamp>")` to see what changed between two points in time.
+- `amp_load` now accepts a `temporal` param for time-aware retrieval: `current` (default), `historical`, `interval`, `evolution`.
+
 ### Session End / Handoff
 
 - Store a session summary: what was accomplished, key decisions, open items.
+- Promote valuable working memory to core: `amp_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
+- Clean up session-scoped blocks: `amp_memory_archive(block: "working_state")`.
 - If spawning sub-agents, include relevant AMP context in their prompts.
 - Check consolidation: `amp_consolidate(action: "status")`. If 10+ unprocessed episodes, run it.
 
 ---
 
-## Tool Reference — Core Memory (6 tools)
+## Tool Reference — Core Memory (15 tools)
 
 ### amp_load
 
@@ -219,6 +272,105 @@ One-time project setup. Creates Entity nodes, Agent nodes, seed Semantic nodes, 
   ],
   "agents": [{ "id": "mcp", "name": "Claude Code", "type": "assistant" }]
 }
+```
+
+### amp_provenance
+
+Trace the full lifecycle of a semantic node: origin episodic, all signals with attribution, supersession chain, source citations, chronological timeline.
+
+```json
+{ "semantic_id": "amp-sem-xyz" }
+```
+
+### amp_timeline
+
+Chronological fact history for an entity. Returns subject-predicate-object triples with valid_at/invalid_at timestamps showing how knowledge evolved.
+
+```json
+{ "entity": "auth-module" }
+{ "entity": "auth-module", "predicate": "uses-framework" }
+```
+
+### amp_fact_diff
+
+What changed between two timestamps. Returns added, removed, and modified facts.
+
+```json
+{
+  "entity": "auth-module",
+  "from": "2026-01-01T00:00:00Z",
+  "to": "2026-03-28T00:00:00Z"
+}
+```
+
+### amp_memory_read
+
+Read memory blocks from a tier. Returns structured blocks with content.
+
+```json
+{ "tier": "core" }
+{ "tier": "working", "block": "working_state" }
+{ "tier": "archive", "query": "auth decisions" }
+```
+
+Tiers: `core` (always visible), `working` (session-scoped), `archive` (searchable).
+Default blocks: `persona`, `user`, `current_objective`, `working_state`, `project_state`, `open_questions`.
+
+### amp_memory_insert
+
+Insert or append content to a memory block. Creates the block if it doesn't exist.
+
+```json
+{
+  "tier": "working",
+  "block": "working_state",
+  "content": "Currently refactoring auth module. Halfway through JWT migration."
+}
+```
+
+### amp_memory_replace
+
+Replace specific content within a memory block.
+
+```json
+{
+  "tier": "core",
+  "block": "user",
+  "old": "Prefers tabs",
+  "new": "Prefers 2-space indentation (changed 2026-03)"
+}
+```
+
+### amp_memory_rewrite
+
+Full rewrite of a memory block. Use when incremental replace is insufficient.
+
+```json
+{
+  "tier": "working",
+  "block": "current_objective",
+  "content": "Implementing temporal facts for AMP core. Need to add timeline queries and fact diffing."
+}
+```
+
+### amp_memory_promote
+
+Move a block between tiers. Typically used to promote working memory to core at session end.
+
+```json
+{
+  "block": "auth-conventions",
+  "from_tier": "working",
+  "to_tier": "core"
+}
+```
+
+### amp_memory_archive
+
+Archive a memory block. Moves it to the archive tier for future searchability.
+
+```json
+{ "block": "working_state" }
 ```
 
 ---
@@ -470,6 +622,52 @@ Detect patterns across experiments and promote to semantic knowledge.
 
 ---
 
+## Tool Reference — Wiki (3 tools)
+
+### amp_compile
+
+Compile the knowledge graph into a navigable interlinked markdown wiki. Each entity becomes a markdown article with `[[wikilinks]]`, backlinks, hierarchy, see-also, and source citations.
+
+```json
+{
+  "project_tag": "project:my-api",
+  "output_dir": "./wiki",
+  "format": "markdown",
+  "emit_graph": true,
+  "entities": ["auth-module"]
+}
+```
+
+### amp_ingest
+
+Ingest raw source documents (articles, papers, notes, repos). Auto-extracts entities and claims. Creates Source nodes + Semantic nodes with CITES/ABOUT edges.
+
+```json
+{
+  "source_path": "./raw/paper.md",
+  "source_type": "paper",
+  "project_tag": "project:my-api",
+  "title": "OAuth2 Best Practices",
+  "tags": ["auth", "security"]
+}
+```
+
+Source types: `article`, `paper`, `note`, `repo`, `transcript`.
+
+### amp_lint
+
+10 graph health checks: orphan_pages, broken_links, missing_links, redirect_candidates, link_density, hub_detection, contradictions, low_confidence, stale_sources, coverage_gaps.
+
+```json
+{
+  "project_tag": "project:my-api",
+  "checks": ["orphan_pages", "contradictions", "low_confidence"],
+  "thresholds": { "low_confidence": 0.3 }
+}
+```
+
+---
+
 ## Project Setup
 
 Every project needs an `## AMP Memory` section in its agent config. If missing, bootstrap it:
@@ -548,3 +746,8 @@ MATCH (e:Entity {name: 'auth-module'})-[r]->(dep:Entity) RETURN type(r), dep.nam
 8. **Write prose, not code.** AMP stores reasoning and decisions, not implementations.
 9. **Project tags are mandatory.** Every load/store includes `project:<name>`.
 10. **Entity linking is mandatory.** Every store includes entity names. Without them, episodes are orphaned.
+11. **Read core memory at session start.** Core blocks (persona, user, project_state) provide always-visible context.
+12. **Update working memory during sessions.** Use `amp_memory_insert` to maintain `working_state` so handoffs are smooth.
+13. **Promote, don't lose.** At session end, promote valuable working memory to core before archiving.
+14. **Invalidate, don't overwrite.** When facts are contradicted, they get invalidated with timestamps — preserving history.
+15. **Use `amp_timeline` for fact archaeology.** When you need to understand how knowledge about an entity evolved over time.

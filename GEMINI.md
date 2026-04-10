@@ -15,6 +15,8 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 - **General context for a task** → `amp_context` (super-load, blends architecture + code + memory)
 - **Memory load/store** → `amp_load`, `amp_store`, `amp_query`
 - **Trace knowledge history** → `amp_provenance` (full lifecycle of any semantic node)
+- **Temporal facts** → `amp_timeline` (chronological fact history), `amp_fact_diff` (what changed between timestamps)
+- **Memory tiers** → `amp_memory_read/insert/replace/rewrite/promote/archive` (core/working/archive memory blocks)
 - **Code search** → `amp_code_search`, `amp_code_symbols`, `amp_code_deps`
 - **Architecture** → `amp_arch_context`, `amp_impact`, `amp_arch_register`, `amp_arch_relate`
 - **Research experiments** → `amp_research_init`, `amp_research_log`, `amp_research_context`
@@ -23,6 +25,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 ## Autonomous Behavior
 
 ### Session Start
+- Read core memory: `amp_memory_read(tier: "core")` — always-visible persona, user preferences, project state.
 - Load memory with the user's first message as context.
 - Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`.
 
@@ -52,10 +55,16 @@ Format: `amp_store(session_id, task: "[project:<tag>] ...", content: "[project:<
 
 **Entity auto-extraction:** If you omit `entities`, the system auto-extracts them from your content via LLM. Explicit entities are preferred but auto-extraction is a safety net.
 
+**Memory tiers:** Use `amp_memory_insert` to update working memory during a session (e.g., `working_state` block). Use `amp_memory_replace` to update core memory when user states a preference. At session end, promote valuable working memory with `amp_memory_promote`.
+
+**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Use `amp_timeline` to see how facts about an entity evolved over time.
+
 Don't store: routine edits, things derivable from code/git, raw code blocks.
 
 ### Session End
 - Store a session summary.
+- Promote valuable working memory: `amp_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
+- Clean up session-scoped blocks: `amp_memory_archive(block: "<block>")`.
 - Check consolidation: `amp_consolidate(action: "status")`.
 
 ## Project Setup
@@ -92,6 +101,14 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_research_contradictions` | Find conflicting principles |
 | `amp_research_consolidate` | Research pattern consolidation |
 | `amp_provenance` | Trace full lifecycle of a semantic node |
+| `amp_timeline` | Chronological fact history for an entity |
+| `amp_fact_diff` | What changed between two timestamps |
+| `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
+| `amp_memory_insert` | Insert or append to a memory block |
+| `amp_memory_replace` | Replace content in a memory block |
+| `amp_memory_rewrite` | Full rewrite of a memory block |
+| `amp_memory_promote` | Move a block between tiers (e.g., working → core) |
+| `amp_memory_archive` | Archive a memory block |
 | `amp_compile` | Compile graph into interlinked markdown wiki |
 | `amp_ingest` | Ingest source documents (auto-extracts entities/claims) |
 | `amp_lint` | 10 graph health checks |
@@ -131,7 +148,7 @@ Store Policy: default
 
 Priors:
 - Monorepo with 9 workspaces: core, neo4j, redis, mcp, research, arch, code, retrieval, wiki
-- 29 MCP tools across 6 domains
+- 37 MCP tools across 6 domains
 - All tools follow service injection pattern (Zod schemas, dependency interfaces, bootstrap wiring)
 - Auto-extraction uses GPT-4o-mini for entity/claim extraction from prose
 - Temporal decay uses exponential model with per-class half-lives (volatile=14d, stable=90d, permanent=365d)

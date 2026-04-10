@@ -27,3 +27,15 @@
 | `amp_research_tree` | Research | Hypothesis tree visualization |
 | `amp_research_contradictions` | Research | Find conflicting principles |
 | `amp_research_consolidate` | Research | Research pattern consolidation |
+| `amp_provenance` | Core | Trace full lifecycle of a semantic node |
+| `amp_timeline` | Core | Chronological fact history for an entity |
+| `amp_fact_diff` | Core | What changed between two timestamps |
+| `amp_memory_read` | Core | Read memory blocks from a tier (core/working/archive) |
+| `amp_memory_insert` | Core | Insert or append to a memory block |
+| `amp_memory_replace` | Core | Replace content in a memory block |
+| `amp_memory_rewrite` | Core | Full rewrite of a memory block |
+| `amp_memory_promote` | Core | Move a block between tiers (e.g., working → core) |
+| `amp_memory_archive` | Core | Archive a memory block |
+| `amp_compile` | Wiki | Compile graph into interlinked markdown wiki |
+| `amp_ingest` | Wiki | Ingest source documents (auto-extracts entities/claims) |
+| `amp_lint` | Wiki | 10 graph health checks |
