@@ -4,10 +4,15 @@ import { AMPService } from '../service.js';
 import type { RedisLayer, Neo4jLayer, FactLayer, BlocksLayer } from '../service.js';
 import type { AMPConfig, LoadScope, EpisodeInput, SemanticNode, FactNode, MemoryBlock } from '../types.js';
 
-// Mock extractFacts — we test the wiring, not the OpenAI call
-vi.mock('../extract.js', () => ({
-  extractFacts: vi.fn().mockResolvedValue([]),
-}));
+// Mock extractFacts — we test the wiring, not the OpenAI call.
+// Preserve isTransientError from the real module for retry logic.
+vi.mock('../extract.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../extract.js')>();
+  return {
+    ...actual,
+    extractFacts: vi.fn().mockResolvedValue([]),
+  };
+});
 import { extractFacts } from '../extract.js';
 const mockExtractFacts = vi.mocked(extractFacts);
 
@@ -707,9 +712,10 @@ describe('AMPService.store — real-time fact extraction', () => {
     expect(mockExtractFacts).not.toHaveBeenCalled();
   });
 
-  it('stores episode successfully even when fact extraction throws', async () => {
+  it('stores episode successfully even when fact extraction throws non-transient error', async () => {
     const factLayer = makeFactLayer();
-    mockExtractFacts.mockRejectedValue(new Error('OpenAI rate limit'));
+    // Non-transient error (e.g., auth) — should not be retried
+    mockExtractFacts.mockRejectedValue(new Error('Invalid API key'));
 
     const redis = makeRedis();
     const neo4j = makeNeo4j({ fact: factLayer });
@@ -733,13 +739,71 @@ describe('AMPService.store — real-time fact extraction', () => {
     expect(result.id).toBeTruthy();
     // Episode is stored, Neo4j was called
     expect(neo4j.episodic.create).toHaveBeenCalledOnce();
-    // Error was logged
+    // Error was logged (non-transient: no retries, immediate failure)
     expect(consoleSpy).toHaveBeenCalledWith(
-      expect.stringContaining('[amp-store] Fact extraction failed'),
-      expect.stringContaining('OpenAI rate limit'),
+      expect.stringContaining('[amp-store] Fact extraction failed after retries'),
+      expect.stringContaining('Invalid API key'),
     );
+    // extractFacts called exactly once (no retries for non-transient errors)
+    expect(mockExtractFacts).toHaveBeenCalledTimes(1);
 
     consoleSpy.mockRestore();
+  });
+
+  it('retries fact extraction on transient errors with exponential backoff', async () => {
+    vi.useFakeTimers();
+    const factLayer = makeFactLayer();
+    // First two calls fail with transient error, third succeeds
+    mockExtractFacts
+      .mockRejectedValueOnce(new Error('429 rate limit exceeded'))
+      .mockRejectedValueOnce(new Error('ECONNRESET'))
+      .mockResolvedValueOnce([
+        { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+      ]);
+
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({ fact: factLayer });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    const input: EpisodeInput = {
+      session_id: 'sess-retry',
+      agent_id: 'agent-1',
+      task: 'test task',
+      content: 'Content that needs retries',
+    };
+
+    const result = await service.store(input);
+
+    // Advance timers through all retry delays
+    // First retry delay: 3^0 * 1000 = 1000ms
+    await vi.advanceTimersByTimeAsync(1100);
+    // Second retry delay: 3^1 * 1000 = 3000ms
+    await vi.advanceTimersByTimeAsync(3100);
+
+    // Wait for microtasks to settle
+    await vi.advanceTimersByTimeAsync(100);
+
+    expect(result.duplicate).toBe(false);
+    expect(result.id).toBeTruthy();
+    // extractFacts called 3 times (initial + 2 retries)
+    expect(mockExtractFacts).toHaveBeenCalledTimes(3);
+    // Warn logged for each retry attempt
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('attempt 1 failed, retrying in 1000ms'),
+      expect.stringContaining('429'),
+    );
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('attempt 2 failed, retrying in 3000ms'),
+      expect.stringContaining('ECONNRESET'),
+    );
+    // Fact was created on the third attempt
+    expect(factLayer.create).toHaveBeenCalledOnce();
+
+    warnSpy.mockRestore();
+    vi.useRealTimers();
   });
 
   it('handles multiple extracted facts in a single store', async () => {

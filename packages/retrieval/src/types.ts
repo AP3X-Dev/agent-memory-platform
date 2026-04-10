@@ -27,6 +27,7 @@ export interface RetrievalOptions {
   entity_scope?: string[];
   tag_scope?: string[];
   project_name?: string;
+  as_of?: string;
 }
 
 // === Unified context (the super-load output) ===

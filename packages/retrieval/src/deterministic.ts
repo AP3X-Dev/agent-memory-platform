@@ -25,9 +25,10 @@ export class DeterministicAssembler {
 
   async assemble(
     task: string,
-    options?: { entity_scope?: string[]; project_name?: string; max_tokens?: number },
+    options?: { entity_scope?: string[]; project_name?: string; max_tokens?: number; as_of?: string },
   ): Promise<ContextSection[]> {
     const maxTokens = options?.max_tokens ?? 8000;
+    const asOf = options?.as_of;
     const sections: ContextSection[] = [];
     let tokenBudget = maxTokens;
 
@@ -137,7 +138,7 @@ export class DeterministicAssembler {
     // Step 6: Semantic memories scoped to target entities
     const semanticItems: ContextItem[] = [];
     for (const target of targets) {
-      const memories = await this.getScopedSemantics(target);
+      const memories = await this.getScopedSemantics(target, asOf);
       for (const m of memories) {
         semanticItems.push({
           id: m.id,
@@ -304,15 +305,18 @@ export class DeterministicAssembler {
     }
   }
 
-  private async getScopedSemantics(entityName: string): Promise<Array<{ id: string; content: string; confidence: number; tags: string[] }>> {
+  private async getScopedSemantics(entityName: string, asOf?: string): Promise<Array<{ id: string; content: string; confidence: number; tags: string[] }>> {
     const session = this.driver.session();
     try {
+      // When as_of is provided, filter to semantics created before that timestamp
+      const temporalFilter = asOf ? ' AND s.created_at <= $asOf' : '';
       const result = await session.run(
         `MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $name})
+         WHERE true${temporalFilter}
          RETURN s.id AS id, s.content AS content, s.confidence AS confidence, s.tags AS tags
          ORDER BY s.confidence DESC
          LIMIT 10`,
-        { name: entityName },
+        { name: entityName, ...(asOf ? { asOf } : {}) },
       );
       return result.records.map((r) => ({
         id: r.get('id') as string,

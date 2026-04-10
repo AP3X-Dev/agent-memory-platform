@@ -29,6 +29,7 @@ export class CodeSearch {
       limit?: number;
       include_semantics?: boolean;
       expandedTokens?: string[];
+      as_of?: string;
     },
   ): Promise<CodeSearchResult[]> {
     const limit = options?.limit ?? 20;
@@ -39,7 +40,7 @@ export class CodeSearch {
       this.fulltextSearch(options?.expandedTokens?.join(' ') ?? query, limit, options),
       this.vectorSearch(query, limit, options),
       this.lexicalVectorSearch(query, limit),
-      includeSemantics ? this.semanticVectorSearch(query, limit) : Promise.resolve([]),
+      includeSemantics ? this.semanticVectorSearch(query, limit, options?.as_of) : Promise.resolve([]),
     ]);
 
     // RRF fusion across all result lists (source_type already set per list)
@@ -56,8 +57,9 @@ export class CodeSearch {
   async buildContext(
     task: string,
     maxTokens = 6000,
+    as_of?: string,
   ): Promise<CodeContext> {
-    const results = await this.search(task, { limit: 30, include_semantics: true });
+    const results = await this.search(task, { limit: 30, include_semantics: true, as_of });
 
     const symbols: CodeSearchResult[] = [];
     const semantics: Array<{ id: string; content: string; confidence: number }> = [];
@@ -268,16 +270,20 @@ export class CodeSearch {
   private async semanticVectorSearch(
     query: string,
     limit: number,
+    asOf?: string,
   ): Promise<CodeSearchResult[]> {
     try {
       const queryEmbedding = await this.embedding.embed(query);
       const session = this.driver.session();
       try {
+        // When as_of is provided, post-filter semantic nodes to those created before the cutoff
+        const temporalFilter = asOf ? 'WHERE s.created_at <= $asOf' : '';
         const result = await session.run(
           `CALL db.index.vector.queryNodes('semantic_embedding', $limit, $embedding)
            YIELD node AS s, score
+           ${temporalFilter}
            RETURN s, score`,
-          { limit: neo4j.int(Math.min(limit, 10)), embedding: queryEmbedding },
+          { limit: neo4j.int(Math.min(limit, 10)), embedding: queryEmbedding, ...(asOf ? { asOf } : {}) },
         );
 
         return result.records.map((r) => {

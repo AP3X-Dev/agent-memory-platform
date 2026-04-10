@@ -17,9 +17,9 @@ export interface ICodeIndexer {
 
 export interface ICodeSearch {
   search(query: string, options?: {
-    language?: string; file_path?: string; kind?: string; limit?: number; include_semantics?: boolean;
+    language?: string; file_path?: string; kind?: string; limit?: number; include_semantics?: boolean; as_of?: string;
   }): Promise<CodeSearchResult[]>;
-  buildContext(task: string, maxTokens?: number): Promise<{ task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }>;
+  buildContext(task: string, maxTokens?: number, as_of?: string): Promise<{ task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }>;
   renderContextMarkdown(ctx: { task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }): string;
 }
 
@@ -122,6 +122,7 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       kind: z.string().max(2000).optional().describe('Filter by symbol kind (function, class, method, interface, type, variable, enum)'),
       limit: z.number().int().positive().optional().default(20).describe('Max results'),
       include_semantics: z.boolean().optional().default(true).describe('Include semantic memory results alongside code'),
+      as_of: z.string().optional().describe('ISO 8601 timestamp for point-in-time queries. When set, semantic memories are filtered to those created before this time.'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
@@ -132,6 +133,7 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
         kind: args.kind,
         limit: args.limit,
         include_semantics: args.include_semantics,
+        as_of: args.as_of,
       });
 
       const formatted = results.map((r) => ({
@@ -232,11 +234,12 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     {
       task: z.string().max(5000).describe('Task description (natural language)'),
       max_tokens: z.number().int().positive().optional().default(6000).describe('Max tokens for the context package'),
+      as_of: z.string().optional().describe('ISO 8601 timestamp for point-in-time queries. When set, semantic memories are filtered to those created before this time.'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!codeSearch) throw new Error('Code services not initialised');
-      const ctx = await codeSearch.buildContext(args.task, args.max_tokens);
+      const ctx = await codeSearch.buildContext(args.task, args.max_tokens, args.as_of);
       const md = codeSearch.renderContextMarkdown(ctx);
       return textContent(md);
     },

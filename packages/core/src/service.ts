@@ -18,7 +18,7 @@ import type {
 import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking.js';
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
-import { extractFacts } from './extract.js';
+import { extractFacts, isTransientError } from './extract.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
@@ -311,18 +311,19 @@ export class AMPService {
     if (factLayer && this.config.embedding.apiKey) {
       const apiKey = this.config.embedding.apiKey;
       const episodeId = id;
-      // Detach from the request path — caller gets response without waiting for extraction
-      void this._extractFactsBackground(factLayer, apiKey, input.content, episodeId).catch((err) => {
-        console.error('[amp-store] Fact extraction failed (non-fatal):', err instanceof Error ? err.message : err);
-      });
+      // Detach from the request path — caller gets response without waiting for extraction.
+      // _extractFactsBackground handles its own retries and error logging internally.
+      void this._extractFactsBackground(factLayer, apiKey, input.content, episodeId);
     }
 
     return { id, duplicate: false };
   }
 
   /**
-   * Background fact extraction and auto-invalidation.
+   * Background fact extraction and auto-invalidation with retry.
    * Runs after store() has already returned the episode ID to the caller.
+   * Retries up to 2 times with exponential backoff on transient errors
+   * (network, rate limit). Non-transient errors (parse, validation) are not retried.
    */
   private async _extractFactsBackground(
     factLayer: FactLayer,
@@ -330,48 +331,68 @@ export class AMPService {
     content: string,
     episodeId: string,
   ): Promise<void> {
-    const factInputs = await extractFacts(content, apiKey);
-    const now = new Date().toISOString();
+    const MAX_RETRIES = 2;
 
-    for (const fi of factInputs) {
-      // Normalize predicate before comparison
-      const normalizedPredicate = normalizePredicate(fi.predicate);
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const factInputs = await extractFacts(content, apiKey);
+        const now = new Date().toISOString();
 
-      // Check for existing active fact with same subject + normalized predicate
-      const existing = await factLayer.findBySubjectPredicate(fi.subject, normalizedPredicate);
-      const conflicting = existing.find(f => f.object !== fi.object);
-      const reinforcing = existing.find(f => f.object === fi.object);
+        for (const fi of factInputs) {
+          // Normalize predicate before comparison
+          const originalPredicate = fi.predicate;
+          const normalizedPredicate = normalizePredicate(fi.predicate);
 
-      if (reinforcing) {
-        // Same fact already exists — skip (consolidation can boost confidence later)
-        continue;
+          // Check for existing active fact with same subject + normalized predicate
+          const existing = await factLayer.findBySubjectPredicate(fi.subject, normalizedPredicate);
+          const conflicting = existing.find(f => f.object !== fi.object);
+          const reinforcing = existing.find(f => f.object === fi.object);
+
+          if (reinforcing) {
+            // Same fact already exists — skip (consolidation can boost confidence later)
+            continue;
+          }
+
+          const newFactId = `fact-${nanoid(12)}`;
+          const newFact: FactNode = {
+            id: newFactId,
+            subject: fi.subject,
+            predicate: normalizedPredicate,
+            object: fi.object,
+            // Preserve original predicate when normalization changed it
+            ...(originalPredicate !== normalizedPredicate ? { original_predicate: originalPredicate } : {}),
+            entity_id: null,
+            source_episode_ids: [episodeId],
+            valid_at: now,
+            invalid_at: null,
+            confidence: fi.confidence ?? 0.5,
+            status: 'active',
+            supersedes_fact_id: conflicting?.id ?? null,
+            scope: fi.scope ?? 'project',
+            tags: fi.tags ?? [],
+            created_at: now,
+            updated_at: now,
+          };
+
+          // Auto-invalidate conflicting fact before creating replacement
+          if (conflicting) {
+            await factLayer.invalidate(conflicting.id, now, newFactId);
+          }
+
+          await factLayer.create(newFact);
+        }
+
+        return; // Success — exit retry loop
+      } catch (err) {
+        if (attempt < MAX_RETRIES && isTransientError(err)) {
+          const delay = Math.pow(3, attempt) * 1000; // 1s, 3s
+          console.warn(`[amp-store] Fact extraction attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          console.error('[amp-store] Fact extraction failed after retries (non-fatal):', err instanceof Error ? err.message : err);
+          return; // Give up — episode is already persisted
+        }
       }
-
-      const newFactId = `fact-${nanoid(12)}`;
-      const newFact: FactNode = {
-        id: newFactId,
-        subject: fi.subject,
-        predicate: normalizedPredicate,
-        object: fi.object,
-        entity_id: null,
-        source_episode_ids: [episodeId],
-        valid_at: now,
-        invalid_at: null,
-        confidence: fi.confidence ?? 0.5,
-        status: 'active',
-        supersedes_fact_id: conflicting?.id ?? null,
-        scope: fi.scope ?? 'project',
-        tags: fi.tags ?? [],
-        created_at: now,
-        updated_at: now,
-      };
-
-      // Auto-invalidate conflicting fact before creating replacement
-      if (conflicting) {
-        await factLayer.invalidate(conflicting.id, now, newFactId);
-      }
-
-      await factLayer.create(newFact);
     }
   }
 
@@ -556,7 +577,19 @@ const PREDICATE_SYNONYMS: Record<string, string> = {
 
 export function normalizePredicate(predicate: string): string {
   const lower = predicate.toLowerCase().trim();
-  return PREDICATE_SYNONYMS[lower] ?? lower;
+  const canonical = PREDICATE_SYNONYMS[lower] ?? lower;
+  if (canonical !== lower) {
+    console.debug(`[predicate-norm] "${predicate}" → "${canonical}"`);
+  }
+  return canonical;
+}
+
+/**
+ * Returns a copy of the current predicate synonym map.
+ * Useful for debugging and inspection via amp_query.
+ */
+export function getPredicateSynonyms(): Record<string, string> {
+  return { ...PREDICATE_SYNONYMS };
 }
 
 function truncateBlocksToTokenBudget(blocks: MemoryBlock[], budget: number): MemoryBlock[] {

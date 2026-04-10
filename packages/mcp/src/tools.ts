@@ -578,7 +578,9 @@ export function buildToolHandlers(): ToolHandlers {
 
       if (nodeTypes.includes('fact')) {
         const scopeFilter = args.scope ? ` AND f.scope = '${escapedScope}'` : '';
-        const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter} RETURN f ORDER BY f.updated_at DESC`;
+        // By default only search active facts — invalidated facts are historical noise
+        const statusFilter = ` AND f.status = 'active'`;
+        const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter}${statusFilter} RETURN f ORDER BY f.updated_at DESC`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
           for (const row of rows) {

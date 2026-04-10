@@ -18,6 +18,7 @@ export interface IUnifiedAssembler {
     entity_scope?: string[];
     tag_scope?: string[];
     project_name?: string;
+    as_of?: string;
   }): Promise<UnifiedContext>;
   renderMarkdown(ctx: UnifiedContext): string;
 }
@@ -82,6 +83,7 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
       entity_scope: z.array(z.string()).optional().describe('Scope to specific entities'),
       tag_scope: z.array(z.string()).optional().describe('Scope to specific tags'),
       project_name: z.string().max(2000).optional().describe('Project name for scoping'),
+      as_of: z.string().optional().describe('ISO 8601 timestamp for point-in-time queries. When set, only knowledge valid at this time is included.'),
     },
     { readOnlyHint: true, idempotentHint: true } satisfies ToolAnnotations,
     async (args) => {
@@ -95,6 +97,7 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
         entity_scope: args.entity_scope,
         tag_scope: args.tag_scope,
         project_name: args.project_name,
+        as_of: args.as_of,
       });
       const md = assembler.renderMarkdown(ctx);
       return textContent(md);

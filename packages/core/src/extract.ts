@@ -4,6 +4,26 @@
 import OpenAI from 'openai';
 import type { FactInput } from './types.js';
 
+// ─── Transient error detection ─────────────────────────────────────────────
+
+/**
+ * Determines if an error is transient (network, rate limit) and worth retrying.
+ * Non-transient errors (parse failures, validation, auth) should not be retried.
+ */
+export function isTransientError(err: unknown): boolean {
+  if (err instanceof OpenAI.RateLimitError) return true;
+  if (err instanceof OpenAI.APIConnectionError) return true;
+  if (err instanceof OpenAI.InternalServerError) return true;
+  // Generic network errors
+  if (err instanceof Error) {
+    const msg = err.message.toLowerCase();
+    if (msg.includes('econnreset') || msg.includes('econnrefused') || msg.includes('etimedout') || msg.includes('socket hang up')) return true;
+    if (msg.includes('429') || msg.includes('rate limit')) return true;
+    if (msg.includes('503') || msg.includes('502') || msg.includes('500')) return true;
+  }
+  return false;
+}
+
 // ─── Response validation ────────────────────────────────────────────────────
 
 interface RawFact {
@@ -96,7 +116,10 @@ export async function extractFacts(
       object: f.object,
       source_episode_ids: [],
     }));
-  } catch {
+  } catch (err) {
+    // Re-throw transient errors so callers with retry logic can handle them.
+    // Non-transient errors (auth, bad request) are silently swallowed.
+    if (isTransientError(err)) throw err;
     return [];
   }
 }

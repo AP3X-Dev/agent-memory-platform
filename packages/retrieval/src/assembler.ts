@@ -29,7 +29,7 @@ export interface AssemblerCodeLayer {
 }
 
 export interface AssemblerMemoryLayer {
-  load(scope: { task: string; entities?: string[]; tags?: string[]; max_tokens?: number }): Promise<{
+  load(scope: { task: string; entities?: string[]; tags?: string[]; max_tokens?: number; temporal?: { time_mode?: string; as_of?: string; from?: string; to?: string; include_invalidated?: boolean } }): Promise<{
     markdown: string; tokens: number; sources: string[];
   }>;
 }
@@ -90,6 +90,7 @@ export class UnifiedAssembler {
       entity_scope: options?.entity_scope,
       tag_scope: options?.tag_scope,
       project_name: options?.project_name,
+      as_of: options?.as_of,
     };
 
     // Auto strategy: classify intent and route accordingly
@@ -200,6 +201,7 @@ export class UnifiedAssembler {
           entities: opts.entity_scope,
           tags: opts.tag_scope,
           max_tokens: Math.floor(opts.max_tokens / 3),
+          ...(opts.as_of ? { temporal: { as_of: opts.as_of } } : {}),
         })
           .then((ctx) => { lists.push(parseMemoryMarkdown(ctx.markdown, ctx.sources)); })
           .catch((err) => { console.error('[amp-retrieval] Memory layer failed:', err instanceof Error ? err.message : err); }),
@@ -260,6 +262,7 @@ export class UnifiedAssembler {
       entity_scope: opts.entity_scope,
       project_name: opts.project_name,
       max_tokens: opts.max_tokens,
+      as_of: opts.as_of,
     });
 
     const tokenCount = sections.reduce(

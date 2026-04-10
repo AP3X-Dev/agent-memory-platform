@@ -155,6 +155,7 @@ export interface FactNode {
   id: string;
   subject: string;
   predicate: string;
+  original_predicate?: string;   // preserved when normalization changed the predicate
   object: string;
   entity_id: string | null;      // canonical Entity.id — primary lookup key
   source_episode_ids: string[];
