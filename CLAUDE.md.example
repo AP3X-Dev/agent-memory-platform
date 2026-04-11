@@ -313,51 +313,29 @@ See the `/amp-setup` skill or the CLAUDE.md instructions in the user's global co
 
 ---
 
+---
+
 ## AMP Memory
 
-Project: amp
-Description: Agent Memory Protocol — persistent cross-session knowledge graph for AI agents
-Domain: AI agent infrastructure / knowledge management
-Project Tag: project:amp
+<!-- Run /amp-setup or amp_bootstrap to generate this section for your project. -->
+<!-- It should contain your project-specific configuration.                     -->
+
+Project: <your-project-name>
+Description: <one-line description>
+Domain: <e.g., e-commerce, DevOps tooling, SaaS API>
+Project Tag: project:<kebab-case-name>
 
 Entities:
-- amp
-- core
-- neo4j
-- redis
-- mcp
-- research
-- arch
-- code
-- retrieval
-- wiki
-- temporal-facts
-- memory-tiers
-- entity-resolver
+- <entity-1>
+- <entity-2>
 
 Tags:
-- architecture
-- memory
-- knowledge-graph
-- consolidation
-- retrieval
-- wiki
-- ingestion
-- provenance
-- temporal
-- memory-tiers
-- entity-resolution
+- <domain-tag-1>
+- <domain-tag-2>
 
 Store Policy:
 - default
 
 Priors:
-- AMP uses Neo4j for persistent graph storage and Redis for caching/streams
-- 6 domain packages: core, research, arch, code, retrieval, wiki
-- All tools follow service injection pattern with Zod schemas
-- Consolidation promotes episodic -> semantic via signal-weighted clustering
-- Temporal decay uses exponential model with per-class half-lives
-- Auto-extraction uses GPT-4o-mini for entity/claim extraction from prose
-- Temporal facts are subject/predicate/object triples extracted during consolidation, with time bounds and invalidation on contradiction
-- Memory tiers (core/working/archive) provide structured blocks with per-tier token budgets in amp_load
-- EntityResolver canonicalizes entity references via exact -> case-insensitive -> alias matching
+- <foundational fact about your project>
+- <another foundational fact>

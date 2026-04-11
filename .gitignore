@@ -3,16 +3,16 @@ dist/
 .env
 *.tsbuildinfo
 
-# AMP data (cold storage exports — user-specific memory)
+# AMP data (user-specific memory exports)
 .amp/
 
-# Compiled wiki output (generated from the knowledge graph — user-specific)
-# The wiki compiler source is at packages/wiki/ (tracked).
-# This directory is the compiled output (not tracked).
+# Compiled wiki output (generated, not source)
 wiki/
 
-# Claude Code state files
+# Claude Code runtime state (logs, trackers, etc.)
 .claude/
+# But keep the distributable skills tracked
+!.claude/skills/
 
 # Planning and design docs (internal)
 docs/superpowers/
@@ -22,7 +22,15 @@ docs/messaging-sheet.md
 amp-three-tier-architecture.md
 .superpowers/
 docs/prompts/
+
+# Temp and data files
 *.csv
 *.csv#
 .~lock.*
+
+# Unused workspace
 packages/oni/
+
+# Personal agent configs (use .example templates instead)
+CLAUDE.md
+GEMINI.md

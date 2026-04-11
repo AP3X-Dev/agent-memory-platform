@@ -154,42 +154,26 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 
 For full tool documentation with parameters and examples, see `CLAUDE.md` or `.claude/skills/amp/SKILL.md`.
 
+
 ## AMP Memory
 
-Project: amp
-Description: Agent Memory Protocol — persistent cross-session memory system using Neo4j and Redis
-Domain: DevOps tooling / AI agent infrastructure
-Project Tag: project:amp
+<!-- Run /amp-setup or amp_bootstrap to generate this section for your project. -->
+
+Project: <your-project-name>
+Description: <one-line description>
+Domain: <e.g., e-commerce, DevOps tooling, SaaS API>
+Project Tag: project:<kebab-case-name>
 
 Entities:
-- amp
-- core
-- neo4j
-- redis
-- mcp
-- research
-- arch
-- code
-- retrieval
-- wiki
+- <entity-1>
+- <entity-2>
 
 Tags:
-- architecture
-- memory
-- knowledge-graph
-- consolidation
-- retrieval
-- wiki
-- ingestion
-- provenance
+- <domain-tag-1>
+- <domain-tag-2>
 
 Store Policy: default
 
 Priors:
-- Monorepo with 9 workspaces: core, neo4j, redis, mcp, research, arch, code, retrieval, wiki
-- 37 MCP tools across 6 domains
-- All tools follow service injection pattern (Zod schemas, dependency interfaces, bootstrap wiring)
-- Auto-extraction uses GPT-4o-mini for entity/claim extraction from prose
-- Temporal decay uses exponential model with per-class half-lives (volatile=14d, stable=90d, permanent=365d)
-- Learned retrieval tracks strategy success rates and entity effectiveness for adaptive routing
-- Wiki compiler generates interlinked markdown with [[wikilinks]], backlinks, Mermaid diagrams
+- <foundational fact about your project>
+- <another foundational fact>
