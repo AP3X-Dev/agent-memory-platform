@@ -4,7 +4,7 @@
 import { createRedisClient } from '@amp/redis';
 import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore, BlockStore as RedisBlockStore } from '@amp/redis';
 import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore, FactStore } from '@amp/neo4j';
-import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService } from '@amp/core';
+import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService, EMBEDDING_DIM } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
 import {
@@ -96,7 +96,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   // Build embedding provider
   const embedding = openaiKey
     ? new OpenAIEmbedding(openaiKey)
-    : ({ embed: async () => new Array(1536).fill(0), embedBatch: async (t: string[]) => t.map(() => new Array(1536).fill(0)) });
+    : ({ embed: async () => new Array(EMBEDDING_DIM).fill(0), embedBatch: async (t: string[]) => t.map(() => new Array(EMBEDDING_DIM).fill(0)) });
 
   if (!openaiKey) {
     status.degraded.push('embeddings: zero vectors (no OPENAI_API_KEY)');
@@ -230,7 +230,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
         for (const fp of filePaths) {
           codeWatcherService.queueReindex(fp);
         }
-      } catch {
+      } catch (err: unknown) {
         // Post-store hook failures are non-fatal
       }
     }
