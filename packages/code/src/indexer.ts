@@ -1,7 +1,7 @@
 // packages/code/src/indexer.ts
 // Project and file indexing pipeline.
 
-import { readFile, readdir, stat } from 'fs/promises';
+import { readdir, stat } from 'fs/promises';
 import { resolve, extname, relative } from 'path';
 import { type Driver } from 'neo4j-driver';
 import { parseFile } from './parser.js';

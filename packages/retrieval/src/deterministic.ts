@@ -3,7 +3,7 @@
 // Same graph state always produces the same output — no ranking heuristics.
 
 import { type Driver } from 'neo4j-driver';
-import type { RetrievalResult, ContextSection, ContextItem } from './types.js';
+import type { ContextSection, ContextItem } from './types.js';
 
 /**
  * Deterministic context assembly.

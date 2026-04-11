@@ -1,7 +1,7 @@
 // packages/arch/src/entity-store.ts
 // Enriches existing Entity nodes with architectural properties.
 
-import neo4j, { type Driver } from 'neo4j-driver';
+import { type Driver } from 'neo4j-driver';
 import type { ArchEntityProperties, EntityCategory } from './types.js';
 
 /**

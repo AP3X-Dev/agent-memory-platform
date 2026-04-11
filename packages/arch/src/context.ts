@@ -3,7 +3,7 @@
 // Inspired by Yggdrasil: same graph state always produces same output.
 
 import { type Driver } from 'neo4j-driver';
-import type { ArchContext, StabilityTier } from './types.js';
+import type { ArchContext } from './types.js';
 import { ArchEntityStore } from './entity-store.js';
 import { AspectStore } from './aspect-store.js';
 import { StructuralRelationStore } from './relation-store.js';

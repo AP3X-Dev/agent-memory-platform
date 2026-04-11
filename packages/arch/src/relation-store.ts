@@ -3,7 +3,7 @@
 
 import { type Driver } from 'neo4j-driver';
 import type { StructuralRelationType } from './types.js';
-import { temporalSetClause, activeRelationshipFilter, invalidateRelationship } from '@amp/neo4j';
+import { temporalSetClause, activeRelationshipFilter } from '@amp/neo4j';
 
 const VALID_RELATION_TYPES: Set<string> = new Set([
   'USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS', 'LISTENS',
