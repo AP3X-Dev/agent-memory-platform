@@ -1,91 +1,67 @@
 # AMP — Agent Memory Protocol
 
-A persistent memory system for AI agents. Stores knowledge across sessions, agents, and models using a Neo4j knowledge graph with Redis caching, exposed via MCP (Model Context Protocol).
+**Every AI coding session starts from zero.** Your agent doesn't remember the architecture decisions from last week. It doesn't know that you tried approach X and it failed. It doesn't know your team prefers Zod over Joi, or that the auth module was rewritten last month. Every session, you re-explain. Every session, it makes the same mistakes you already corrected.
 
-Unlike RAG systems that retrieve and forget, AMP **learns** — episodic memories get consolidated into semantic principles through signal-driven evolution. The agent on day 10 starts with everything it learned on days 1–9.
+**AMP fixes that.**
 
-## What It Does
+With AMP, your AI agent accumulates knowledge across every session. Decisions get stored. Corrections stick. Conventions compound. The agent working on your codebase on day 30 has everything it learned on days 1–29 — the architecture, the tradeoffs, the "we tried that and here's why it didn't work."
 
-- **Persistent memory** — Episodic (what happened) → Semantic (what we know) promotion via consolidation
-- **Architectural understanding** — Hierarchical entity graph with typed relations, aspects, drift detection, impact analysis
-- **Code intelligence** — AST-based symbol indexing with multi-vector search (dense + lexical + mini projection)
-- **Unified retrieval** — Blends architecture + code + memory via RRF fusion with intent classification
-- **Research experiment tracking** — Hypothesis trees, campaign management, automated pattern consolidation
+It's not RAG. RAG retrieves documents and forgets. AMP **learns** — episodic memories get consolidated into high-confidence principles through signal-driven evolution, the same way a senior engineer builds intuition over time.
 
-## Architecture
+---
+
+## What Changes For You
+
+**Before AMP:**
+- "We already fixed this bug last week" — agent doesn't know
+- "Use the factory pattern here, not direct instantiation" — explained for the third time
+- "The rate limit is 50/s, not 100" — agent uses stale knowledge from training data
+- Context window fills up re-explaining your project to a blank-slate agent
+
+**After AMP:**
+- Agent loads project context in one call — architecture, conventions, past decisions, known gotchas
+- Corrections from session 3 automatically inform session 30
+- When knowledge changes (rate limit dropped from 100 to 50), old facts get invalidated and new facts supersede them — with full audit trail
+- Multiple agents working on the same project share the same evolving knowledge base
+
+---
+
+## How It Works
+
+AMP is a Neo4j knowledge graph exposed as 38 MCP tools. Your agent calls them autonomously — no workflow changes needed.
 
 ```
-┌─────────────────────────────────────────────┐
-│                 MCP Server                   │
-│          25 tools across 5 domains           │
-├──────────┬──────────┬──────────┬────────────┤
-│  Core    │ Research │   Arch   │    Code    │ Retrieval
-│  Memory  │ Experiments│ Structure│ Symbols  │ Fusion
-├──────────┴──────────┴──────────┴────────────┤
-│              Neo4j Knowledge Graph           │
-│         Redis Cache + Signal Streams         │
-└─────────────────────────────────────────────┘
+Session 1: Agent stores "auth module uses JWT, team prefers stateless for horizontal scaling"
+                    ↓
+Session 5: Agent stores "migrated auth to OAuth2 + PKCE" → old JWT fact auto-invalidated
+                    ↓
+Session 8: Three agents independently confirm the Zod validation pattern works
+                    ↓
+           Consolidation promotes "use Zod for validation" to high-confidence principle
+                    ↓
+Session 15: New agent loads context → knows about OAuth2, Zod convention, and WHY
 ```
 
-## Packages
+### The Memory Stack
 
-| Package | Tools | Purpose |
-|---------|-------|---------|
-| `@amp/core` | 6 | Memory load/store, consolidation, graph bootstrap |
-| `@amp/research` | 6 | Experiment tracking, hypothesis trees, pattern consolidation |
-| `@amp/arch` | 6 | Architectural graph, typed relations, aspects, impact analysis, drift detection |
-| `@amp/code` | 5 | AST parsing, symbol graph, multi-vector hybrid search |
-| `@amp/retrieval` | 2 | Unified context assembly, intent classification, query expansion |
-| `@amp/neo4j` | — | Graph stores, queries, GDS algorithms |
-| `@amp/redis` | — | Caching, streams, locks, coordination |
-| `@amp/mcp` | — | MCP server, bootstrap wiring |
+| Layer | What it captures | How it helps |
+|-------|-----------------|--------------|
+| **Episodic** | What happened each session — decisions, bugs, fixes | Full history, nothing lost |
+| **Semantic** | Consolidated principles with confidence scores | "We know X because of Y" with 0.85 confidence |
+| **Temporal Facts** | Structured knowledge with time bounds | "Rate limit WAS 100, changed to 50 on March 15" |
+| **Architecture** | Entity relationships, aspects, dependency graph | "If you change X, these 12 things break" |
+| **Code Intelligence** | AST-parsed symbols, multi-vector search | "Find all callers of this function across the codebase" |
 
-## MCP Tools
+### Progressive Disclosure
 
-### Core Memory
-| Tool | Description |
-|------|-------------|
-| `amp_load` | Load assembled memory context for a task |
-| `amp_store` | Store episodic memory with optional signals |
-| `amp_query` | Run read-only Cypher against the knowledge graph |
-| `amp_consolidate` | Run/review memory consolidation |
-| `amp_resolve` | Resolve `amp://` URIs to rendered context |
-| `amp_bootstrap` | Seed the graph with project entities, agents, and semantic priors |
+Your agent sees 7 tools by default. The other 31 activate on demand — no tool sprawl, no decision fatigue.
 
-### Research
-| Tool | Description |
-|------|-------------|
-| `amp_research_init` | Initialize a research campaign |
-| `amp_research_log` | Log an experiment result with full provenance |
-| `amp_research_context` | Build dynamic research context (principles, wins, dead ends) |
-| `amp_research_tree` | Visualize the hypothesis tree |
-| `amp_research_contradictions` | Find conflicting semantic claims |
-| `amp_research_consolidate` | Detect patterns and promote to semantic knowledge |
+```
+Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
+On demand:       6 domains (memory, temporal, admin, research, code, arch, wiki, retrieval)
+```
 
-### Architecture
-| Tool | Description |
-|------|-------------|
-| `amp_arch_register` | Enrich entities with responsibility, interface, internals descriptions |
-| `amp_arch_relate` | Create typed relations (USES, CALLS, EXTENDS, IMPLEMENTS, EMITS, LISTENS) |
-| `amp_arch_aspect` | Manage cross-cutting concerns with stability tiers |
-| `amp_impact` | Blast radius analysis — what breaks if this changes |
-| `amp_arch_drift` | SHA-256 drift detection — has the code changed since last indexing |
-| `amp_arch_context` | Deterministic architectural context assembly |
-
-### Code Intelligence
-| Tool | Description |
-|------|-------------|
-| `amp_code_index` | AST-based indexing (TypeScript, JavaScript, Python, Go, Rust) |
-| `amp_code_search` | Hybrid search: fulltext + dense vector + lexical vector + semantic |
-| `amp_code_symbols` | Query symbols by file, name, or kind |
-| `amp_code_deps` | Symbol-level dependencies: callers, callees, importers, inheritance |
-| `amp_code_context` | Code-aware context assembly for a task |
-
-### Unified Retrieval
-| Tool | Description |
-|------|-------------|
-| `amp_context` | The "super-load" — blends architecture + code + memory with intent-classified routing |
-| `amp_feedback` | Record result usefulness to improve future rankings |
+---
 
 ## Quick Start
 
@@ -100,26 +76,21 @@ Unlike RAG systems that retrieve and forget, AMP **learns** — episodic memorie
 git clone https://github.com/AP3X-Dev/agent-memory-protocol.git
 cd agent-memory-protocol
 
-# Start Redis + Neo4j
+# Start the knowledge graph
 docker compose up -d
 
 # Configure
 cp .env.example .env
 # Edit .env with your Neo4j password
 
-# Install and build
+# Install and run
 npm install
-npm run build
-
-# Run MCP server
 npm run dev
 ```
 
-### Connect to Claude Code
+### Connect to Your Agent
 
-Add to your Claude Code MCP settings:
-
-**SSE (default):**
+**Claude Code (SSE):**
 ```json
 {
   "mcpServers": {
@@ -131,7 +102,7 @@ Add to your Claude Code MCP settings:
 }
 ```
 
-**Stdio:**
+**Claude Code (stdio):**
 ```json
 {
   "mcpServers": {
@@ -151,72 +122,93 @@ Add to your Claude Code MCP settings:
 }
 ```
 
-## How It Works
+**Works with any MCP-compatible agent:** Claude Code, Cursor, Windsurf, Cline, Codex, or custom agents.
 
-### Memory Lifecycle
+### Bootstrap Your Project
+
+Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your project and run `/amp-setup`. The agent analyzes your codebase, discovers entities, and scaffolds the knowledge graph. From that point on, every session loads and stores automatically.
+
+---
+
+## The 38 Tools
+
+### Core Memory (7 always visible + 8 on demand)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_load` | Start every session with full project context — conventions, decisions, gotchas |
+| `amp_store` | Capture decisions and learnings so the next session starts smarter |
+| `amp_context` | One-call context assembly — architecture + code + memory blended |
+| `amp_memory_read/insert` | Structured memory blocks: persona, user preferences, project state |
+| `amp_grep` | Search across all memory by pattern |
+| `amp_memory_promote/archive` | Graduate working notes to permanent knowledge, or archive completed work |
+
+### Temporal Intelligence (2 tools)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_timeline` | See how knowledge about any entity evolved over time |
+| `amp_fact_diff` | "What changed about auth-module between January and March?" |
+
+### Architecture Understanding (6 tools)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_impact` | "If I change this module, what breaks?" — blast radius before you touch code |
+| `amp_arch_register/relate` | Build a living architecture map that stays current |
+| `amp_arch_drift` | Detect when code has changed since the agent last looked |
+| `amp_arch_context` | Deterministic architectural context — same graph always produces same output |
+
+### Code Intelligence (5 tools)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_code_index` | AST-parse your project — every function, class, import becomes searchable |
+| `amp_code_search` | Hybrid search: fulltext + dense vectors + lexical vectors + semantic memory |
+| `amp_code_deps` | "Who calls this function? What does it import? What inherits from it?" |
+
+### Research & Experiments (6 tools)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_research_init/log` | Track optimization experiments with metrics, hypotheses, and lineage |
+| `amp_research_context` | Build context for the next experiment based on what worked and what didn't |
+| `amp_research_contradictions` | Find where your experiments disagree — resolve conflicts before they compound |
+
+### Knowledge Wiki (3 tools)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_compile` | Turn the knowledge graph into a browsable interlinked wiki |
+| `amp_ingest` | Feed in docs, papers, or notes — entities and claims auto-extracted |
+| `amp_lint` | 10 health checks: orphan pages, contradictions, low confidence, coverage gaps |
+
+---
+
+## Architecture
 
 ```
-Agent works → stores episodic memory (amp_store)
-                    ↓
-           Signals: reinforcement / correction / contradiction
-                    ↓
-           Consolidation clusters signals by target
-                    ↓
-           Patterns promoted to semantic knowledge (confidence-scored)
-                    ↓
-           Next session loads evolved knowledge (amp_load / amp_context)
+┌──────────────────────────────────────────────────┐
+│                  MCP Server                       │
+│          38 tools · 6 domains · progressive       │
+├────────┬────────┬────────┬───────┬───────┬───────┤
+│  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
+│ Memory │ Experi │Structur│Symbols│Fusion │Compile│
+├────────┴────────┴────────┴───────┴───────┴───────┤
+│              Neo4j Knowledge Graph                │
+│         Redis Cache + Signal Streams              │
+└──────────────────────────────────────────────────┘
 ```
 
-### Knowledge Graph
+### Packages
 
-```
-(:Entity:Project) -[:CONTAINS]-> (:Entity:Module) -[:CONTAINS]-> (:Entity:Component)
-       ↑                              ↑                               ↑
-  [:ABOUT]                        [:USES]                        [:MODIFIED]
-       ↑                              ↑                               ↑
-(:Semantic)                    (:Entity:Service)              (:Experiment)
-  confidence: 0.82              -[:CALLS]->                   -[:DERIVED_FROM]->
-                                -[:EXTENDS]->                 (:Experiment)
-(:Aspect) -[:APPLIES_TO]-> (:Entity)
-  stability_tier: "protocol"
+| Package | Purpose |
+|---------|---------|
+| `@amp/core` | Memory load/store, consolidation, graph bootstrap, memory tiers |
+| `@amp/research` | Experiment tracking, hypothesis trees, pattern consolidation |
+| `@amp/arch` | Entity graph, typed relations, aspects, impact analysis, drift detection |
+| `@amp/code` | AST parsing, symbol graph, multi-vector hybrid search |
+| `@amp/retrieval` | Unified context assembly, intent classification, learned retrieval weights |
+| `@amp/wiki` | Graph-to-wiki compiler, source ingestion, health linting |
+| `@amp/neo4j` | Graph stores, queries, GDS algorithms, temporal edges |
+| `@amp/redis` | Caching, streams, locks, memory block storage |
+| `@amp/mcp` | MCP server, bootstrap wiring, tool registration |
 
-(:Symbol) -[:SYMBOL_CALLS]-> (:Symbol)
-  kind: "function"            -[:DEFINED_IN]-> (:Entity:Component)
-```
-
-### Retrieval Pipeline
-
-```
-Query → Intent Classification (GRAPH / SEMANTIC / IDENTIFIER / HYBRID)
-  ↓
-Query Expansion (100+ code synonyms, phrase synonyms)
-  ↓
-Parallel Search: fulltext + dense vector + lexical vector + semantic memory
-  ↓
-RRF Fusion (dynamic k scaling for large collections)
-  ↓
-Lexical Text Boost (symbol/path/filename matching)
-  ↓
-MMR Diversification (bounded to 200 candidates)
-  ↓
-Token-budgeted context assembly
-```
-
-## Development
-
-```bash
-# Build all packages
-npm run build
-
-# Run tests (384 tests)
-npm test
-
-# Run retrieval benchmark
-npm run bench -w packages/retrieval
-
-# Start MCP server (dev mode with hot reload)
-npm run dev
-```
+---
 
 ## Environment Variables
 
@@ -225,14 +217,18 @@ npm run dev
 | `NEO4J_URI` | `bolt://localhost:7687` | Neo4j connection |
 | `NEO4J_USER` | `neo4j` | Neo4j username |
 | `NEO4J_PASSWORD` | — | Neo4j password |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection (with auth: `redis://:password@host:port`) |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
 | `OPENAI_API_KEY` | — | For embedding-based semantic search (optional — works without) |
 | `MCP_PORT` | `3101` | MCP server port |
 | `AMP_API_TOKEN` | — | Optional Bearer token for SSE endpoint auth |
 
-## Agent Agnostic
+## Development
 
-AMP works with any MCP-compatible agent: Claude Code, Cursor, Windsurf, Cline, Codex, or custom agents. The protocol defines the tool contracts — the agent just calls them.
+```bash
+npm run build          # Build all packages
+npm test               # Run tests (600+)
+npm run dev            # MCP server with hot reload
+```
 
 ## License
 
