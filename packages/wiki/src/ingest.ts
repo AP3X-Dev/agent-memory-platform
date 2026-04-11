@@ -53,7 +53,8 @@ export class IngestionService {
     let content: string;
     try {
       content = await readFile(source_path, 'utf-8');
-    } catch {
+    } catch (err: unknown) {
+      console.error("[ingest] Suppressed error:", err);
       throw new Error(`Failed to read source file: ${source_path}`);
     }
 

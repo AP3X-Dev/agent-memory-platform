@@ -131,7 +131,7 @@ async function resolveImportPath(
     try {
       const s = await stat(candidate);
       if (s.isFile()) return candidate;
-    } catch {
+    } catch (err: unknown) {
       // Not found, try next
     }
   }

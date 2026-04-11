@@ -65,7 +65,7 @@ export async function importFromPath(
   let filenames: string[];
   try {
     filenames = await fs.readdir(semanticDir);
-  } catch {
+  } catch (err: unknown) {
     // Directory doesn't exist or is unreadable — treat as empty
     filenames = [];
   }
@@ -84,7 +84,7 @@ export async function importFromPath(
       const contentHash = hashContent(content);
       parsedNodes.set(node.id, node);
       fileEntries.push({ id: node.id, contentHash });
-    } catch {
+    } catch (err: unknown) {
       // Skip files that fail to parse
     }
   }
@@ -188,7 +188,7 @@ export async function importFromPath(
         pipeline.del(depsKey);
         await pipeline.exec();
       }
-    } catch {
+    } catch (err: unknown) {
       // Redis invalidation failure is non-fatal
     }
   }
@@ -243,7 +243,7 @@ export async function importFromPath(
         pipeline.del(depsKey);
         await pipeline.exec();
       }
-    } catch {
+    } catch (err: unknown) {
       // Non-fatal
     }
   }

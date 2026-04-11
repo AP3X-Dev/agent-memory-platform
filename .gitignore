@@ -7,7 +7,7 @@ dist/
 .amp/
 
 # Compiled wiki output (generated, not source)
-wiki/
+/wiki/
 
 # Claude Code runtime state (logs, trackers, etc.)
 .claude/

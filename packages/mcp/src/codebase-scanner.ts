@@ -219,7 +219,7 @@ async function discoverModules(
             });
           }
         }
-      } catch {
+      } catch (err: unknown) {
         // Workspace directory doesn't exist — skip
       }
     }
@@ -244,7 +244,7 @@ async function discoverModules(
         });
       }
     }
-  } catch {
+  } catch (err: unknown) {
     // Root directory read failed — skip
   }
 
@@ -270,7 +270,7 @@ async function discoverModules(
         }
       }
     }
-  } catch {
+  } catch (err: unknown) {
     // src/ doesn't exist — skip
   }
 
@@ -289,7 +289,8 @@ async function walkSourceFiles(
     let entries;
     try {
       entries = await readdir(dir, { withFileTypes: true });
-    } catch {
+    } catch (err: unknown) {
+      console.error("[codebase-scanner] Suppressed error:", err);
       return; // Permission denied or other read error
     }
 
@@ -388,7 +389,8 @@ async function readJsonSafe(path: string): Promise<Record<string, unknown> | nul
   try {
     const content = await readFile(path, 'utf-8');
     return JSON.parse(content) as Record<string, unknown>;
-  } catch {
+  } catch (err: unknown) {
+    console.error("[codebase-scanner] Suppressed error:", err);
     return null;
   }
 }
@@ -396,7 +398,8 @@ async function readJsonSafe(path: string): Promise<Record<string, unknown> | nul
 async function readTextSafe(path: string): Promise<string | null> {
   try {
     return await readFile(path, 'utf-8');
-  } catch {
+  } catch (err: unknown) {
+    console.error("[codebase-scanner] Suppressed error:", err);
     return null;
   }
 }

@@ -177,7 +177,7 @@ export class DeterministicAssembler {
         if (ftResult.records.length > 0) {
           return ftResult.records.map((r) => r.get('name') as string);
         }
-      } catch {
+      } catch (err: unknown) {
         // Fulltext index may not exist yet — fall through
       }
 

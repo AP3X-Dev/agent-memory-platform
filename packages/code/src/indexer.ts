@@ -104,7 +104,7 @@ export class CodeIndexer {
       try {
         const importEdges = await this.resolver.resolveImports(parsed.imports, rootPath);
         result.relations_created += importEdges;
-      } catch {
+      } catch (err: unknown) {
         // Import resolution failures are non-fatal
       }
     }

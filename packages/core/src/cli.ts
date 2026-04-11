@@ -129,7 +129,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
     // Exit code 0 means no changes
     console.log('No changes to commit — snapshot is already up to date.');
     return;
-  } catch {
+  } catch (err: unknown) {
     // Non-zero exit = there are staged changes — proceed with commit
   }
 
