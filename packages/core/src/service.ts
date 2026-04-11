@@ -189,7 +189,7 @@ export class AMPService {
               merged.push({ ...node, relevanceScore: 0.3 });
             }
           }
-        } catch {
+        } catch (err: unknown) {
           // Graph expansion is best-effort — don't fail the load
         }
       }
@@ -467,7 +467,8 @@ export class AMPService {
     try {
       const emb = await this._getEmbedding(text);
       return await this.neo4j.query.byVector(emb, limit);
-    } catch {
+    } catch (err: unknown) {
+      console.error("[service] Suppressed error:", err);
       return [];
     }
   }

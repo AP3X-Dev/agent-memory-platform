@@ -54,7 +54,7 @@ export class GDSAlgorithms {
           similarity: r.get('similarity') as number,
         }))
         .filter((p) => p.similarity >= threshold);
-    } catch {
+    } catch (err: unknown) {
       // GDS not available or other error — return empty
       return [];
     } finally {

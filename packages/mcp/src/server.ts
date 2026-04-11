@@ -102,7 +102,8 @@ export function createAMPServer(): AMPMCPServer {
         const parsed = new URL(origin);
         const bare = `${parsed.protocol}//${parsed.hostname}`;
         return ALLOWED_ORIGINS.has(bare);
-      } catch {
+      } catch (err: unknown) {
+        console.error("[server] Suppressed error:", err);
         return false;
       }
     }

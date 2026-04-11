@@ -161,7 +161,7 @@ export async function classifyIntent(
     try {
       const embResult = await classifyByEmbedding(query, embedding);
       if (embResult) return embResult;
-    } catch {
+    } catch (err: unknown) {
       // Embedding failed — fall through
     }
   }

@@ -145,7 +145,8 @@ export const SIGNAL_WEIGHTS: Record<SignalType, number> = {
 };
 
 export const RECENCY_DECAY_DAYS = 7;
-
+/** OpenAI text-embedding-3-small default dimension. Used across all vector indexes. */
+export const EMBEDDING_DIM = 1536;
 // === Temporal Facts ===
 
 export type FactStatus = 'active' | 'invalidated' | 'disputed' | 'tentative';

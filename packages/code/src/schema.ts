@@ -1,3 +1,4 @@
+import { EMBEDDING_DIM } from "@amp/core";
 // packages/code/src/schema.ts
 // Additive Neo4j schema for code intelligence.
 
@@ -23,7 +24,7 @@ const CODE_FULLTEXT: string[] = [
 ];
 
 const CODE_VECTOR: string[] = [
-  "CREATE VECTOR INDEX symbol_embedding IF NOT EXISTS FOR (s:Symbol) ON (s.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
+  `CREATE VECTOR INDEX symbol_embedding IF NOT EXISTS FOR (s:Symbol) ON (s.embedding) OPTIONS {indexConfig: {\`vector.dimensions\`: ${EMBEDDING_DIM}, \`vector.similarity_function\`: 'cosine'}}`,
   "CREATE VECTOR INDEX symbol_lexical IF NOT EXISTS FOR (s:Symbol) ON (s.lexical_vector) OPTIONS {indexConfig: {`vector.dimensions`: 4096, `vector.similarity_function`: 'cosine'}}",
   "CREATE VECTOR INDEX symbol_mini IF NOT EXISTS FOR (s:Symbol) ON (s.mini_vector) OPTIONS {indexConfig: {`vector.dimensions`: 64, `vector.similarity_function`: 'cosine'}}",
 ];

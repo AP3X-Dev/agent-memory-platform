@@ -1,4 +1,5 @@
 // packages/neo4j/src/schema.ts
+import { EMBEDDING_DIM } from "@amp/core";
 import { type Driver } from 'neo4j-driver';
 
 const CONSTRAINTS: string[] = [
@@ -32,10 +33,10 @@ const FULLTEXT_INDEXES: string[] = [
   'CREATE FULLTEXT INDEX fact_content IF NOT EXISTS FOR (f:Fact) ON EACH [f.subject, f.predicate, f.object]',
 ];
 
-const VECTOR_INDEXES: string[] = [
-  "CREATE VECTOR INDEX semantic_embedding IF NOT EXISTS FOR (s:Semantic) ON (s.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
-  "CREATE VECTOR INDEX episodic_embedding IF NOT EXISTS FOR (e:Episodic) ON (e.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
-  "CREATE VECTOR INDEX fact_embedding IF NOT EXISTS FOR (f:Fact) ON (f.embedding) OPTIONS {indexConfig: {`vector.dimensions`: 1536, `vector.similarity_function`: 'cosine'}}",
+const VECTOR_INDEXES = [
+  `CREATE VECTOR INDEX semantic_embedding IF NOT EXISTS FOR (s:Semantic) ON (s.embedding) OPTIONS {indexConfig: {\`vector.dimensions\`: ${EMBEDDING_DIM}, \`vector.similarity_function\`: 'cosine'}}`,
+  `CREATE VECTOR INDEX episodic_embedding IF NOT EXISTS FOR (e:Episodic) ON (e.embedding) OPTIONS {indexConfig: {\`vector.dimensions\`: ${EMBEDDING_DIM}, \`vector.similarity_function\`: 'cosine'}}`,
+  `CREATE VECTOR INDEX fact_embedding IF NOT EXISTS FOR (f:Fact) ON (f.embedding) OPTIONS {indexConfig: {\`vector.dimensions\`: ${EMBEDDING_DIM}, \`vector.similarity_function\`: 'cosine'}}`,
 ];
 
 export async function initSchema(driver: Driver): Promise<void> {

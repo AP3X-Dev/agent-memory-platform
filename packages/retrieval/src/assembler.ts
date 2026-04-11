@@ -229,7 +229,8 @@ export class UnifiedAssembler {
           { name: result.title, file_path: result.metadata.file_path as string, signature: result.content },
         );
         return result.score * (1.0 + boost * weights.lexicalTextWeight);
-      } catch {
+      } catch (err: unknown) {
+        console.error("[assembler] Suppressed error:", err);
         return result.score; // Non-critical — return unmodified
       }
     };

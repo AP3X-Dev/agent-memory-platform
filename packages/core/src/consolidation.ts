@@ -472,7 +472,7 @@ export class ConsolidationEngine {
           }
         }
       }
-    } catch {
+    } catch (err: unknown) {
       // Non-critical: dispute failure should not block consolidation
     }
   }

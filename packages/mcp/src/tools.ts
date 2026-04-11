@@ -487,7 +487,8 @@ export function buildToolHandlers(): ToolHandlers {
               matchIdx = m.index;
               matchLen = m[0].length;
             }
-          } catch {
+          } catch (err: unknown) {
+            console.error("[tools] Suppressed error:", err);
             matchIdx = -1;
           }
         } else {
@@ -554,7 +555,7 @@ export function buildToolHandlers(): ToolHandlers {
               { task, created_at: e.created_at },
             );
           }
-        } catch {
+        } catch (err: unknown) {
           // Skip if query fails (e.g., regex syntax unsupported by Neo4j)
         }
       }
@@ -571,7 +572,7 @@ export function buildToolHandlers(): ToolHandlers {
               { confidence: s.confidence },
             );
           }
-        } catch {
+        } catch (err: unknown) {
           // Skip on failure
         }
       }
@@ -597,7 +598,7 @@ export function buildToolHandlers(): ToolHandlers {
               { status: f.status, valid_at: f.valid_at },
             );
           }
-        } catch {
+        } catch (err: unknown) {
           // Skip on failure
         }
       }
@@ -620,7 +621,7 @@ export function buildToolHandlers(): ToolHandlers {
               { scope: b.scope, tier: b.tier },
             );
           }
-        } catch {
+        } catch (err: unknown) {
           // Skip on failure
         }
       }
@@ -649,7 +650,7 @@ export function buildToolHandlers(): ToolHandlers {
               { type: ent.type },
             );
           }
-        } catch {
+        } catch (err: unknown) {
           // Skip on failure
         }
       }
@@ -864,7 +865,7 @@ export function buildToolHandlers(): ToolHandlers {
         try {
           await memoryBlockService.insert(projectTag, 'project_state', projectStateText);
           blocksSeeded++;
-        } catch {
+        } catch (err: unknown) {
           // Non-fatal — block may already exist
         }
 
@@ -872,7 +873,7 @@ export function buildToolHandlers(): ToolHandlers {
         try {
           await memoryBlockService.insert(projectTag, 'persona', personaText);
           blocksSeeded++;
-        } catch {
+        } catch (err: unknown) {
           // Non-fatal
         }
       }

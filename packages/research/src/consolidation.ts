@@ -295,7 +295,8 @@ export class ResearchConsolidation {
       }
 
       return id;
-    } catch {
+    } catch (err: unknown) {
+      console.error("[consolidation] Suppressed error:", err);
       return null;
     } finally {
       await session.close();
