@@ -72,6 +72,11 @@ export interface Neo4jLayer {
     expandByGraph?(entityNames: string[], depth?: number, maxPerHop?: number, asOf?: string): Promise<SemanticNode[]>;
   };
   fact?: FactLayer;
+  /** Minimal entity ops used by project-tag enforcement (Bucket B). Optional for backwards compat. */
+  entity?: {
+    listProjectNames(): Promise<string[]>;
+    upsertProject(name: string, description?: string): Promise<void>;
+  };
 }
 
 // ─── AMPService ──────────────────────────────────────────────────────────────
@@ -82,6 +87,8 @@ export interface BlocksLayer {
 
 export class AMPService {
   private blocks?: BlocksLayer;
+  /** 60s in-memory cache of known project tags (lowercased), used by resolveProjectTag(). */
+  private knownProjectsCache: { tags: Set<string>; expiresAt: number } | null = null;
 
   constructor(
     private redis: RedisLayer,
@@ -91,6 +98,81 @@ export class AMPService {
     blocks?: BlocksLayer,
   ) {
     this.blocks = blocks;
+  }
+
+  // ─── Project-tag enforcement (Bucket B) ────────────────────────────────────
+
+  /**
+   * Resolve and validate the project tag for an episode. Behavior:
+   * 1. Derive tag from input.tags (first 'project:' tag) or [project:xxx] prefix.
+   * 2. If none, throw (unless AMP_REQUIRE_PROJECT_TAG=false).
+   * 3. Canonicalize lowercase.
+   * 4. If new (not in known projects) and a fuzzy collision exists (Levenshtein <= 2),
+   *    log a warning so the user can catch typos.
+   * 5. If genuinely new, auto-create a placeholder Entity so the wiki shows the
+   *    project immediately (assuming neo4j.entity is wired).
+   */
+  private async resolveProjectTag(input: EpisodeInput): Promise<{ tag: string; isNew: boolean }> {
+    const explicitProjectTag = input.tags?.find((t) => /^project:/i.test(t));
+    const prefixMatch = (input.task ?? '').match(/^\[project:([\w.-]+)\]/i)
+      ?? (input.content ?? '').match(/^\[project:([\w.-]+)\]/i);
+    const rawTag = explicitProjectTag ?? (prefixMatch ? `project:${prefixMatch[1]}` : null);
+
+    if (!rawTag) {
+      if (process.env['AMP_REQUIRE_PROJECT_TAG'] === 'false') return { tag: '', isNew: false };
+      throw new Error(
+        'amp_store: a project tag is required. Pass tags: ["project:<name>"] or prefix the task/content with [project:<name>]. ' +
+        'Set AMP_REQUIRE_PROJECT_TAG=false to disable this check.',
+      );
+    }
+
+    const canonical = rawTag.toLowerCase();
+    const known = await this.getKnownProjectTags();
+    if (known.has(canonical)) return { tag: canonical, isNew: false };
+
+    // Fuzzy-warn against close existing names so typos surface immediately.
+    const projectName = canonical.replace(/^project:/, '');
+    for (const knownTag of known) {
+      const knownName = knownTag.replace(/^project:/, '');
+      const dist = levenshteinDistance(projectName, knownName);
+      if (dist > 0 && dist <= 2) {
+        console.error(
+          `[amp-store] WARN: new project tag "${canonical}" is suspiciously close to existing "${knownTag}" ` +
+          `(Levenshtein=${dist}). If this is a typo, fix the prefix/tag before retrying.`,
+        );
+        break;
+      }
+    }
+
+    // Auto-placeholder so the wiki picks up the project immediately.
+    if (this.neo4j.entity) {
+      try {
+        await this.neo4j.entity.upsertProject(projectName, 'Auto-created from amp_store on first reference');
+        console.error(`[amp-store] INFO: auto-bootstrapped placeholder project Entity for "${canonical}". Run amp_bootstrap with full module list when ready.`);
+        this.knownProjectsCache = null; // invalidate
+      } catch (err) {
+        console.error(`[amp-store] WARN: failed to auto-create placeholder for "${canonical}":`, err instanceof Error ? err.message : err);
+      }
+    }
+    return { tag: canonical, isNew: true };
+  }
+
+  private async getKnownProjectTags(): Promise<Set<string>> {
+    const now = Date.now();
+    if (this.knownProjectsCache && now < this.knownProjectsCache.expiresAt) {
+      return this.knownProjectsCache.tags;
+    }
+    const tags = new Set<string>();
+    if (this.neo4j.entity) {
+      try {
+        const names = await this.neo4j.entity.listProjectNames();
+        for (const n of names) tags.add(`project:${n.toLowerCase()}`);
+      } catch (err) {
+        console.error('[amp-store] WARN: could not load known project tags:', err instanceof Error ? err.message : err);
+      }
+    }
+    this.knownProjectsCache = { tags, expiresAt: now + 60_000 };
+    return tags;
   }
 
   // ─── LOAD ──────────────────────────────────────────────────────────────────
@@ -276,8 +358,19 @@ export class AMPService {
       );
     }
 
-    // 3. Create Episodic in Neo4j
+    // 3. Resolve project tag (Bucket B enforcement) — required, canonicalize,
+    // fuzzy-warn, auto-placeholder. Falls through to legacy scope/tags if
+    // AMP_REQUIRE_PROJECT_TAG=false.
+    const projectInfo = await this.resolveProjectTag(input);
     const id = nanoid();
+    const scope = input.scope ?? projectInfo.tag ?? undefined;
+    const tags = (() => {
+      if (input.tags && projectInfo.tag && !input.tags.some((t) => t.toLowerCase() === projectInfo.tag)) {
+        return [...input.tags, projectInfo.tag];
+      }
+      if (input.tags) return input.tags;
+      return projectInfo.tag ? [projectInfo.tag] : undefined;
+    })();
     const node: EpisodicNode = {
       id,
       session_id: input.session_id,
@@ -288,6 +381,8 @@ export class AMPService {
       signals: input.signals,
       embedding,
       created_at: new Date().toISOString(),
+      ...(scope !== undefined && { scope }),
+      ...(tags !== undefined && { tags }),
     };
     await this.neo4j.episodic.create(node);
 
@@ -704,4 +799,27 @@ function truncateBlocksToTokenBudget(blocks: MemoryBlock[], budget: number): Mem
   }
 
   return result;
+}
+
+/**
+ * Iterative Levenshtein distance — used by AMPService.resolveProjectTag()
+ * to fuzzy-warn against close project-tag matches (typo detection).
+ * Pure TS, zero deps.
+ */
+function levenshteinDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (a.length === 0) return b.length;
+  if (b.length === 0) return a.length;
+  let prev = new Array<number>(b.length + 1);
+  let curr = new Array<number>(b.length + 1);
+  for (let j = 0; j <= b.length; j++) prev[j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    curr[0] = i;
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a.charCodeAt(i - 1) === b.charCodeAt(j - 1) ? 0 : 1;
+      curr[j] = Math.min(curr[j - 1] + 1, prev[j] + 1, prev[j - 1] + cost);
+    }
+    [prev, curr] = [curr, prev];
+  }
+  return prev[b.length];
 }

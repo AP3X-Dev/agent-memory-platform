@@ -41,6 +41,13 @@ import {
   FeedbackTracker,
   setRetrievalServiceInstances,
 } from '@amp/retrieval';
+import {
+  WikiCompiler,
+  IngestionService,
+  WikiLinter,
+  setWikiServiceInstances,
+} from '@amp/wiki';
+import type { CompileInput, CompileV2Result } from '@amp/wiki';
 
 export interface BootstrapHandles {
   /** Call to disconnect Redis and Neo4j cleanly. */
@@ -290,6 +297,25 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   });
 
   console.error('[amp-mcp] Retrieval services initialized');
+
+  // ─── Wiki services ─────────────────────────────────────────────────────────
+  // WikiCompiler.compile() takes a single outputDir string; the IWikiCompiler
+  // interface used by MCP tools accepts a CompileInput object, so we adapt.
+  const rawWikiCompiler = new WikiCompiler(driver);
+  const wikiCompilerAdapter = {
+    compile: async (input: CompileInput): Promise<CompileV2Result> =>
+      rawWikiCompiler.compile(input.output_dir),
+  };
+  const ingestionServiceInstance = new IngestionService(driver);
+  const wikiLinterInstance = new WikiLinter(driver);
+
+  setWikiServiceInstances({
+    wikiCompiler: wikiCompilerAdapter,
+    ingestionService: ingestionServiceInstance,
+    wikiLinter: wikiLinterInstance,
+  });
+
+  console.error('[amp-mcp] Wiki services initialized');
 
   if (status.degraded.length > 0) {
     console.error(`[amp-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);

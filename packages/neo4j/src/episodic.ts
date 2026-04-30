@@ -18,7 +18,9 @@ export class EpisodicStore {
           content: $content,
           outcome: $outcome,
           created_at: $created_at,
-          ttl: $ttl
+          ttl: $ttl,
+          scope: $scope,
+          tags: $tags
         }) RETURN e.id AS id`,
         {
           id: node.id,
@@ -29,6 +31,8 @@ export class EpisodicStore {
           outcome: node.outcome ?? null,
           created_at: node.created_at,
           ttl: node.ttl ?? null,
+          scope: node.scope ?? null,
+          tags: node.tags ?? [],
         },
       );
 
@@ -68,6 +72,8 @@ export class EpisodicStore {
         created_at: props.created_at as string,
         ttl: props.ttl != null ? (props.ttl as number) : undefined,
         embedding: props.embedding != null ? (props.embedding as number[]) : undefined,
+        scope: props.scope != null ? (props.scope as string) : undefined,
+        tags: props.tags != null ? (props.tags as string[]) : undefined,
       };
     } finally {
       await session.close();

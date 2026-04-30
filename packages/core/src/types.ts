@@ -11,6 +11,8 @@ export interface EpisodicNode {
   signals?: Signal[];
   created_at: string;
   ttl?: number;
+  scope?: string;
+  tags?: string[];
 }
 
 export interface SemanticNode {
@@ -91,6 +93,8 @@ export interface EpisodeInput {
   signals?: Signal[];
   entities?: string[];
   model_id?: string;
+  scope?: string;
+  tags?: string[];
 }
 
 // === Consolidation ===

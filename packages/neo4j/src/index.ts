@@ -14,6 +14,7 @@ export { BlockStore } from './blocks.js';
 export { FactStore } from './fact.js';
 export { EntityResolver } from './entity-resolver.js';
 export type { ResolvedEntity } from './entity-resolver.js';
+export { EntityStore } from './entity.js';
 export type { SimilarPair, RankedNode, CommunityNode } from './gds.js';
 export {
   temporalSetClause,
