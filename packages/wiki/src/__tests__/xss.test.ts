@@ -374,8 +374,11 @@ describe('WikiViewer XSS integration', () => {
     const res = await fetch(`http://localhost:${XSS_TEST_PORT}/wiki/projects/test-project/script-injection`);
     expect(res.status).toBe(200);
     const html = await res.text();
-    // The article content should not contain script injection
-    const articleMatch = html.match(/<article>([\s\S]*?)<\/article>/);
+    // The main content should not contain script injection.
+    // (Operations Console layout wraps body in <main class="content"> instead of <article>.)
+    const articleMatch =
+      html.match(/<main class="content">([\s\S]*?)<\/main>/)
+      ?? html.match(/<article>([\s\S]*?)<\/article>/);
     expect(articleMatch).not.toBeNull();
     const article = articleMatch![1];
     expect(article).not.toContain('<script>');

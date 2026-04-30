@@ -130,7 +130,7 @@ describe('WikiViewer', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('reactive');
-    expect(html).toContain('1 result(s)');
+    expect(html).toContain('1 HITS');
   });
 
   it('search returns no results for unknown query', async () => {
@@ -304,7 +304,7 @@ describe('WikiViewer cache', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Alpha');
-    expect(html).toContain('1 result(s)');
+    expect(html).toContain('1 HITS');
   });
 
   it('POST /api/refresh rebuilds the cache', async () => {
@@ -331,7 +331,7 @@ describe('WikiViewer cache', () => {
     const resAfter = await fetch(`http://localhost:${CACHE_PORT}/search?q=Freshly+added`);
     const htmlAfter = await resAfter.text();
     expect(htmlAfter).toContain('New Entity');
-    expect(htmlAfter).toContain('1 result(s)');
+    expect(htmlAfter).toContain('1 HITS');
   });
 
   it('POST /api/refresh updates the sidebar when new projects appear', async () => {

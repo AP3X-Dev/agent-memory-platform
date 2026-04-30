@@ -148,8 +148,11 @@ describe('WikiLinter', () => {
     it('reports entities referenced by semantics but not in project', async () => {
       const driver = createMockDriver((query) => {
         if (query.includes('NOT EXISTS')) {
+          // New broken_links query also returns `otherProjects` so info-vs-warning
+          // can be derived per row. An empty otherProjects means "not in any project"
+          // → severity=warning (truly orphaned).
           return mockResult([
-            mockRecord({ name: 'MissingEntity', id: 'ent-xxx', refs: 3 }),
+            mockRecord({ name: 'MissingEntity', id: 'ent-xxx', refs: 3, otherProjects: [] }),
           ]);
         }
         return mockResult([]);
@@ -164,6 +167,7 @@ describe('WikiLinter', () => {
       expect(result.checks['broken_links'].passed).toBe(false);
       expect(result.checks['broken_links'].issues).toHaveLength(1);
       expect(result.checks['broken_links'].issues[0].entity).toBe('MissingEntity');
+      expect(result.checks['broken_links'].issues[0].severity).toBe('warning');
     });
   });
 

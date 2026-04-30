@@ -33,7 +33,7 @@ export type {
 export { WikiCompiler, slugify } from './compile.js';
 export { IngestionService, initWikiSchema } from './ingest.js';
 export { WikiLinter } from './lint.js';
-export { startWikiViewer, escapeHtml, sanitizeHtml, resetViewerCache } from './viewer.js';
+export { startWikiViewer, escapeHtml, sanitizeHtml, resetViewerCache, renderMarkdown } from './viewer.js';
 
 // Query functions
 export {
@@ -77,5 +77,6 @@ export {
 } from './renderers.js';
 
 // MCP tools
-export { registerWikiTools, setWikiServiceInstances, WIKI_TOOL_NAMES, validatePath, getAllowedBaseDir } from './tools.js';
+export { registerWikiTools, setWikiServiceInstances, WIKI_TOOL_NAMES, validatePath, getAllowedBaseDir, buildWikiToolHandlers } from './tools.js';
+export type { WikiToolHandlers } from './tools.js';
 export type { IWikiCompiler, IIngestionService, IWikiLinter } from './tools.js';

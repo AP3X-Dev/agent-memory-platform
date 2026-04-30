@@ -714,7 +714,10 @@ export function renderProjectGraph(project: ProjectData): string {
   // Project root
   lines.push(`  ${projectNodeId}["${project.entity.name}"]:::project`);
 
-  // Entities
+  // Entities — show ALL children (substantive + sparse), not just substantive,
+  // so freshly-bootstrapped modules appear before they accumulate semantic/episodic
+  // mentions. Substantive ones get the default :::project class via inherited link;
+  // sparse ones get :::sparse so the user can see they're stubs.
   for (const e of project.substantive_entities) {
     const nodeId = slugify(e.name).replace(/-/g, '_');
     const key = `${projectNodeId}-->${nodeId}`;
@@ -723,9 +726,18 @@ export function renderProjectGraph(project: ProjectData): string {
       emitted.add(key);
     }
   }
+  for (const e of project.sparse_entities) {
+    const nodeId = slugify(e.name).replace(/-/g, '_');
+    const key = `${projectNodeId}-->${nodeId}`;
+    if (!emitted.has(key)) {
+      lines.push(`  ${projectNodeId} --> ${nodeId}["${e.name}"]:::sparse`);
+      emitted.add(key);
+    }
+  }
 
   lines.push('');
-  lines.push('  classDef project fill:#58a6ff,color:#0d1117,stroke:#58a6ff');
+  lines.push('  classDef project fill:#ffd400,color:#0a0a0a,stroke:#ffd400');
+  lines.push('  classDef sparse fill:#1a1a1a,color:#888,stroke:#2a2a2a,stroke-dasharray:3 3');
   lines.push('```');
 
   return lines.join('\n');

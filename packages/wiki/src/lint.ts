@@ -60,30 +60,52 @@ async function checkOrphanPages(driver: Driver, projectName: string, thresholds:
 // ─── Broken links: semantic nodes referencing non-existent entities ──────────
 
 async function checkBrokenLinks(driver: Driver, projectName: string): Promise<LintCheckResult> {
-  // Check for semantic ABOUT edges pointing to entities not in the project
+  // Find entities referenced by semantics but with no project home.
+  // Ignores:
+  //   - project-root entities (type='project') — they ARE the parent, no CONTAINS expected
+  //   - entities that ARE in some project hierarchy (just not THIS project's) — those are
+  //     legitimate cross-project references, downgraded to severity=info
   const session = driver.session();
   try {
     const result = await session.run(
       `MATCH (s:Semantic)-[:ABOUT]->(e:Entity)
-       WHERE NOT EXISTS {
-         MATCH (project:Entity {type: 'project'})-[:CONTAINS*0..]->(e)
-         WHERE project.name CONTAINS $projectName
-       }
-       AND ANY(t IN s.tags WHERE t STARTS WITH 'project:')
-       RETURN e.name AS name, e.id AS id, count(s) AS refs
+       WHERE e.type <> 'project'
+         AND NOT EXISTS {
+           MATCH (thisProj:Entity {type: 'project'})-[:CONTAINS*1..]->(e)
+           WHERE toLower(thisProj.name) = toLower($projectName)
+         }
+         AND ANY(t IN s.tags WHERE t STARTS WITH 'project:')
+       OPTIONAL MATCH (anyProj:Entity {type: 'project'})-[:CONTAINS*1..]->(e)
+       WITH e, count(s) AS refs, collect(DISTINCT anyProj.name) AS otherProjects
+       RETURN e.name AS name, e.id AS id, refs, otherProjects
        ORDER BY refs DESC
        LIMIT 50`,
       { projectName },
     );
 
-    const issues: LintIssue[] = result.records.map((r) => ({
-      severity: 'warning' as const,
-      entity: r.get('name') as string,
-      message: `Entity "${r.get('name')}" is referenced by ${r.get('refs')} semantic nodes but is not part of the project hierarchy`,
-      suggestion: 'Add this entity to the project via amp_bootstrap or create a CONTAINS relationship',
-    }));
+    const issues: LintIssue[] = result.records.map((r) => {
+      const name = r.get('name') as string;
+      const refs = r.get('refs') as { toNumber?: () => number } | number;
+      const refsNum = typeof refs === 'object' && refs !== null && 'toNumber' in refs
+        ? refs.toNumber!()
+        : Number(refs);
+      const otherProjects = (r.get('otherProjects') as string[]).filter(Boolean);
+      const isCrossProject = otherProjects.length > 0;
+      return {
+        severity: (isCrossProject ? 'info' : 'warning') as 'info' | 'warning',
+        entity: name,
+        message: isCrossProject
+          ? `Entity "${name}" is referenced by ${refsNum} semantic node(s) here but lives in: ${otherProjects.join(', ')} (cross-project reference, not broken)`
+          : `Entity "${name}" is referenced by ${refsNum} semantic node(s) but is not part of any project hierarchy`,
+        suggestion: isCrossProject
+          ? 'No action needed unless you want to mirror this entity into the current project explicitly'
+          : 'Add this entity to a project via amp_bootstrap or create a CONTAINS relationship',
+      };
+    });
 
-    return { check: 'broken_links', issues, passed: issues.length === 0 };
+    // Pass = no orphan-warnings (info-level cross-project references are fine)
+    const hasWarnings = issues.some((i) => i.severity === 'warning');
+    return { check: 'broken_links', issues, passed: !hasWarnings };
   } finally {
     await session.close();
   }
@@ -306,13 +328,13 @@ async function checkCoverageGaps(driver: Driver, projectName: string): Promise<L
   try {
     const result = await session.run(
       `MATCH (s:Semantic)
-       WHERE ANY(t IN s.tags WHERE t STARTS WITH 'project:')
+       WHERE ANY(t IN s.tags WHERE t = 'project:' + $projectName)
        UNWIND s.tags AS tag
-       WITH tag WHERE NOT tag STARTS WITH 'project:'
+       WITH s, tag WHERE NOT tag STARTS WITH 'project:'
        RETURN tag, count(*) AS count, avg(s.confidence) AS avgConfidence
        ORDER BY count ASC
        LIMIT 20`,
-      {},
+      { projectName },
     );
 
     const issues: LintIssue[] = result.records
