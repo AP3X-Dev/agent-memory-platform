@@ -1,0 +1,10 @@
+---
+id: i003vpqik2hSuOrerJPk7
+session_id: session-20260514-optimizer58
+agent_id: mcp
+task: [project:oni-grid] optimization session 58: final Mode-B discovery sweep — pass complete
+outcome: approved
+created_at: "2026-05-14T14:02:18.443Z"
+---
+
+[project:oni-grid] Session 58 (commit 4f54cfc) was the final Mode-B discovery sweep — came back clean, and the ONI Grid hardening optimization pass has MET its Done Definition. Sweep results: no remaining silent catches anywhere in src/ non-test code (D1/D4/Session 56 closed them all); DiffViewer's SAMPLE_* constants are the intentional Item #24 fallback, not unaddressed debt; every appStore array slice is bounded (Item #12 for pane.output/chatMessages/costAlerts/toasts/mailMessages, trimManagedAgentEvents, D17 for agentSessions/agentBlockers, forkTree pruned by sessionId); npm audit --omit=dev 0 vulnerabilities. Discovery fix: folded in a pre-existing tested working-tree change — TopBar.tsx removed onDoubleClick={handleToggleMaximize} from the header drag region (double-clicking a header button or drag area no longer accidentally maximizes the window; explicit maximize button still works) plus TopBar.test.tsx (the component's first test) pinning that contract. Committed it to leave opt/oni-grid-hardening with a clean tree. Left docs/prompts/start-workspace-architecture-loop-after-hardening.md untracked — it's the operator's planning doc for the NEXT loop, not part of this pass. Pass summary: all numbered backlog items 1-30 + discovered items D1-D17 complete; only D14's live Claude/Codex blocker validation tail remains and that needs an interactive desktop run with provider credentials (not loop-runnable). Full verification green: TS 1693/1693, cargo 163/163, lint/tsc/clippy clean. Branch is ready for the /finishing-a-development-branch decision (a user call). Convention reinforced across the pass: bound every new appStore array slice; live-state arrays need terminal-preserving trims not blind windows; shell-out Rust commands take operator-config strings never frontend call-time strings and run shell-free; extract hook bodies to plain lib modules when non-hook callers need them.

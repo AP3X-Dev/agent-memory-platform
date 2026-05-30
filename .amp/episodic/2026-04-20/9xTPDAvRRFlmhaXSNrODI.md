@@ -1,0 +1,14 @@
+---
+id: 9xTPDAvRRFlmhaXSNrODI
+session_id: session-20260419-prp02-autonomous
+agent_id: mcp
+task: [project:ap3x-solana] PRP-02 Phase A complete
+created_at: "2026-04-20T03:22:54.712Z"
+---
+
+[project:ap3x-solana] PRP-02 Phase A (Tasks 1-11) COMPLETE on branch prp-02-solana-runtime in worktree .worktrees/prp-02-solana-runtime. 14 commits land Phase A. Tasks shipped: T1 eslint-boundaries extension for 4 new layers (signals/portfolio/executor/strategy); T2 SPL Token transfer decoders (decodeTransferInstruction + parseTransferLog) added to @ap3x/solana-spl with TOKEN_PROGRAM_ID aliasing; T3 capture:cold-start-tx-history script + smoke test; T4 @ap3x/solana-signals package scaffold + Signal type + signalId derivation (sha256 of \x00-separated parts); T5 SignalQueue (bounded, dedup window, drop-oldest overflow, reentrancy guard); T6 FileSignalCheckpointStore (atomic tmp+rename + per-key promise-chain mutex, mirrors PRP-01 connectivity pattern); T7 SignalSource interface (pure type contract); T8 FixtureSignalSource (gz jsonl replay w/ AbortSignal honor, setImmediate-deferred end emit for post-start listener registration); T9 HistoricalSignalSource (RpcPool getBlocks/getBlock walk + parseLogs + decoderRegistry, paginated by batchSize); T10 GeyserSignalSource (live wrapping w/ extractTxUpdate dual-shape helper for test-fake + real proto); T11 e2e fixture replay integration test (50 signals → queue → checkpoint, sequential push pattern to avoid drain races). Captured 4237 mainnet txs across 10 wallets via Helius free tier into tests/fixtures/cold-start-tx-history.jsonl.gz (7.2MB) — gate-8 fixture now active. Important convention discovered: EventDecoderRegistry.decode() returns {events: DecodedEvent[]; unknown; parseErrors} where DecodedEvent = {kind: 'decoded'; programId: string; data} — Signal.kind is set to literal 'decoded'; vertical-specific kind lives in Signal.decoded.data.kind per spec §160. PublicKey.toBuffer() exists; base58 is namespace export from @ap3x/solana-core. Helius API key stored at C:\Users\Guerr\Desktop\CHAD-GPT\.env (HELIUS_API_KEY env var). Pace established: lighter mode = implementer + combined spec/quality reviewer per task (~3 dispatches/task). Phase A consumed ~30 sub-agent dispatches, 14 commits. Remaining: Phase B (T12-22 portfolio, 11 tasks), Phase C (T23-34 executor, 12 tasks), Phase D (T35-44 strategy, 10 tasks), Phase E (T45-47 spl-watcher example, 3 tasks), Phase F (T48-50 CI/docs/changesets, 3 tasks). Phases B+C are independent and can run in parallel.</content>
+<entities>["ap3x-solana", "@ap3x/solana-signals", "@ap3x/solana-spl"]</entities>
+<outcome>approved</outcome>
+</invoke>
+<invoke name="TaskUpdate">
+<parameter name="taskId">10

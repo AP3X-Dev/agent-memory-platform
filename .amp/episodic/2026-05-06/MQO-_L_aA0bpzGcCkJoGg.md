@@ -1,0 +1,10 @@
+---
+id: MQO-_L_aA0bpzGcCkJoGg
+session_id: session-20260505-localopt-13
+agent_id: mcp
+task: [project:oni-code] local opt session 13: complete Item #13 - executable crucible harness scaffolding
+outcome: approved
+created_at: "2026-05-06T01:50:15.897Z"
+---
+
+[project:oni-code] Crucible R1 harness scaffold done (commit 0b8880b on opt/oni-local-agent-productionization). Tooling decision: chose plain ESM `.mjs` for the runner instead of the `.ts` filename suggested by the optimizer prompt — keeps zero new deps (no tsx), runs natively on Node 20+, and the acceptance criterion already names "node/tsx" alternatives. Layout: crucible/manifest.schema.json (JSON Schema 2020-12), crucible/manifests/local-r1.json (Phase 0 typecheck/build/lint/test/pack-dry-run + optional prod audit, Phase 1 oni --version + --help), crucible/runner/run-crucible.mjs, crucible/README.md. Reports land at crucible-reports/<manifest-id>-<iso-stamp>/ with manifest.json, environment.json (git commit/dirty/branch + OS/Node/npm), gate-results.json (structured per-gate counts and stdoutTail/stderrTail), failures.md (markdown), and logs/<phase>/<gate>.std{out,err}.log. Runner exposes named exports (parseArgs, validateManifest, loadManifest, runCrucible, renderFailuresMarkdown, buildEnvironment) so tests can import directly from the .mjs file. Vitest test (packages/coding-agent/test/crucible-runner.test.ts) imports via file:// URL and exercises manifest validation, argv parsing, and end-to-end runs (mixed-status pass run with skipped + optional + negative-test gates, plus a required-fail run that populates failures.md). Convenience scripts: npm run crucible (positional manifest), npm run crucible:r1 (local-r1.json). Verified end-to-end: full R1 run from repo root passes 8/8 gates in 68.57s; full Vitest suite at 188/1431/1 skipped; typecheck/lint/build all green. Gotcha noted: npm scripts inheriting bash cwd from a previous `cd packages/coding-agent` will fail with "Missing script crucible:r1" because npm finds the workspace package first — always run from repo root.
