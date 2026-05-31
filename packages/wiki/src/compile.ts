@@ -10,6 +10,7 @@ import type {
   EntityInfo,
   EpisodicEntry,
   ProjectData,
+  SourceInfo,
   LibraryPage,
   TopicData,
   PortalData,
@@ -86,12 +87,119 @@ async function writeMarkdown(filePath: string, content: string): Promise<void> {
   await writeFile(filePath, content, 'utf-8');
 }
 
+function uniqueById<T extends { id: string }>(items: T[]): T[] {
+  const seen = new Set<string>();
+  const out: T[] = [];
+  for (const item of items) {
+    if (seen.has(item.id)) continue;
+    seen.add(item.id);
+    out.push(item);
+  }
+  return out;
+}
+
+function projectNameScore(name: string): number {
+  const trimmed = name.trim();
+  let score = 0;
+  if (!/^__.*__$/.test(trimmed)) score += 100;
+  if (/[A-Z]/.test(trimmed)) score += 10;
+  if (/\s/.test(trimmed)) score += 5;
+  if (!trimmed.includes('_')) score += 3;
+  if (!/^[a-z0-9-]+$/.test(trimmed)) score += 2;
+  return score;
+}
+
+function chooseProjectEntity(a: EntityInfo, b: EntityInfo): EntityInfo {
+  const preferred = projectNameScore(b.name) > projectNameScore(a.name) ? b : a;
+  const fallback = preferred === a ? b : a;
+  return {
+    ...preferred,
+    description: preferred.description ?? fallback.description,
+    aliases: preferred.aliases ?? fallback.aliases,
+    created_at: preferred.created_at ?? fallback.created_at,
+  };
+}
+
+function mergeProjectData(a: ProjectData, b: ProjectData): ProjectData {
+  const substantive = uniqueById([...a.substantive_entities, ...b.substantive_entities]);
+  const substantiveIds = new Set(substantive.map((e) => e.id));
+  const sparse = uniqueById([...a.sparse_entities, ...b.sparse_entities])
+    .filter((e) => !substantiveIds.has(e.id));
+  const episodics = uniqueById([...a.episodics, ...b.episodics])
+    .sort((left, right) => right.created_at.localeCompare(left.created_at));
+  const semantics = uniqueById([...a.semantics, ...b.semantics]);
+
+  return {
+    entity: chooseProjectEntity(a.entity, b.entity),
+    entities: uniqueById([...a.entities, ...b.entities]),
+    substantive_entities: substantive,
+    sparse_entities: sparse,
+    episodics,
+    semantics,
+  };
+}
+
+function isInternalProjectName(name: string): boolean {
+  return name.trim().startsWith('__');
+}
+
+function hasHumanNavigableContent(project: ProjectData): boolean {
+  return project.entities.length > 0 || project.semantics.length > 0 || project.episodics.length > 0;
+}
+
+function canonicalizeHumanProjects(projects: ProjectData[]): ProjectData[] {
+  const bySlug = new Map<string, ProjectData>();
+  for (const project of projects) {
+    const slug = slugify(project.entity.name);
+    const key = slug || project.entity.name.trim().toLowerCase();
+    const existing = bySlug.get(key);
+    bySlug.set(key, existing ? mergeProjectData(existing, project) : project);
+  }
+
+  return [...bySlug.values()]
+    .filter((project) => !isInternalProjectName(project.entity.name))
+    .filter(hasHumanNavigableContent)
+    .sort((a, b) => a.entity.name.localeCompare(b.entity.name));
+}
+
+function normalizeCompileScope(projectTag: string | undefined): string | null {
+  const trimmed = projectTag?.trim();
+  if (!trimmed || trimmed === 'all' || trimmed === '*' || trimmed.toLowerCase() === 'project:all') {
+    return null;
+  }
+  return trimmed.replace(/^project:/i, '');
+}
+
+function sameProjectScope(left: string, right: string): boolean {
+  return left.toLowerCase() === right.toLowerCase() || slugify(left) === slugify(right);
+}
+
+function semanticMatchesScope(sem: { tags: string[] }, projectScope: string | null): boolean {
+  if (!projectScope) return true;
+  return sem.tags.some((tag) => tag.startsWith('project:') && sameProjectScope(tag.replace(/^project:/, ''), projectScope));
+}
+
+function entityMatchesScope(entity: EntityInfo, projectScope: string | null): boolean {
+  return !projectScope || sameProjectScope(entity.name, projectScope) || sameProjectScope(entity.slug, projectScope);
+}
+
+function episodicMatchesScope(ep: EpisodicEntry, projectScope: string | null): boolean {
+  return !projectScope || (ep.project_scope != null && sameProjectScope(ep.project_scope, projectScope));
+}
+
+function sourceMatchesScope(source: SourceInfo, projectScope: string | null): boolean {
+  if (!projectScope) return true;
+  const sourceScope = source.project_tag.replace(/^project:/i, '');
+  return sameProjectScope(sourceScope, projectScope);
+}
+
 // ─── Main compiler ──────────────────────────────────────────────────────────
 
 export class WikiCompiler {
   constructor(private driver: Driver) {}
 
-  async compile(outputDir: string): Promise<CompileV2Result> {
+  async compile(outputDir: string, projectTag = 'all'): Promise<CompileV2Result> {
+    const projectScope = normalizeCompileScope(projectTag);
     const result: CompileV2Result = {
       projects_compiled: 0,
       articles_compiled: 0,
@@ -109,7 +217,8 @@ export class WikiCompiler {
     // ── Phase 0: Pre-fetch shared data ─────────────────────────────
 
     // Fetch all semantics ONCE and build indexes for O(1) lookups
-    const allSemantics = await fetchAllSemantics(this.driver);
+    const allSemantics = (await fetchAllSemantics(this.driver))
+      .filter((sem) => semanticMatchesScope(sem, projectScope));
 
     // Index: entity name (lowercase) → semantics ABOUT that entity
     const semanticsByEntity = new Map<string, typeof allSemantics>();
@@ -140,11 +249,13 @@ export class WikiCompiler {
 
     // ── Phase 1: Discover all projects ────────────────────────────────
 
-    const projectEntities = await fetchAllProjects(this.driver);
-    const episodicOnlyScopes = await fetchEpisodicProjectScopes(this.driver);
+    const projectEntities = (await fetchAllProjects(this.driver))
+      .filter((project) => entityMatchesScope(project, projectScope));
+    const episodicOnlyScopes = (await fetchEpisodicProjectScopes(this.driver))
+      .filter((scope) => !projectScope || sameProjectScope(scope, projectScope));
 
     // Build full project list: entity-based + episodic-only (virtual)
-    const allProjectData: ProjectData[] = [];
+    let allProjectData: ProjectData[] = [];
 
     // Entity-based projects
     for (const projectEntity of projectEntities) {
@@ -252,6 +363,8 @@ export class WikiCompiler {
       });
     }
 
+    allProjectData = canonicalizeHumanProjects(allProjectData);
+
     // ── Phase 2: Build entity articles per project ────────────────────
 
     for (const project of allProjectData) {
@@ -260,7 +373,7 @@ export class WikiCompiler {
 
       // Build articles for substantive entities
       for (const entity of project.substantive_entities) {
-        const [semantics, hierarchy, backlinks, seeAlso, sources, inboundCount, entityEpisodics] =
+        const [entitySemantics, hierarchy, backlinks, seeAlso, sources, inboundCount, entityEpisodics] =
           await Promise.all([
             fetchSemanticsForEntity(this.driver, entity.name),
             fetchHierarchy(this.driver, entity.name),
@@ -270,6 +383,7 @@ export class WikiCompiler {
             fetchInboundLinkCount(this.driver, entity.name),
             fetchEpisodicsForEntity(this.driver, entity.name),
           ]);
+        const semantics = entitySemantics.filter((sem) => semanticMatchesScope(sem, projectScope));
 
         // Group semantics by domain tag into sections
         const sectionMap = new Map<string, ResolvedClaim[]>();
@@ -347,7 +461,8 @@ export class WikiCompiler {
 
     // ── Phase 3: Library ──────────────────────────────────────────────
 
-    const allSources = await fetchAllSources(this.driver);
+    const allSources = (await fetchAllSources(this.driver))
+      .filter((source) => sourceMatchesScope(source, projectScope));
 
     if (allSources.length > 0) {
       const libraryDir = join(outputDir, 'library');
@@ -382,8 +497,14 @@ export class WikiCompiler {
 
     // ── Phase 4: Topics ───────────────────────────────────────────────
 
-    const allTags = await fetchAllTags(this.driver);
-    const qualifiedTags = allTags.filter((t) => t.count >= 3 || (t.projects.length >= 2));
+    const allTags = projectScope
+      ? [...semanticsByTag.entries()].map(([tag, sems]) => ({
+          tag,
+          count: sems.length,
+          projects: [projectScope],
+        }))
+      : await fetchAllTags(this.driver);
+    const qualifiedTags = allTags.filter((t) => projectScope ? t.count > 0 : (t.count >= 3 || t.projects.length >= 2));
 
     // Build tag→projects map from pre-fetched allSemantics (no extra query)
     const tagProjectMap = new Map<string, Set<string>>();
@@ -492,7 +613,8 @@ export class WikiCompiler {
     result.cross_project_pages++;
 
     // Recent changes
-    const recentEpisodics = await fetchRecentEpisodics(this.driver, 50);
+    const recentEpisodics = (await fetchRecentEpisodics(this.driver, 50))
+      .filter((ep) => episodicMatchesScope(ep, projectScope));
     const recentMarkdown = renderRecentChanges(recentEpisodics);
     await writeMarkdown(join(outputDir, '_recent.md'), recentMarkdown);
     result.cross_project_pages++;
@@ -500,6 +622,17 @@ export class WikiCompiler {
     // ── Phase 6: Portal homepage ──────────────────────────────────────
 
     const graphStats = await fetchGraphStats(this.driver);
+    const portalStats = projectScope
+      ? {
+          total_entities: allProjectData.reduce((sum, project) => sum + project.entities.length, 0),
+          total_semantics: allSemantics.length,
+          total_episodics: allProjectData.reduce((sum, project) => sum + project.episodics.length, 0),
+          total_sources: allSources.length,
+        }
+      : graphStats;
+    const humanRecentEpisodics = recentEpisodics.filter(
+      (ep) => !ep.project_scope || !isInternalProjectName(ep.project_scope),
+    );
 
     const portalData: PortalData = {
       projects: allProjectData.map((p) => ({
@@ -511,9 +644,13 @@ export class WikiCompiler {
         episodic_count: p.episodics.length,
         last_activity: p.episodics[0]?.created_at ?? null,
       })),
-      recent_changes: recentEpisodics.slice(0, 10),
+      recent_changes: humanRecentEpisodics.slice(0, 10),
       top_decisions: allSemantics
         .filter((s) => s.confidence >= 0.7)
+        .filter((s) => {
+          const project = (s.tags.find((t) => t.startsWith('project:')) ?? 'project:unscoped').replace('project:', '');
+          return !isInternalProjectName(project);
+        })
         .sort((a, b) => b.confidence - a.confidence)
         .slice(0, 15)
         .map((s) => ({
@@ -523,7 +660,7 @@ export class WikiCompiler {
           entities: s.entities,
         })),
       stats: {
-        ...graphStats,
+        ...portalStats,
         total_projects: allProjectData.length,
       },
     };

@@ -8,8 +8,19 @@ import { parseFile } from './parser.js';
 import { ImportResolver } from './resolver.js';
 import { SymbolStore } from './symbol-store.js';
 import { generateLexicalVector, generateMiniVector, generateSparseVector } from './vectors.js';
-import type { SupportedLanguage, SymbolKind, IndexResult } from './types.js';
+import type { SupportedLanguage, SymbolKind, SymbolNode, IndexResult } from './types.js';
 import { LANGUAGE_EXTENSIONS } from './types.js';
+
+interface RelationSymbolFallback {
+  name?: string;
+  kind?: SymbolKind;
+  start_line?: number;
+}
+
+interface RelationResolutionFallback {
+  from?: RelationSymbolFallback;
+  to?: RelationSymbolFallback;
+}
 
 /**
  * Build a composite key string for symbol identity.
@@ -161,19 +172,21 @@ export class CodeIndexer {
       }
     }
 
-    // Create intra-file relationships (SYMBOL_CONTAINS, SYMBOL_INHERITS, SYMBOL_IMPLEMENTS)
-    // Batch: group by type and resolve in fewer queries
-    const relsByType = new Map<string, Array<{ from: string; to: string }>>();
+    // Create intra-file relationships. Parser IDs are transient, so include stable
+    // symbol metadata as a fallback when unchanged symbols are skipped by hash.
+    const symbolById = new Map(parsed.symbols.map((symbol) => [symbol.id, symbol]));
     for (const rel of parsed.relations) {
-      const group = relsByType.get(rel.type) ?? [];
-      group.push({ from: rel.from_symbol, to: rel.to_symbol });
-      relsByType.set(rel.type, group);
-    }
-    for (const [type, rels] of relsByType) {
-      for (const rel of rels) {
-        const resolved = await this.resolveRelation(rel.from, rel.to, type, filePath);
-        if (resolved) relationsCreated++;
-      }
+      const resolved = await this.resolveRelation(
+        rel.from_symbol,
+        rel.to_symbol,
+        rel.type,
+        filePath,
+        {
+          from: relationFallback(symbolById.get(rel.from_symbol)),
+          to: relationFallback(symbolById.get(rel.to_symbol)),
+        },
+      );
+      if (resolved) relationsCreated++;
     }
 
     // Remove symbols that no longer exist in the file (batch delete).
@@ -229,6 +242,7 @@ export class CodeIndexer {
     toRef: string,
     type: string,
     filePath: string,
+    fallback: RelationResolutionFallback = {},
   ): Promise<boolean> {
     // Validate relation type against known symbol relationships --- prevents Cypher injection
     const VALID_SYMBOL_RELS = new Set(['SYMBOL_CALLS', 'SYMBOL_IMPORTS', 'SYMBOL_INHERITS', 'SYMBOL_IMPLEMENTS', 'SYMBOL_CONTAINS']);
@@ -237,15 +251,59 @@ export class CodeIndexer {
     const session = this.driver.session();
     try {
       // fromRef/toRef are either symbol IDs (from SYMBOL_CONTAINS) or names (from heritage)
-      // Try ID match first, then name match within the same file, then global name match
+      // Try ID match first, then stable parsed-symbol fallback, then name match.
       const result = await session.run(
-        `OPTIONAL MATCH (from:Symbol) WHERE from.id = $fromRef OR (from.name = $fromRef AND from.file_path = $filePath)
-         WITH from WHERE from IS NOT NULL LIMIT 1
-         OPTIONAL MATCH (to:Symbol) WHERE to.id = $toRef OR (to.name = $toRef AND to.file_path = $filePath) OR to.name = $toRef
-         WITH from, to WHERE to IS NOT NULL LIMIT 1
+        `OPTIONAL MATCH (from:Symbol)
+         WHERE from.id = $fromRef
+            OR (
+              $fromName IS NOT NULL
+              AND from.name = $fromName
+              AND from.file_path = $filePath
+              AND ($fromKind IS NULL OR from.kind = $fromKind)
+              AND ($fromStartLine IS NULL OR from.start_line = $fromStartLine)
+            )
+            OR (from.name = $fromRef AND from.file_path = $filePath)
+         WITH from
+         WHERE from IS NOT NULL
+         ORDER BY CASE
+           WHEN from.id = $fromRef THEN 0
+           WHEN $fromStartLine IS NOT NULL AND from.start_line = $fromStartLine THEN 1
+           ELSE 2
+         END
+         LIMIT 1
+         OPTIONAL MATCH (to:Symbol)
+         WHERE to.id = $toRef
+            OR (
+              $toName IS NOT NULL
+              AND to.name = $toName
+              AND to.file_path = $filePath
+              AND ($toKind IS NULL OR to.kind = $toKind)
+              AND ($toStartLine IS NULL OR to.start_line = $toStartLine)
+            )
+            OR (to.name = $toRef AND to.file_path = $filePath)
+            OR to.name = $toRef
+         WITH from, to
+         WHERE to IS NOT NULL
+         ORDER BY CASE
+           WHEN to.id = $toRef THEN 0
+           WHEN $toStartLine IS NOT NULL AND to.file_path = $filePath AND to.start_line = $toStartLine THEN 1
+           WHEN to.file_path = $filePath THEN 2
+           ELSE 3
+         END
+         LIMIT 1
          MERGE (from)-[:${type}]->(to)
          RETURN count(*) AS created`,
-        { fromRef, toRef, filePath },
+        {
+          fromRef,
+          toRef,
+          filePath,
+          fromName: fallback.from?.name ?? null,
+          fromKind: fallback.from?.kind ?? null,
+          fromStartLine: fallback.from?.start_line ?? null,
+          toName: fallback.to?.name ?? null,
+          toKind: fallback.to?.kind ?? null,
+          toStartLine: fallback.to?.start_line ?? null,
+        },
       );
       return (result.records[0]?.get('created') ?? 0) > 0;
     } finally {
@@ -281,4 +339,13 @@ export class CodeIndexer {
     await walk(dirPath);
     return files;
   }
+}
+
+function relationFallback(symbol: SymbolNode | undefined): RelationSymbolFallback | undefined {
+  if (!symbol) return undefined;
+  return {
+    name: symbol.name,
+    kind: symbol.kind,
+    start_line: symbol.start_line,
+  };
 }

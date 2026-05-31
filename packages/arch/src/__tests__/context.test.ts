@@ -162,8 +162,26 @@ describe('ArchContextBuilder', () => {
       const asOf = '2025-06-01T00:00:00Z';
       await builder.build('Svc', 6000, asOf);
 
-      expect(relationStore.getDependencies).toHaveBeenCalledWith('Svc', asOf);
-      expect(relationStore.getDependents).toHaveBeenCalledWith('Svc', asOf);
+      expect(relationStore.getDependencies).toHaveBeenCalledWith('Svc', asOf, undefined);
+      expect(relationStore.getDependents).toHaveBeenCalledWith('Svc', asOf, undefined);
+    });
+
+    it('normalizes and forwards project scope to all architecture context sub-stores', async () => {
+      const { builder, entityStore, aspectStore, relationStore } = createBuilder();
+
+      entityStore.getFullEntity.mockResolvedValue({ name: 'AuthService', category: 'service' });
+      entityStore.getAncestors.mockResolvedValue([]);
+      relationStore.getDependencies.mockResolvedValue([]);
+      relationStore.getDependents.mockResolvedValue([]);
+      aspectStore.getEffectiveAspects.mockResolvedValue([]);
+
+      await builder.build('AuthService', 6000, undefined, 'project:AMP');
+
+      expect(entityStore.getFullEntity).toHaveBeenCalledWith('AuthService', 'AMP');
+      expect(entityStore.getAncestors).toHaveBeenCalledWith('AuthService', 'AMP');
+      expect(relationStore.getDependencies).toHaveBeenCalledWith('AuthService', undefined, 'AMP');
+      expect(relationStore.getDependents).toHaveBeenCalledWith('AuthService', undefined, 'AMP');
+      expect(aspectStore.getEffectiveAspects).toHaveBeenCalledWith('AuthService', 'AMP');
     });
 
     // ─── Token budgeting ────────────────────────────────────────────────
@@ -222,6 +240,31 @@ describe('ArchContextBuilder', () => {
 
         expect(ctx.dependents.length).toBeLessThanOrEqual(10);
         expect(ctx.dependencies.length).toBeLessThanOrEqual(10);
+      });
+
+      it('continues trimming removable sections until the context fits the token budget', async () => {
+        const { builder, entityStore, aspectStore, relationStore } = createBuilder();
+
+        entityStore.getFullEntity.mockResolvedValue({
+          name: 'BudgetedEntity',
+          category: 'service',
+          responsibility: 'Small target responsibility',
+        });
+        entityStore.getAncestors.mockResolvedValue([]);
+        relationStore.getDependents.mockResolvedValue([]);
+        relationStore.getDependencies.mockResolvedValue(
+          Array.from({ length: 12 }, (_, i) => ({
+            name: `dep-${i}`,
+            relation: 'USES',
+            interface_desc: 'A'.repeat(200),
+          })),
+        );
+        aspectStore.getEffectiveAspects.mockResolvedValue([]);
+
+        const ctx = await builder.build('BudgetedEntity', 120);
+
+        expect(ctx.token_count).toBeLessThanOrEqual(120);
+        expect(ctx.dependencies.length).toBeLessThan(10);
       });
     });
   });

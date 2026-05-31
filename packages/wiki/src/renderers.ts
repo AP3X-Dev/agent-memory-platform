@@ -58,6 +58,18 @@ function topicLink(tag: string, display?: string): string {
   return `[[topics/${slug}|${label}]]`;
 }
 
+function projectSlugFromName(projectName: string): string | null {
+  const normalized = projectName.replace(/^project:/i, '').trim();
+  if (!normalized || normalized.toLowerCase() === 'unscoped') return null;
+  const slug = slugify(normalized);
+  return slug || null;
+}
+
+function scopedEntityLink(projectName: string, entityName: string): string {
+  const projectSlug = projectSlugFromName(projectName);
+  return projectSlug ? projectEntityLink(projectSlug, entityName) : `**${entityName}**`;
+}
+
 // ─── Frontmatter ─────────────────────────────────────────────────────────────
 
 export function renderFrontmatter(fm: Record<string, unknown>): string {
@@ -231,6 +243,20 @@ export function renderProjectIndex(project: ProjectData): string {
     lines.push('');
   }
 
+  const decisions = project.semantics
+    .filter((s) => s.confidence >= 0.7)
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, 5);
+
+  if (decisions.length > 0) {
+    lines.push('## Key Decisions');
+    lines.push('');
+    for (const d of decisions) {
+      lines.push(`- ${truncate(d.content, 180)} *(${d.confidence.toFixed(2)})*`);
+    }
+    lines.push('');
+  }
+
   // Substantive entities grouped by type
   if (project.substantive_entities.length > 0) {
     const byType = new Map<string, EntityInfo[]>();
@@ -282,7 +308,7 @@ export function renderProjectIndex(project: ProjectData): string {
   // Graph
   lines.push(`## Graph`);
   lines.push('');
-  lines.push(`See ${projectEntityLink(projectSlug, '_graph', 'Knowledge Graph')}`);
+  lines.push(`See [[projects/${projectSlug}/_graph|Knowledge Graph]]`);
   lines.push('');
 
   return lines.join('\n');
@@ -400,6 +426,7 @@ export function renderLibraryIndex(sources: SourceInfo[], claimCounts: Map<strin
 
 export function renderLibraryPage(page: LibraryPage): string {
   const lines: string[] = [];
+  const projectName = page.source.project_tag.replace(/^project:/i, '');
 
   lines.push(renderFrontmatter({
     title: page.source.title,
@@ -425,7 +452,7 @@ export function renderLibraryPage(page: LibraryPage): string {
     lines.push('');
     for (const claim of page.claims) {
       const entityLinks = claim.entity_refs
-        .map((e) => `[[${slugify(e)}|${e}]]`)
+        .map((e) => scopedEntityLink(projectName, e))
         .join(', ');
       const refs = entityLinks ? ` -> ${entityLinks}` : '';
       lines.push(`- ${claim.content} *(${claim.confidence.toFixed(2)})*${refs}`);
@@ -438,7 +465,7 @@ export function renderLibraryPage(page: LibraryPage): string {
     lines.push('## Related Entities');
     lines.push('');
     for (const name of page.entity_links) {
-      lines.push(`- [[${slugify(name)}|${name}]]`);
+      lines.push(`- ${scopedEntityLink(projectName, name)}`);
     }
     lines.push('');
   }
@@ -501,12 +528,12 @@ export function renderTopicPage(topic: TopicData): string {
   }
 
   for (const [proj, sems] of [...byProject].sort(([a], [b]) => a.localeCompare(b))) {
-    const projSlug = slugify(proj);
-    lines.push(`## ${projectIndexLink(projSlug, proj)}`);
+    const projSlug = projectSlugFromName(proj);
+    lines.push(`## ${projSlug ? projectIndexLink(projSlug, proj) : 'Unscoped'}`);
     lines.push('');
     for (const sem of sems) {
       const entityLinks = sem.entities
-        .map((e) => projectEntityLink(projSlug, e))
+        .map((e) => projSlug ? projectEntityLink(projSlug, e) : `**${e}**`)
         .join(', ');
       const refs = entityLinks ? ` -> ${entityLinks}` : '';
       lines.push(`- ${truncate(sem.content, 200)} *(${sem.confidence.toFixed(2)})*${refs}`);
@@ -526,8 +553,23 @@ export function renderTopicPage(topic: TopicData): string {
   if (topic.related_entities.length > 0) {
     lines.push('## Related Entities');
     lines.push('');
+    const projectsByEntity = new Map<string, Set<string>>();
+    for (const sem of topic.semantics) {
+      for (const entity of sem.entities) {
+        if (!topic.related_entities.includes(entity)) continue;
+        const projects = projectsByEntity.get(entity) ?? new Set<string>();
+        projects.add(sem.project);
+        projectsByEntity.set(entity, projects);
+      }
+    }
+
     for (const name of topic.related_entities) {
-      lines.push(`- [[${slugify(name)}|${name}]]`);
+      const projects = [...(projectsByEntity.get(name) ?? [])].sort();
+      if (projects.length === 0) {
+        lines.push(`- **${name}**`);
+      } else {
+        lines.push(`- ${projects.map((project) => scopedEntityLink(project, name)).join(' · ')}`);
+      }
     }
     lines.push('');
   }

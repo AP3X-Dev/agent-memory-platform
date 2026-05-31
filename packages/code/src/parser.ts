@@ -53,25 +53,39 @@ async function getGrammar(language: SupportedLanguage): Promise<unknown> {
   let grammar: unknown;
   switch (language) {
     case 'typescript':
-      grammar = (await import('tree-sitter-typescript')).typescript;
+      grammar = grammarFromModule(await import('tree-sitter-typescript'), 'typescript');
       break;
     case 'javascript':
-      grammar = (await import('tree-sitter-javascript')).default;
+      grammar = grammarFromModule(await import('tree-sitter-javascript'));
       break;
     case 'python':
-      grammar = (await import('tree-sitter-python')).default;
+      grammar = grammarFromModule(await import('tree-sitter-python'));
       break;
     case 'go':
-      grammar = (await import('tree-sitter-go')).default;
+      grammar = grammarFromModule(await import('tree-sitter-go'));
       break;
     case 'rust':
-      grammar = (await import('tree-sitter-rust')).default;
+      grammar = grammarFromModule(await import('tree-sitter-rust'));
       break;
     default:
       throw new Error(`Unsupported language: ${language}`);
   }
   grammarCache.set(language, grammar);
   return grammar;
+}
+
+function grammarFromModule(mod: unknown, exportName?: string): unknown {
+  const record = asRecord(mod);
+  const defaultRecord = asRecord(record.default);
+  const base = Object.keys(defaultRecord).length > 0 ? defaultRecord : record;
+  if (exportName) {
+    return base[exportName] ?? record[exportName];
+  }
+  return record.default ?? mod;
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value != null && typeof value === 'object' ? value as Record<string, unknown> : {};
 }
 
 // ─── Main parse function ──────────────────────────────────────────────────────
@@ -90,6 +104,7 @@ export async function parseFile(
 
   const symbols: SymbolNode[] = [];
   const relations: SymbolRelation[] = [];
+  const callRelations: SymbolRelation[] = [];
   const imports: ImportInfo[] = [];
   const now = new Date().toISOString();
 
@@ -115,13 +130,64 @@ export async function parseFile(
     const imp = extractImport(node, language, filePath);
     if (imp) imports.push(imp);
 
+    const call = extractCallRelation(node, language, parentSymbolId);
+    if (call) callRelations.push(call);
+
     // Walk children with same parent
     for (let i = 0; i < node.childCount; i++) {
       walkNode(node.child(i), parentSymbolId);
     }
   }
 
+  const allowedCallNames = buildAllowedCallNameSet(symbols, imports);
+  relations.push(...callRelations.filter((rel) => allowedCallNames.has(rel.to_symbol)));
+
+  // Pure barrel/re-export files (`export { x } from './y'`, an `index.ts` that only
+  // re-exports, a Python `__init__.py` that only re-imports) declare no symbols of
+  // their own. Without an anchor node, `resolveImports` has no `from:Symbol` to hang
+  // the SYMBOL_IMPORTS edge on, so the module dependency is silently lost. Emit a
+  // single synthetic `module` symbol (a kind already whitelisted by the resolver) so
+  // these files participate in the import graph in both directions.
+  if (symbols.length === 0 && imports.length > 0) {
+    symbols.push(buildModuleSymbol(filePath, language, imports, now));
+  }
+
   return { file_path: filePath, language, symbols, relations, imports };
+}
+
+/**
+ * Build a synthetic `module` symbol representing a file as a whole.
+ * Used as an import-graph anchor for files that declare no symbols of their own
+ * (barrel/re-export modules). The content hash is derived from the file's import
+ * sources so incremental indexing reindexes when the module's dependencies change.
+ */
+function buildModuleSymbol(
+  filePath: string,
+  language: SupportedLanguage,
+  imports: ImportInfo[],
+  now: string,
+): SymbolNode {
+  const name = filePath.split(/[\\/]/).pop() ?? filePath;
+  const hashInput = imports
+    .map((imp) => `${imp.source}::${imp.specifiers.join(',')}`)
+    .sort()
+    .join('|');
+  const contentHash = createHash('sha256').update(hashInput).digest('hex').slice(0, 16);
+  return {
+    id: `sym-${nanoid(12)}`,
+    name,
+    kind: 'module',
+    language,
+    file_path: filePath,
+    start_line: 1,
+    end_line: 1,
+    signature: `module ${name}`,
+    doc_comment: '',
+    content_hash: contentHash,
+    parent_symbol: null,
+    created_at: now,
+    updated_at: now,
+  };
 }
 
 // ─── Symbol extraction (language-specific) ────────────────────────────────────
@@ -147,10 +213,12 @@ function extractSymbol(
 
   // ─── TypeScript / JavaScript ───────────────────────────────────────
   if (language === 'typescript' || language === 'javascript') {
-    if (nodeType === 'function_declaration' || nodeType === 'arrow_function' || nodeType === 'function') {
+    if (nodeType === 'function_declaration') {
       kind = 'function';
       name = node.childForFieldName?.('name')?.text ?? extractName(node) ?? '';
       signature = extractFirstLine(node.text);
+    } else if (nodeType === 'arrow_function' || nodeType === 'function' || nodeType === 'function_expression') {
+      return null;
     } else if (nodeType === 'class_declaration') {
       kind = 'class';
       name = node.childForFieldName?.('name')?.text ?? '';
@@ -159,6 +227,20 @@ function extractSymbol(
       kind = 'method';
       name = node.childForFieldName?.('name')?.text ?? '';
       signature = extractFirstLine(node.text);
+    } else if (nodeType === 'pair') {
+      const value = node.childForFieldName?.('value') ?? null;
+      if (isFunctionInitializer(value)) {
+        kind = 'method';
+        name = objectPropertyName(node.childForFieldName?.('key') ?? node.child(0));
+        signature = extractFirstLine(node.text);
+      }
+    } else if (isClassFieldDefinition(node)) {
+      const value = node.childForFieldName?.('value') ?? null;
+      if (isFunctionInitializer(value)) {
+        kind = 'method';
+        name = node.childForFieldName?.('name')?.text ?? '';
+        signature = extractFirstLine(node.text);
+      }
     } else if (nodeType === 'interface_declaration') {
       kind = 'interface';
       name = node.childForFieldName?.('name')?.text ?? '';
@@ -172,10 +254,10 @@ function extractSymbol(
       name = node.childForFieldName?.('name')?.text ?? '';
       signature = extractFirstLine(node.text);
     } else if (nodeType === 'lexical_declaration' || nodeType === 'variable_declaration') {
-      // Only top-level exports / named constants
-      const declarator = node.child(0)?.type === 'export_statement' ? node.child(0)?.child(1) : node.child(1);
+      const declarator = findVariableDeclarator(node);
       if (declarator?.childForFieldName?.('name')) {
-        kind = 'variable';
+        const value = variableDeclaratorValue(declarator);
+        kind = isFunctionInitializer(value) ? 'function' : 'variable';
         name = declarator.childForFieldName('name')?.text ?? '';
         signature = extractFirstLine(node.text);
       }
@@ -307,6 +389,24 @@ function extractImport(
         return { source, specifiers, file_path: filePath, line: node.startPosition.row + 1 };
       }
     }
+
+    // Re-exports (`export { x } from './y'`, `export * from './y'`,
+    // `export * as ns from './y'`) are module dependencies just like imports.
+    // A plain `export { x }` or `export default ...` has no `source` field and
+    // is a local export, not a cross-file edge --- skip those.
+    if (node.type === 'export_statement') {
+      const source = node.childForFieldName?.('source')?.text?.replace(/['"]/g, '') ?? '';
+      if (source) {
+        const specifiers: string[] = [];
+        for (let i = 0; i < node.childCount; i++) {
+          const child = node.child(i);
+          if (child?.type === 'export_clause') {
+            specifiers.push(child.text);
+          }
+        }
+        return { source, specifiers, file_path: filePath, line: node.startPosition.row + 1 };
+      }
+    }
   }
 
   if (language === 'python') {
@@ -342,6 +442,108 @@ function extractImport(
   return null;
 }
 
+// ─── Call relationship extraction ────────────────────────────────────────────
+
+function extractCallRelation(
+  node: TSSyntaxNode,
+  language: SupportedLanguage,
+  parentSymbolId: string | null,
+): SymbolRelation | null {
+  if (!parentSymbolId || !isCallNode(node, language)) return null;
+
+  const callable =
+    node.childForFieldName?.('function') ??
+    node.childForFieldName?.('name') ??
+    node.childForFieldName?.('constructor') ??
+    node.child(0);
+  const calleeName = extractCallableName(callable);
+  if (!calleeName || calleeName === 'this' || calleeName === 'super') return null;
+
+  return {
+    from_symbol: parentSymbolId,
+    to_symbol: calleeName,
+    type: 'SYMBOL_CALLS',
+  };
+}
+
+function isCallNode(node: TSSyntaxNode, language: SupportedLanguage): boolean {
+  if (node.type === 'call_expression') return true;
+  if (language === 'rust' && node.type === 'method_call_expression') return true;
+  if ((language === 'typescript' || language === 'javascript') && node.type === 'new_expression') return true;
+  return false;
+}
+
+function extractCallableName(node: TSSyntaxNode | null): string | null {
+  if (!node) return null;
+
+  if (
+    node.type === 'identifier' ||
+    node.type === 'property_identifier' ||
+    node.type === 'field_identifier' ||
+    node.type === 'type_identifier'
+  ) {
+    return sanitizeCallableName(node.text);
+  }
+
+  const namedField =
+    node.childForFieldName?.('property') ??
+    node.childForFieldName?.('field') ??
+    node.childForFieldName?.('name') ??
+    node.childForFieldName?.('function') ??
+    null;
+  const fieldName = extractCallableName(namedField);
+  if (fieldName) return fieldName;
+
+  for (let i = node.childCount - 1; i >= 0; i--) {
+    const name = extractCallableName(node.child(i));
+    if (name) return name;
+  }
+
+  return null;
+}
+
+function sanitizeCallableName(text: string): string | null {
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/^#/, '');
+}
+
+function buildAllowedCallNameSet(symbols: SymbolNode[], imports: ImportInfo[]): Set<string> {
+  const allowed = new Set<string>();
+  for (const symbol of symbols) {
+    allowed.add(symbol.name);
+  }
+  for (const imp of imports) {
+    for (const name of importLocalNames(imp)) {
+      allowed.add(name);
+    }
+  }
+  return allowed;
+}
+
+function importLocalNames(imp: ImportInfo): string[] {
+  const names: string[] = [];
+  for (const specifier of imp.specifiers) {
+    names.push(...parseImportSpecifierNames(specifier));
+  }
+  return names;
+}
+
+function parseImportSpecifierNames(specifier: string): string[] {
+  return specifier
+    .replace(/[{}]/g, ',')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const noType = part.replace(/^type\s+/, '').trim();
+      const alias = noType.match(/\bas\s+([A-Za-z_$][\w$]*)$/)?.[1];
+      if (alias) return alias;
+      return noType.match(/^([A-Za-z_$][\w$]*)/)?.[1] ?? '';
+    })
+    .filter(Boolean);
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function extractFirstLine(text: string): string {
@@ -357,6 +559,46 @@ function extractName(node: TSSyntaxNode): string | null {
     }
   }
   return null;
+}
+
+function findVariableDeclarator(node: TSSyntaxNode): TSSyntaxNode | null {
+  if (node.type === 'variable_declarator') return node;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (!child) continue;
+    if (child.type === 'variable_declarator') return child;
+    if (child.type === 'export_statement') {
+      const nested = findVariableDeclarator(child);
+      if (nested) return nested;
+    }
+  }
+  return null;
+}
+
+function variableDeclaratorValue(node: TSSyntaxNode): TSSyntaxNode | null {
+  const fieldValue = node.childForFieldName?.('value') ?? null;
+  if (fieldValue) return fieldValue;
+  for (let i = 0; i < node.childCount; i++) {
+    const child = node.child(i);
+    if (child && isFunctionInitializer(child)) return child;
+  }
+  return null;
+}
+
+function isFunctionInitializer(node: TSSyntaxNode | null): boolean {
+  return node?.type === 'arrow_function' || node?.type === 'function' || node?.type === 'function_expression';
+}
+
+function isClassFieldDefinition(node: TSSyntaxNode): boolean {
+  return node.type === 'public_field_definition' || node.type === 'field_definition' || node.type === 'property_definition';
+}
+
+function objectPropertyName(node: TSSyntaxNode | null): string {
+  if (!node) return '';
+  if (node.type === 'string' || node.type === 'string_fragment') {
+    return node.text.replace(/^['"]|['"]$/g, '');
+  }
+  return node.text;
 }
 
 function extractDocComment(

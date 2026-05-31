@@ -31,10 +31,13 @@ export class ArchContextBuilder {
    * @param entityName  The entity to build context for
    * @param maxTokens   Token budget
    * @param asOf        Optional ISO timestamp — only traverse relationships active at this time
+   * @param projectName Optional project scope for duplicate entity names
    */
-  async build(entityName: string, maxTokens = 6000, asOf?: string): Promise<ArchContext> {
+  async build(entityName: string, maxTokens = 6000, asOf?: string, projectName?: string): Promise<ArchContext> {
+    const projectScope = normalizeProjectName(projectName);
+
     // Step 1: Target entity
-    const entity = await this.entities.getFullEntity(entityName);
+    const entity = await this.entities.getFullEntity(entityName, projectScope);
     if (!entity) {
       return {
         target: { name: entityName, category: 'unknown', responsibility: 'Entity not found' },
@@ -53,14 +56,14 @@ export class ArchContextBuilder {
     };
 
     // Step 2: Hierarchy walk
-    const ancestors = await this.entities.getAncestors(entityName);
+    const ancestors = await this.entities.getAncestors(entityName, projectScope);
 
     // Step 3: Dependency expansion (filter by temporal validity)
-    const dependencies = await this.relations.getDependencies(entityName, asOf);
-    const dependents = await this.relations.getDependents(entityName, asOf);
+    const dependencies = await this.relations.getDependencies(entityName, asOf, projectScope);
+    const dependents = await this.relations.getDependents(entityName, asOf, projectScope);
 
     // Step 4: Aspect overlay
-    const effectiveAspects = await this.aspects.getEffectiveAspects(entityName);
+    const effectiveAspects = await this.aspects.getEffectiveAspects(entityName, projectScope);
     const aspectEntries = effectiveAspects.map((a) => ({
       name: a.name,
       stability_tier: a.stability_tier,
@@ -79,15 +82,8 @@ export class ArchContextBuilder {
 
     ctx.token_count = estimateTokens(ctx);
 
-    // If over budget, trim from least-specific: dependents first, then transitive deps, then aspects
-    if (ctx.token_count > maxTokens) {
-      ctx.dependents = ctx.dependents.slice(0, 10);
-      ctx.token_count = estimateTokens(ctx);
-    }
-    if (ctx.token_count > maxTokens) {
-      ctx.dependencies = ctx.dependencies.slice(0, 10);
-      ctx.token_count = estimateTokens(ctx);
-    }
+    // If over budget, trim from least-specific data while preserving the target entity.
+    trimToBudget(ctx, maxTokens);
 
     return ctx;
   }
@@ -95,8 +91,9 @@ export class ArchContextBuilder {
   /**
    * Render context as markdown.
    */
-  async renderMarkdown(entityName: string, maxTokens = 6000, asOf?: string): Promise<string> {
-    const ctx = await this.build(entityName, maxTokens, asOf);
+  async renderMarkdown(entityName: string, maxTokens = 6000, asOf?: string, projectName?: string): Promise<string> {
+    const projectScope = normalizeProjectName(projectName);
+    const ctx = await this.build(entityName, maxTokens, asOf, projectScope);
     const lines: string[] = [];
 
     // Target
@@ -109,7 +106,7 @@ export class ArchContextBuilder {
     }
 
     // Get full entity for interface/internals
-    const full = await this.entities.getFullEntity(entityName);
+    const full = await this.entities.getFullEntity(entityName, projectScope);
     if (full?.interface_desc) {
       lines.push('## Interface');
       lines.push(full.interface_desc as string);
@@ -165,4 +162,29 @@ export class ArchContextBuilder {
 function estimateTokens(ctx: ArchContext): number {
   const json = JSON.stringify(ctx);
   return Math.ceil(json.length / 4);
+}
+
+function trimToBudget(ctx: ArchContext, maxTokens: number): void {
+  ctx.token_count = estimateTokens(ctx);
+
+  const trimOrder: Array<keyof Pick<ArchContext, 'dependents' | 'dependencies' | 'aspects' | 'hierarchy'>> = [
+    'dependents',
+    'dependencies',
+    'aspects',
+    'hierarchy',
+  ];
+
+  for (const key of trimOrder) {
+    while (ctx.token_count > maxTokens && ctx[key].length > 0) {
+      ctx[key].pop();
+      ctx.token_count = estimateTokens(ctx);
+    }
+  }
+}
+
+function normalizeProjectName(projectName?: string): string | undefined {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return undefined;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || undefined;
 }

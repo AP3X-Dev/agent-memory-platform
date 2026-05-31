@@ -72,14 +72,21 @@ export class ArchEntityStore {
     }
   }
 
-  async getChildren(entityName: string): Promise<Array<{ name: string; category: string; responsibility: string }>> {
+  async getChildren(entityName: string, projectName?: string): Promise<Array<{ name: string; category: string; responsibility: string }>> {
     const session = this.driver.session();
     try {
+      const normalizedProjectName = normalizeProjectName(projectName);
       const result = await session.run(
         `MATCH (parent:Entity {name: $name})-[:CONTAINS]->(child:Entity)
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(parent.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(parent)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
          RETURN child.name AS name, child.category AS category, child.responsibility AS responsibility
          ORDER BY child.name ASC`,
-        { name: entityName },
+        { name: entityName, projectName: normalizedProjectName },
       );
       return result.records.map((r) => ({
         name: r.get('name') as string,
@@ -91,17 +98,24 @@ export class ArchEntityStore {
     }
   }
 
-  async getAncestors(entityName: string): Promise<Array<{ name: string; depth: number; responsibility: string }>> {
+  async getAncestors(entityName: string, projectName?: string): Promise<Array<{ name: string; depth: number; responsibility: string }>> {
     const session = this.driver.session();
     try {
+      const normalizedProjectName = normalizeProjectName(projectName);
       const result = await session.run(
         `MATCH path = (ancestor:Entity)-[:CONTAINS*]->(target:Entity {name: $name})
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(target.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(target)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
          UNWIND nodes(path) AS n
          WITH DISTINCT n
          WHERE n.name <> $name
          RETURN n.name AS name, n.depth AS depth, n.responsibility AS responsibility
          ORDER BY n.depth ASC`,
-        { name: entityName },
+        { name: entityName, projectName: normalizedProjectName },
       );
       return result.records.map((r) => ({
         name: r.get('name') as string,
@@ -130,12 +144,21 @@ export class ArchEntityStore {
     }
   }
 
-  async getFullEntity(entityName: string): Promise<Record<string, unknown> | null> {
+  async getFullEntity(entityName: string, projectName?: string): Promise<Record<string, unknown> | null> {
     const session = this.driver.session();
     try {
+      const normalizedProjectName = normalizeProjectName(projectName);
       const result = await session.run(
-        'MATCH (e:Entity {name: $name}) RETURN e',
-        { name: entityName },
+        `MATCH (e:Entity {name: $name})
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
+         RETURN e
+         LIMIT 1`,
+        { name: entityName, projectName: normalizedProjectName },
       );
       if (result.records.length === 0) return null;
       return result.records[0].get('e').properties as Record<string, unknown>;
@@ -143,6 +166,13 @@ export class ArchEntityStore {
       await session.close();
     }
   }
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }
 
 function toNum(val: unknown): number {

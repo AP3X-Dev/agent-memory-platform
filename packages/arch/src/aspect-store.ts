@@ -62,26 +62,28 @@ export class AspectStore {
     }
   }
 
-  async applyTo(aspectName: string, entityName: string): Promise<void> {
+  async applyTo(aspectName: string, entityName: string, projectName?: string): Promise<void> {
     const session = this.driver.session();
     try {
       await session.run(
         `MATCH (a:Aspect {name: $aspect}), (e:Entity {name: $entity})
+         WHERE ${entityProjectFilter('e')}
          MERGE (a)-[:APPLIES_TO]->(e)`,
-        { aspect: aspectName, entity: entityName },
+        { aspect: aspectName, entity: entityName, projectName: normalizeProjectName(projectName) },
       );
     } finally {
       await session.close();
     }
   }
 
-  async removeFrom(aspectName: string, entityName: string): Promise<void> {
+  async removeFrom(aspectName: string, entityName: string, projectName?: string): Promise<void> {
     const session = this.driver.session();
     try {
       await session.run(
         `MATCH (a:Aspect {name: $aspect})-[r:APPLIES_TO]->(e:Entity {name: $entity})
+         WHERE ${entityProjectFilter('e')}
          DELETE r`,
-        { aspect: aspectName, entity: entityName },
+        { aspect: aspectName, entity: entityName, projectName: normalizeProjectName(projectName) },
       );
     } finally {
       await session.close();
@@ -105,24 +107,44 @@ export class AspectStore {
   /**
    * Get all aspects that apply to an entity (direct + inherited from ancestors + implied).
    */
-  async getEffectiveAspects(entityName: string): Promise<AspectNode[]> {
+  async getEffectiveAspects(entityName: string, projectName?: string): Promise<AspectNode[]> {
     const session = this.driver.session();
     try {
       const result = await session.run(
         `// Direct aspects on this entity
-         MATCH (a:Aspect)-[:APPLIES_TO]->(e:Entity {name: $name})
+         MATCH (e:Entity {name: $name})
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
+         MATCH (a:Aspect)-[:APPLIES_TO]->(e)
          RETURN DISTINCT a
          UNION
          // Aspects inherited from ancestors
          MATCH (ancestor:Entity)-[:CONTAINS*]->(e:Entity {name: $name})
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
          MATCH (a:Aspect)-[:APPLIES_TO]->(ancestor)
          RETURN DISTINCT a
          UNION
          // Implied aspects (transitive)
-         MATCH (a:Aspect)-[:APPLIES_TO]->(e:Entity {name: $name})
+         MATCH (e:Entity {name: $name})
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
+         MATCH (a:Aspect)-[:APPLIES_TO]->(e)
          MATCH (a)-[:IMPLIES*]->(implied:Aspect)
          RETURN DISTINCT implied AS a`,
-        { name: entityName },
+        { name: entityName, projectName: normalizeProjectName(projectName) },
       );
       return result.records.map((r) => mapAspect(r.get('a').properties));
     } finally {
@@ -133,13 +155,14 @@ export class AspectStore {
   /**
    * Get all entities that a given aspect applies to.
    */
-  async getEntitiesForAspect(aspectName: string): Promise<string[]> {
+  async getEntitiesForAspect(aspectName: string, projectName?: string): Promise<string[]> {
     const session = this.driver.session();
     try {
       const result = await session.run(
         `MATCH (a:Aspect {name: $name})-[:APPLIES_TO]->(e:Entity)
+         WHERE ${entityProjectFilter('e')}
          RETURN e.name AS name ORDER BY e.name ASC`,
-        { name: aspectName },
+        { name: aspectName, projectName: normalizeProjectName(projectName) },
       );
       return result.records.map((r) => r.get('name') as string);
     } finally {
@@ -158,6 +181,22 @@ export class AspectStore {
       await session.close();
     }
   }
+}
+
+function entityProjectFilter(alias: string): string {
+  return `($projectName IS NULL
+            OR toLower(COALESCE(${alias}.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(${alias})
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            })`;
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }
 
 function mapAspect(props: Record<string, unknown>): AspectNode {

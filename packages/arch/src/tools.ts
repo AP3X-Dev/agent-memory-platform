@@ -10,39 +10,39 @@ import type { ArchEntityProperties, StructuralRelationType, StabilityTier, Impac
 
 export interface IArchEntityStore {
   setArchProperties(entityName: string, props: Partial<ArchEntityProperties>): Promise<boolean>;
-  getFullEntity(entityName: string): Promise<Record<string, unknown> | null>;
-  getChildren(entityName: string): Promise<Array<{ name: string; category: string; responsibility: string }>>;
+  getFullEntity(entityName: string, projectName?: string): Promise<Record<string, unknown> | null>;
+  getChildren(entityName: string, projectName?: string): Promise<Array<{ name: string; category: string; responsibility: string }>>;
   findStale(): Promise<Array<{ name: string; last_indexed_at: string | null }>>;
 }
 
 export interface IAspectStore {
   create(input: { name: string; description: string; stability_tier: StabilityTier; implies?: string[]; anchors?: string[] }): Promise<string>;
-  applyTo(aspectName: string, entityName: string): Promise<void>;
-  removeFrom(aspectName: string, entityName: string): Promise<void>;
-  getEffectiveAspects(entityName: string): Promise<Array<{ name: string; stability_tier: string; description: string }>>;
-  getEntitiesForAspect(aspectName: string): Promise<string[]>;
+  applyTo(aspectName: string, entityName: string, projectName?: string): Promise<void>;
+  removeFrom(aspectName: string, entityName: string, projectName?: string): Promise<void>;
+  getEffectiveAspects(entityName: string, projectName?: string): Promise<Array<{ name: string; stability_tier: string; description: string }>>;
+  getEntitiesForAspect(aspectName: string, projectName?: string): Promise<string[]>;
   listAll(): Promise<Array<{ name: string; stability_tier: string; description: string }>>;
 }
 
 export interface IStructuralRelationStore {
-  create(from: string, to: string, type: StructuralRelationType, properties?: Record<string, string>): Promise<boolean>;
-  getDependents(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string }>>;
-  getDependencies(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>>;
+  create(from: string, to: string, type: StructuralRelationType, properties?: Record<string, string>, projectName?: string): Promise<boolean>;
+  getDependents(entityName: string, asOf?: string, projectName?: string): Promise<Array<{ name: string; relation: string }>>;
+  getDependencies(entityName: string, asOf?: string, projectName?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>>;
   getCallGraph(entityName: string, depth?: number, asOf?: string): Promise<Array<{ from: string; to: string; relation: string; depth: number }>>;
 }
 
 export interface IImpactAnalyzer {
-  blastRadius(entityName: string, asOf?: string): Promise<ImpactResult>;
+  blastRadius(entityName: string, asOf?: string, projectName?: string): Promise<ImpactResult>;
 }
 
 export interface IDriftDetector {
-  checkFreshness(entityName: string): Promise<DriftResult>;
+  checkFreshness(entityName: string, projectName?: string): Promise<DriftResult>;
   checkAll(projectName: string): Promise<DriftResult[]>;
-  markFresh(entityName: string): Promise<number>;
+  markFresh(entityName: string, projectName?: string): Promise<number>;
 }
 
 export interface IArchContextBuilder {
-  renderMarkdown(entityName: string, maxTokens?: number, asOf?: string): Promise<string>;
+  renderMarkdown(entityName: string, maxTokens?: number, asOf?: string, projectName?: string): Promise<string>;
 }
 
 // ─── Injected instances ──────────────────────────────────────────────────────
@@ -137,6 +137,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
         .describe('Relationship type'),
       properties: z.record(z.string()).optional()
         .describe('Optional properties (e.g., {consumes: "charge,refund"}, {event: "order.created"}, {failure: "retry 3x"})'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     {} satisfies ToolAnnotations,
     async (args) => {
@@ -145,6 +146,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
         args.from_entity, args.to_entity,
         args.type as StructuralRelationType,
         args.properties,
+        args.project_name
       );
       return textContent(JSON.stringify({ created, from: args.from_entity, to: args.to_entity, type: args.type }));
     },
@@ -163,6 +165,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       implies: z.array(z.string()).optional().describe('Other aspect names this implies (for "create")'),
       anchors: z.array(z.string()).optional().describe('Code patterns that evidence this aspect (for "create")'),
       entity_name: z.string().max(2000).optional().describe('Entity to apply/remove aspect to/from'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     {} satisfies ToolAnnotations,
     async (args) => {
@@ -180,12 +183,12 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
         }
         case 'apply': {
           if (!args.entity_name) throw new Error('entity_name required for "apply"');
-          await aspectStore.applyTo(args.name, args.entity_name);
+          await aspectStore.applyTo(args.name, args.entity_name, args.project_name);
           return textContent(JSON.stringify({ applied: true, aspect: args.name, entity: args.entity_name }));
         }
         case 'remove': {
           if (!args.entity_name) throw new Error('entity_name required for "remove"');
-          await aspectStore.removeFrom(args.name, args.entity_name);
+          await aspectStore.removeFrom(args.name, args.entity_name, args.project_name);
           return textContent(JSON.stringify({ removed: true, aspect: args.name, entity: args.entity_name }));
         }
         case 'list': {
@@ -194,10 +197,10 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
         }
         case 'get': {
           if (args.entity_name) {
-            const effective = await aspectStore.getEffectiveAspects(args.entity_name);
+            const effective = await aspectStore.getEffectiveAspects(args.entity_name, args.project_name);
             return textContent(JSON.stringify({ entity: args.entity_name, aspects: effective }, null, 2));
           }
-          const entities = await aspectStore.getEntitiesForAspect(args.name);
+          const entities = await aspectStore.getEntitiesForAspect(args.name, args.project_name);
           return textContent(JSON.stringify({ aspect: args.name, entities }, null, 2));
         }
         default:
@@ -213,11 +216,12 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     {
       entity_name: z.string().max(2000).describe('Entity to analyze'),
       as_of: z.string().optional().describe('ISO timestamp — only traverse relationships active at this time (default: current)'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!impactAnalyzer) throw new Error('Arch services not initialised');
-      const result = await impactAnalyzer.blastRadius(args.entity_name, args.as_of);
+      const result = await impactAnalyzer.blastRadius(args.entity_name, args.as_of, args.project_name);
       return textContent(JSON.stringify(result, null, 2));
     },
   ));
@@ -229,7 +233,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     {
       action: z.enum(['check', 'mark_fresh', 'check_all', 'list_stale']).describe('Action to perform'),
       entity_name: z.string().max(2000).optional().describe('Entity name (for "check" and "mark_fresh")'),
-      project_name: z.string().max(2000).optional().describe('Project name (for "check_all")'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names; required for "check_all"'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
@@ -237,12 +241,12 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       switch (args.action) {
         case 'check': {
           if (!args.entity_name) throw new Error('entity_name required for "check"');
-          const result = await driftDetector.checkFreshness(args.entity_name);
+          const result = await driftDetector.checkFreshness(args.entity_name, args.project_name);
           return textContent(JSON.stringify(result, null, 2));
         }
         case 'mark_fresh': {
           if (!args.entity_name) throw new Error('entity_name required for "mark_fresh"');
-          const count = await driftDetector.markFresh(args.entity_name);
+          const count = await driftDetector.markFresh(args.entity_name, args.project_name);
           return textContent(JSON.stringify({ entity: args.entity_name, files_hashed: count }));
         }
         case 'check_all': {
@@ -273,15 +277,16 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       include_children: z.boolean().optional().default(false)
         .describe('Include direct children of this entity in the context'),
       as_of: z.string().optional().describe('ISO timestamp — only traverse relationships active at this time (default: current)'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!archContextBuilder) throw new Error('Arch services not initialised');
-      let md = await archContextBuilder.renderMarkdown(args.entity_name, args.max_tokens, args.as_of);
+      let md = await archContextBuilder.renderMarkdown(args.entity_name, args.max_tokens, args.as_of, args.project_name);
 
       // Append children section if requested
       if (args.include_children && archEntityStore) {
-        const children = await archEntityStore.getChildren(args.entity_name);
+        const children = await archEntityStore.getChildren(args.entity_name, args.project_name);
         if (children.length > 0) {
           md += '\n## Children\n\n';
           for (const c of children) {

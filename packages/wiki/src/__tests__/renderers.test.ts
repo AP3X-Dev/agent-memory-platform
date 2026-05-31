@@ -196,6 +196,65 @@ describe('renderProjectIndex', () => {
     expect(result).toContain('A test project');
     expect(result).toContain('Widget');
   });
+
+  it('links to the generated _graph page', () => {
+    const project: ProjectData = {
+      entity: {
+        id: 'ent-proj',
+        name: 'test-project',
+        type: 'project',
+        slug: 'test-project',
+        description: 'A test project',
+        created_at: '2026-01-01',
+      },
+      entities: [],
+      substantive_entities: [],
+      sparse_entities: [],
+      episodics: [],
+      semantics: [],
+    };
+
+    const result = renderProjectIndex(project);
+
+    expect(result).toContain('[[projects/test-project/_graph|Knowledge Graph]]');
+    expect(result).not.toContain('[[projects/test-project/graph|Knowledge Graph]]');
+  });
+
+  it('surfaces high-confidence project decisions before entity lists', () => {
+    const project: ProjectData = {
+      entity: {
+        id: 'ent-proj',
+        name: 'test-project',
+        type: 'project',
+        slug: 'test-project',
+        description: 'A test project',
+        created_at: '2026-01-01',
+      },
+      entities: [
+        { id: 'e1', name: 'Widget', type: 'component', slug: 'widget', created_at: '2026-01-01' },
+      ],
+      substantive_entities: [
+        { id: 'e1', name: 'Widget', type: 'component', slug: 'widget', created_at: '2026-01-01' },
+      ],
+      sparse_entities: [],
+      episodics: [],
+      semantics: [
+        {
+          id: 'sem-1',
+          content: 'Use the event stream as the source of truth',
+          confidence: 0.92,
+          tags: ['project:test-project', 'architecture'],
+          entities: ['Widget'],
+        },
+      ],
+    };
+
+    const result = renderProjectIndex(project);
+
+    expect(result).toContain('## Key Decisions');
+    expect(result).toContain('Use the event stream as the source of truth');
+    expect(result.indexOf('## Key Decisions')).toBeLessThan(result.indexOf('## Components'));
+  });
 });
 
 // Decisions page
@@ -423,6 +482,29 @@ describe('renderTopicPage', () => {
     expect(result).toContain('## Related Topics');
     expect(result).toContain('design-patterns');
   });
+
+  it('links related topic entities to project-scoped pages', () => {
+    const topic: TopicData = {
+      tag: 'architecture',
+      slug: 'architecture',
+      semantics: [
+        { content: 'Use ECS', confidence: 0.9, project: 'mars-fps', entities: ['ECS'] },
+        { content: 'Use MVC', confidence: 0.7, project: 'web-app', entities: ['Controller'] },
+      ],
+      episodics: [],
+      projects: ['mars-fps', 'web-app'],
+      related_tags: [],
+      related_entities: ['ECS', 'Controller'],
+    };
+
+    const result = renderTopicPage(topic);
+    const relatedSection = result.slice(result.indexOf('## Related Entities'));
+
+    expect(relatedSection).toContain('- [[projects/mars-fps/ecs|ECS]]');
+    expect(relatedSection).toContain('- [[projects/web-app/controller|Controller]]');
+    expect(relatedSection).not.toContain('[[ecs|ECS]]');
+    expect(relatedSection).not.toContain('[[controller|Controller]]');
+  });
 });
 
 // Library index
@@ -489,6 +571,37 @@ describe('renderLibraryPage', () => {
     expect(result).toContain('RESTful APIs should be versioned');
     expect(result).toContain('0.80');
     expect(result).toContain('## Related Entities');
+  });
+
+  it('links source claims and related entities to project-scoped pages', () => {
+    const page: LibraryPage = {
+      source: {
+        id: 'src-1',
+        title: 'API Design Guide',
+        source_type: 'article',
+        path: '/docs/api.md',
+        project_tag: 'project:api',
+        created_at: '2026-03-15T00:00:00Z',
+      },
+      claims: [
+        {
+          content: 'RESTful APIs should be versioned',
+          confidence: 0.8,
+          amp_id: 'sem-c1',
+          source_refs: ['src-1'],
+          entity_refs: ['API', 'Versioning'],
+        },
+      ],
+      entity_links: ['API', 'Versioning'],
+    };
+
+    const result = renderLibraryPage(page);
+
+    expect(result).toContain('-> [[projects/api/api|API]], [[projects/api/versioning|Versioning]]');
+    expect(result).toContain('- [[projects/api/api|API]]');
+    expect(result).toContain('- [[projects/api/versioning|Versioning]]');
+    expect(result).not.toContain('[[api|API]]');
+    expect(result).not.toContain('[[versioning|Versioning]]');
   });
 });
 

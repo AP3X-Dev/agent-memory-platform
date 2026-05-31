@@ -27,4 +27,13 @@ describe('cli.ts regression', () => {
     const importsExecSync = /import\s*\{[^}]*\bexecSync\b[^}]*\}\s*from\s*['"]child_process['"]/;
     expect(CLI_SOURCE).not.toMatch(importsExecSync);
   });
+
+  it('snapshot commit force-adds the requested path so ignored .amp exports can be committed', () => {
+    expect(CLI_SOURCE).toContain("execFileSync('git', ['add', '-f', snapshotPath]");
+  });
+
+  it('snapshot commit only checks and commits the requested snapshot path', () => {
+    expect(CLI_SOURCE).toContain("execFileSync('git', ['diff', '--cached', '--quiet', '--', snapshotPath]");
+    expect(CLI_SOURCE).toContain("execFileSync('git', ['commit', '-m', message, '--', snapshotPath]");
+  });
 });

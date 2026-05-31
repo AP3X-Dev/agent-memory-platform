@@ -151,6 +151,40 @@ describe('ConsolidationEngine.run', () => {
     expect(result.applied).toHaveLength(0);
   });
 
+  it('RAISES confidence on reinforcement signals (not decay)', async () => {
+    // Reinforcement is evidence the knowledge held true — confidence must go UP, never
+    // down. (Regression: this branch previously called buildDecayProposal, lowering
+    // confidence by 5% on every confirmation.)
+    const node = makeSemanticNode('sem-reinforced'); // confidence 0.8
+    const signals: StreamSignal[] = [
+      makeStreamSignal('sem-reinforced', 'reinforcement'),
+      makeStreamSignal('sem-reinforced', 'reinforcement'),
+      makeStreamSignal('sem-reinforced', 'reinforcement'),
+      makeStreamSignal('sem-reinforced', 'reinforcement'),
+    ];
+
+    const redis = makeRedis({
+      signals: { consume: vi.fn().mockResolvedValue(signals) },
+    });
+    const neo4j = makeNeo4j({
+      semantic: {
+        getById: vi.fn().mockResolvedValue(node),
+        updateConfidence: vi.fn().mockResolvedValue(undefined),
+        supersede: vi.fn().mockResolvedValue('new-id'),
+      },
+    });
+
+    const engine = new ConsolidationEngine(redis, neo4j, makeConfig(false));
+    const result = await engine.run('reinforce-scope');
+
+    const proposal = result.proposals.find((p) => p.affected_ids.includes('sem-reinforced'));
+    expect(proposal).toBeDefined();
+    expect(proposal?.type).toBe('reinforce');
+    const afterConfidence = (proposal?.after as { confidence?: number }).confidence;
+    expect(afterConfidence).toBeGreaterThan(node.confidence); // raised, not decayed
+    expect(afterConfidence).toBeLessThanOrEqual(1); // bounded
+  });
+
   it('auto-applies proposals when autoApply is true', async () => {
     const node = makeSemanticNode('sem-auto');
 

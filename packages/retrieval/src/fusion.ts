@@ -3,7 +3,7 @@
 // Enhanced with dynamic k scaling, normalization, and MMR diversification.
 
 import type { RetrievalResult, BoostFactors } from './types.js';
-import { scaleRrfK, normalizeScores, mmrDiversify } from './scoring.js';
+import { scaleRrfK, normalizeScores, mmrDiversify, provenanceQualityMultiplier } from './scoring.js';
 
 /**
  * Reciprocal Rank Fusion across N ranked lists.
@@ -61,6 +61,13 @@ export function rrfFusion(
         entry.rrfScore *= (1 + sourceBoost);
       }
     }
+  }
+
+  // Apply bounded provenance quality before normalization/MMR. This keeps the
+  // rank-fusion shape intact while demoting invalidated/superseded memories and
+  // lightly favoring high-confidence, source-backed results.
+  for (const entry of scores.values()) {
+    entry.rrfScore *= provenanceQualityMultiplier(entry.result);
   }
 
   // Sort by score

@@ -41,16 +41,20 @@ const GRAPH_PATTERNS: RegExp[] = [
 ];
 
 const SEMANTIC_PATTERNS: RegExp[] = [
-  /\bhow does\b/i,
+  // Interrogative forms — cover the full auxiliary-verb range, not just "how does".
+  // Agents phrase the same question many ways ("how does X work", "how are X handled",
+  // "why do we use X", "what is the strategy"); all are narrative/semantic intents.
+  /\bhow (do(es)?|did|is|are|can|should|would|to)\b/i,
+  /\bwhy (do(es)?|did|is|are|was|were|should)\b/i,
+  /\bwhat (is|are|does|do)\b/i,
   /\bexplain\b/i,
   /\bdescribe\b/i,
-  /\bwhy is\b/i,
-  /\bwhy does\b/i,
   /\bwhat is the purpose\b/i,
-  /\bwhat does\b.*\bdo\b/i,
   /\barchitecture\b/i,
   /\bdesign\b.*\bdecision\b/i,
   /\boverview\b/i,
+  /\bstrategy\b/i,
+  /\bapproach\b/i,
 ];
 
 const IDENTIFIER_PATTERNS: RegExp[] = [

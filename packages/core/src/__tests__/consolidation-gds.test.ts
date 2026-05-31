@@ -350,8 +350,8 @@ describe('Correction signal clustering', () => {
 
     // A has corrections -> supersede
     expect(proposalA.type).toBe('supersede');
-    // B has only reinforcements -> decay (no corrections/contradictions)
-    expect(proposalB.type).toBe('decay');
+    // B has only reinforcements -> reinforce (raises confidence; no corrections/contradictions)
+    expect(proposalB.type).toBe('reinforce');
   });
 
   it('returns empty for entity with no corrections', async () => {
@@ -596,7 +596,8 @@ describe('PageRank-based importance scoring', () => {
 
     // Signal alone (1.0) would not meet threshold, but queue boost (5) pushes it to 6.0
     expect(result.proposals).toHaveLength(1);
-    expect(result.proposals[0]!.type).toBe('decay');
+    // A reinforcement signal (no corrections/contradictions) raises confidence.
+    expect(result.proposals[0]!.type).toBe('reinforce');
     expect(result.proposals[0]!.affected_ids).toContain('sem-boosted');
   });
 

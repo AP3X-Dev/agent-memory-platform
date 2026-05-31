@@ -171,6 +171,7 @@ export class MemoryBlockService {
       throw new Error(`Block "${name}" is tier "${block.tier}", expected "${fromTier}"`);
     }
 
+    const originalSessionId = block.session_id;
     const updated: MemoryBlock = {
       ...block,
       tier: toTier,
@@ -188,6 +189,16 @@ export class MemoryBlockService {
     // If promoting to core, persist to Neo4j
     if (toTier === 'core') {
       await this.neo4jBlocks.save(updated);
+      // Stripping session_id changes the Redis key, so the old session-scoped entry would
+      // linger as a stale duplicate (read/list would surface the pre-promotion block).
+      // Delete it under its original key.
+      if (originalSessionId) {
+        try {
+          await this.redisBlocks.delete(scope, name, originalSessionId);
+        } catch (err) {
+          console.warn('[MemoryBlockService] Failed to remove pre-promotion block copy:', err);
+        }
+      }
     }
 
     await this._invalidateContext(scope);

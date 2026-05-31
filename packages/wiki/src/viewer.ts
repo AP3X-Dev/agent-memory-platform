@@ -30,6 +30,57 @@ function resolveWikilinks(text: string): string {
   );
 }
 
+function wikilinkDisplayText(text: string): string {
+  return text.replace(
+    /\[\[([^\]|\n]+?)(?:\|([^\]\n]+?))?\]\]/g,
+    (_match, target: string, display?: string) => display?.trim() ?? target.trim().split('/').pop() ?? target.trim(),
+  );
+}
+
+function stripHtmlTags(text: string): string {
+  return text.replace(/<[^>]*>/g, '');
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#39;/g, "'");
+}
+
+function headingTextFromMarkdown(text: string): string {
+  return wikilinkDisplayText(text)
+    .replace(/[`*_~]/g, '')
+    .trim();
+}
+
+function headingAnchorBase(text: string): string {
+  return decodeHtmlEntities(text)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'section';
+}
+
+function uniqueHeadingAnchor(text: string, seen: Map<string, number>): string {
+  const base = headingAnchorBase(text);
+  const count = seen.get(base) ?? 0;
+  seen.set(base, count + 1);
+  return count === 0 ? base : `${base}-${count + 1}`;
+}
+
+function addHeadingIds(html: string): string {
+  const seen = new Map<string, number>();
+  return html.replace(/<h([2-6])([^>]*)>([\s\S]*?)<\/h\1>/g, (match, level: string, attrs: string, inner: string) => {
+    if (/\sid\s*=/.test(attrs)) return match;
+    const text = decodeHtmlEntities(stripHtmlTags(inner)).trim();
+    const anchor = uniqueHeadingAnchor(text, seen);
+    return `<h${level}${attrs} id="${escapeHtml(anchor)}">${inner}</h${level}>`;
+  });
+}
+
 export async function renderMarkdown(content: string): Promise<string> {
   // Resolve wikilinks first: marked v15's pipe-table tokenizer treats `|` as a
   // column separator, which split [[link|display]] across cells. Resolving
@@ -37,7 +88,7 @@ export async function renderMarkdown(content: string): Promise<string> {
   // Sanitize the final HTML to scrub any XSS vectors from the source content.
   const withLinks = resolveWikilinks(content);
   const html = await marked.parse(withLinks);
-  return sanitizeHtml(html);
+  return sanitizeHtml(addHeadingIds(html));
 }
 
 // ─── HTML templates ─────────────────────────────────────────────────────────
@@ -838,6 +889,34 @@ a { color: var(--fg); text-decoration: none; }
 .content a.wikilink:hover { color: var(--fg); border-bottom-style: solid; }
 .content hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
 
+.content .project-context {
+  background: var(--surface); border: 1px solid var(--border);
+  padding: 12px; margin: 0 0 20px;
+}
+.content .project-context .crumb { margin-bottom: 10px; }
+.content .project-tools {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+}
+.content .project-tools > a,
+.content .project-tools button {
+  border: 1px solid var(--border-line); color: var(--fg-muted);
+  background: transparent; padding: 6px 10px; font-family: inherit;
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+  cursor: pointer;
+}
+.content .project-tools > a:hover,
+.content .project-tools button:hover {
+  color: var(--accent); border-color: var(--accent);
+}
+.content .project-search {
+  display: flex; align-items: center; gap: 8px; margin-left: auto; min-width: min(100%, 340px);
+}
+.content .project-search input[type="text"] {
+  width: 100%; min-width: 160px; background: var(--bg);
+  border: 1px solid var(--border-line); color: var(--fg);
+  padding: 6px 8px; font-family: inherit; font-size: 11px;
+}
+
 /* MAIN LAYOUT FOR MARKDOWN PAGES (with sidebar) */
 .main-with-sidebar { display: grid; grid-template-columns: 240px 1fr; min-height: calc(100vh - 52px - 80px); }
 .main-with-sidebar aside.sidebar {
@@ -875,6 +954,17 @@ a { color: var(--fg); text-decoration: none; }
   font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase;
 }
 .search-page .input .hits { font-family: var(--display); font-size: 14px; color: var(--fg-faint); }
+.search-page .search-filter {
+  display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
+}
+.search-page .filter-pill,
+.search-page .clear-filter {
+  border: 1px solid var(--border-line); padding: 5px 9px;
+  font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+}
+.search-page .filter-pill { color: var(--accent); }
+.search-page .clear-filter { color: var(--fg-muted); }
+.search-page .clear-filter:hover { color: var(--accent); border-color: var(--accent); }
 .search-page .results .result {
   padding: 14px 24px; border-bottom: 1px solid var(--border-faint);
   display: block; color: var(--fg); cursor: pointer;
@@ -948,6 +1038,9 @@ interface SearchEntry {
   /** Pre-lowercased content for search — avoids per-query allocation. */
   contentLower: string;
   title: string;
+  titleLower: string;
+  pathLower: string;
+  projectSlug: string | null;
 }
 
 interface WikiCache {
@@ -965,6 +1058,33 @@ let cacheRebuildTimer: ReturnType<typeof setTimeout> | null = null;
 
 const DEBOUNCE_MS = 500;
 
+function extractProjectSlug(wikiPath: string): string | null {
+  return wikiPath.match(/^projects\/([^/]+)\//)?.[1] ?? null;
+}
+
+function labelFromSlug(slug: string): string {
+  return slug
+    .split('-')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function tokenizeSearchQuery(query: string): string[] {
+  const seen = new Set<string>();
+  const terms: string[] = [];
+  for (const term of query.toLowerCase().match(/[a-z0-9]+/g) ?? []) {
+    if (seen.has(term)) continue;
+    seen.add(term);
+    terms.push(term);
+  }
+  return terms;
+}
+
+function escapeRegExp(text: string): string {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** Build (or rebuild) sidebar HTML and search index from disk. */
 async function buildCache(wikiDir: string): Promise<WikiCache> {
   const files = await discoverMarkdownFiles(wikiDir);
@@ -980,7 +1100,16 @@ async function buildCache(wikiDir: string): Promise<WikiCache> {
       const wikiPath = file.relPath.replace(/\.md$/, '');
       const titleMatch = content.match(/^# (.+)$/m);
       const title = titleMatch ? titleMatch[1] : wikiPath.split('/').pop() ?? wikiPath;
-      searchIndex.set(wikiPath, { absPath: file.absPath, relPath: file.relPath, content, contentLower: content.toLowerCase(), title });
+      searchIndex.set(wikiPath, {
+        absPath: file.absPath,
+        relPath: file.relPath,
+        content,
+        contentLower: content.toLowerCase(),
+        title,
+        titleLower: title.toLowerCase(),
+        pathLower: wikiPath.toLowerCase(),
+        projectSlug: extractProjectSlug(wikiPath),
+      });
     } catch (err) {
       console.error('[wiki-viewer] Failed to read file for search index (skipping):', file.absPath, err instanceof Error ? err.message : err);
     }
@@ -1104,6 +1233,39 @@ async function getCachedSidebar(wikiDir: string): Promise<string> {
   return cache.sidebarHtml;
 }
 
+async function getProjectLabel(wikiDir: string, projectSlug: string): Promise<string> {
+  const cache = await getCache(wikiDir);
+  return cache.searchIndex.get(`projects/${projectSlug}/_index`)?.title ?? labelFromSlug(projectSlug);
+}
+
+function buildProjectContext(slugPath: string, title: string, projectLabel: string): string {
+  const match = slugPath.match(/^projects\/([^/]+)(?:\/(.+))?$/);
+  if (!match) return '';
+
+  const projectSlug = match[1];
+  const childPath = match[2] ?? '_index';
+  const projectHref = `/wiki/projects/${projectSlug}/_index`;
+  const graphHref = `/wiki/projects/${projectSlug}/_graph`;
+  const isProjectIndex = childPath === '_index';
+  const currentLabel = childPath === '_graph' ? 'Knowledge Graph' : title;
+  const crumbTail = isProjectIndex
+    ? `<span class="here">${escapeHtml(projectLabel)}</span>`
+    : `<a href="${escapeHtml(projectHref)}">${escapeHtml(projectLabel)}</a> / <span class="here">${escapeHtml(currentLabel)}</span>`;
+
+  return `<div class="project-context">
+    <div class="crumb"><a href="/wiki/_index">PORTAL</a> / ${crumbTail}</div>
+    <div class="project-tools">
+      <a href="${escapeHtml(projectHref)}">PROJECT HOME</a>
+      <a href="${escapeHtml(graphHref)}">GRAPH</a>
+      <form method="GET" action="/search" class="project-search">
+        <input type="hidden" name="project" value="${escapeHtml(projectSlug)}">
+        <input type="text" name="q" placeholder="Search ${escapeHtml(projectLabel)}">
+        <button type="submit">SEARCH</button>
+      </form>
+    </div>
+  </div>`;
+}
+
 // ─── Page-level sidebar (frontmatter + TOC) ─────────────────────────────────
 
 function buildPageSidebar(content: string): string {
@@ -1133,11 +1295,12 @@ function buildPageSidebar(content: string): string {
   // Extract TOC from h2 headings
   const headings = content.match(/^## .+$/gm);
   if (headings && headings.length > 0) {
+    const seen = new Map<string, number>();
     lines.push('<h3>Sections</h3>');
     lines.push('<ul>');
     for (const h of headings) {
-      const text = h.replace(/^## /, '');
-      const anchor = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      const text = headingTextFromMarkdown(h.replace(/^## /, ''));
+      const anchor = uniqueHeadingAnchor(text, seen);
       lines.push(`<li><a href="#${anchor}">${escapeHtml(text)}</a></li>`);
     }
     lines.push('</ul>');
@@ -1256,6 +1419,10 @@ async function handleWikiPage(wikiDir: string, slugPath: string, res: ServerResp
   // Extract title from first h1
   const titleMatch = bodyContent.match(/^# (.+)$/m);
   const title = titleMatch ? titleMatch[1] : slugPath.split('/').pop() ?? 'Wiki';
+  const projectSlug = extractProjectSlug(slugPath);
+  const projectContext = projectSlug
+    ? buildProjectContext(slugPath, title, await getProjectLabel(wikiDir, projectSlug))
+    : '';
 
   // Build frontmatter tag bar
   const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
@@ -1270,34 +1437,64 @@ async function handleWikiPage(wikiDir: string, slugPath: string, res: ServerResp
   }
 
   res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(htmlPage(title, fmBar + html, fullSidebar, { activeNav }));
+  res.end(htmlPage(title, projectContext + fmBar + html, fullSidebar, { activeNav }));
 }
 
-async function handleSearch(wikiDir: string, query: string, res: ServerResponse): Promise<void> {
-  const cache = query ? await getCache(wikiDir) : null;
+async function handleSearch(wikiDir: string, query: string, projectFilter: string | null, res: ServerResponse): Promise<void> {
+  const cache = (query || projectFilter) ? await getCache(wikiDir) : null;
   const queryLower = query.toLowerCase();
-  const results: Array<{ wikiPath: string; title: string; snippet: string }> = [];
+  const queryTerms = tokenizeSearchQuery(query);
+  const normalizedProject = projectFilter?.trim().toLowerCase() || null;
+  const projectLabel = normalizedProject
+    ? cache?.searchIndex.get(`projects/${normalizedProject}/_index`)?.title ?? labelFromSlug(normalizedProject)
+    : null;
+  const results: Array<{ wikiPath: string; title: string; snippet: string; score: number }> = [];
 
   if (cache && query) {
     for (const [wikiPath, entry] of cache.searchIndex) {
-      const idx = entry.contentLower.indexOf(queryLower);
+      if (normalizedProject && entry.projectSlug !== normalizedProject) continue;
+      const exactIdx = entry.contentLower.indexOf(queryLower);
+      const termIndexes = queryTerms.map((term) => entry.contentLower.indexOf(term));
+      const allTermsMatch = queryTerms.length > 1 && termIndexes.every((idx) => idx !== -1);
+      const idx = exactIdx !== -1 ? exactIdx : allTermsMatch ? Math.min(...termIndexes) : -1;
       if (idx !== -1) {
         const start = Math.max(0, idx - 80);
-        const end = Math.min(entry.content.length, idx + query.length + 80);
+        const matchedLength = exactIdx !== -1
+          ? query.length
+          : Math.max(...queryTerms.map((term) => term.length));
+        const end = Math.min(entry.content.length, idx + matchedLength + 80);
         const snippet = entry.content.slice(start, end).replace(/\n/g, ' ').trim();
-        results.push({ wikiPath, title: entry.title, snippet });
+        let score = Math.max(0, 100 - Math.floor(idx / 20));
+        if (exactIdx !== -1) score += 150;
+        if (entry.titleLower === queryLower) score += 1000;
+        else if (entry.titleLower.startsWith(queryLower)) score += 750;
+        else if (entry.titleLower.includes(queryLower)) score += 500;
+        const titleTermHits = queryTerms.filter((term) => entry.titleLower.includes(term)).length;
+        score += titleTermHits * 80;
+        if (entry.pathLower.includes(queryLower.replace(/\s+/g, '-'))) score += 200;
+        const pathTermHits = queryTerms.filter((term) => entry.pathLower.includes(term)).length;
+        score += pathTermHits * 40;
+        if (wikiPath.endsWith('/_index')) score += 50;
+        if (wikiPath === '_index') score -= 100;
+        results.push({ wikiPath, title: entry.title, snippet, score });
       }
     }
+    results.sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
   }
 
-  function highlightSnippet(snippet: string, q: string): string {
+  function highlightSnippet(snippet: string, q: string, terms: string[]): string {
     if (!q) return escapeHtml(snippet);
     const lower = snippet.toLowerCase();
     const i = lower.indexOf(q.toLowerCase());
-    if (i === -1) return escapeHtml(snippet);
-    return escapeHtml(snippet.slice(0, i)) +
-      `<mark>${escapeHtml(snippet.slice(i, i + q.length))}</mark>` +
-      escapeHtml(snippet.slice(i + q.length));
+    if (i !== -1) {
+      return escapeHtml(snippet.slice(0, i)) +
+        `<mark>${escapeHtml(snippet.slice(i, i + q.length))}</mark>` +
+        escapeHtml(snippet.slice(i + q.length));
+    }
+    const escaped = escapeHtml(snippet);
+    if (terms.length === 0) return escaped;
+    const re = new RegExp(`\\b(${terms.map(escapeRegExp).join('|')})\\b`, 'gi');
+    return escaped.replace(re, '<mark>$1</mark>');
   }
 
   const resultsHtml = results.length === 0
@@ -1305,18 +1502,28 @@ async function handleSearch(wikiDir: string, query: string, res: ServerResponse)
     : results.map((r) =>
         `<a class="result" href="/wiki/${escapeHtml(r.wikiPath)}">
            <div class="title">${escapeHtml(r.title)}</div>
-           <div class="snippet">${highlightSnippet(r.snippet, query)}</div>
+           <div class="snippet">${highlightSnippet(r.snippet, query, queryTerms)}</div>
          </a>`,
       ).join('');
 
+  const clearSearchHref = query ? `/search?q=${encodeURIComponent(query)}` : '/search';
+  const searchCrumb = normalizedProject && projectLabel
+    ? `<div class="crumb"><a href="/wiki/_index">PORTAL</a> / <a href="/wiki/projects/${escapeHtml(normalizedProject)}/_index">${escapeHtml(projectLabel)}</a> / <span class="here">SEARCH</span></div>`
+    : '<div class="crumb"><a href="/wiki/_index">PORTAL</a> / <span class="here">SEARCH</span></div>';
+  const filterHtml = normalizedProject && projectLabel
+    ? `<div class="search-filter"><span class="filter-pill">PROJECT: ${escapeHtml(projectLabel)}</span><a class="clear-filter" href="${escapeHtml(clearSearchHref)}">CLEAR</a></div>`
+    : '';
+
   const body = `
     <div class="search-page">
-      <div class="crumb"><a href="/wiki/_index">PORTAL</a> / <span class="here">SEARCH</span></div>
+      ${searchCrumb}
       <form method="GET" action="/search" class="input">
         <span class="q">?</span>
         <input type="text" name="q" placeholder="search the graph…" value="${escapeHtml(query)}" autofocus>
+        ${normalizedProject ? `<input type="hidden" name="project" value="${escapeHtml(normalizedProject)}">` : ''}
         <span class="hits">${results.length} HITS</span>
       </form>
+      ${filterHtml}
       <div class="results">${resultsHtml}</div>
     </div>`;
   res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -1370,7 +1577,8 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
         await handleWikiPage(wiki_dir, slugPath, res);
       } else if (path === '/search') {
         const query = url.searchParams.get('q') ?? '';
-        await handleSearch(wiki_dir, query, res);
+        const projectFilter = url.searchParams.get('project');
+        await handleSearch(wiki_dir, query, projectFilter, res);
       } else if (path.startsWith('/api/graph/')) {
         const jsonPath = decodeURIComponent(path.slice('/api/graph/'.length));
         const filePath = confineToDir(wiki_dir, jsonPath);

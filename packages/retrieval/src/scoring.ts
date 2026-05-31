@@ -3,13 +3,18 @@
 // adaptive weights, MMR diversification.
 // Ported from Context-Engine scripts/hybrid/ranking.py
 
-import type { RetrievalResult, QueryStats, AdaptiveWeights } from './types.js';
+import type { RetrievalResult, QueryStats, AdaptiveWeights, SourceType } from './types.js';
 
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const LARGE_COLLECTION_THRESHOLD = 10_000;
 const MAX_RRF_K_SCALE = 3.0;
 const LEXICAL_TEXT_SAT = 12.0; // tanh saturation
+// MMR redundancy similarity for two DISTINCT symbols in the same file. A hard 1.0
+// (max penalty) evicts legitimately-relevant sibling symbols — extremely common in
+// code memory (e.g. authorizeCharge/captureCharge/voidCharge in charge.ts). Same file
+// is a redundancy *signal*, not proof, so penalize but let strong relevance override.
+const SAME_FILE_MMR_SIM = 0.55;
 
 // ─── Dynamic RRF K ───────────────────────────────────────────────────────────
 
@@ -34,19 +39,33 @@ export function lexicalTextScore(
   metadata: { name?: string; file_path?: string; signature?: string; content?: string },
 ): number {
   let score = 0;
-  const name = (metadata.name ?? '').toLowerCase();
+  // Strip a trailing " (kind)" decoration so the exact-name signal actually fires —
+  // callers pass titles like "validateToken (function)", which previously never
+  // matched the (highest-weight) exact branch and collapsed to a substring nudge.
+  const rawNameOrig = stripKindSuffix(metadata.name ?? '');
+  const rawName = rawNameOrig.toLowerCase();
+  const nameWordSet = new Set(identifierWords(rawNameOrig));
   const filePath = (metadata.file_path ?? '').toLowerCase();
   const pathParts = filePath.split('/');
   const fileName = pathParts[pathParts.length - 1] ?? '';
   const signature = (metadata.signature ?? '').toLowerCase();
   const content = (metadata.content ?? '').toLowerCase().slice(0, 2000);
 
+  let nameWordHits = 0;
+
   for (const token of queryTokens) {
     const t = token.toLowerCase();
 
-    // Exact symbol name match (highest weight)
-    if (name === t || name.includes(t)) {
-      score += 2.0;
+    // Name matching — exact identifier signals weigh far more than substring noise.
+    // An identifier lookup ("validateToken") must rank the exact symbol decisively
+    // above docs that merely mention one of its words.
+    if (rawName && rawName === t) {
+      score += 3.0; // whole symbol name equals this token
+    } else if (nameWordSet.has(t)) {
+      score += 2.0; // exact word within a camelCase/snake_case identifier
+      nameWordHits++;
+    } else if (t.length >= 3 && rawName.includes(t)) {
+      score += 0.6; // weak substring — a typed prefix/fragment
     }
 
     // Path segment match
@@ -69,8 +88,34 @@ export function lexicalTextScore(
     }
   }
 
+  // Full-identifier reconstruction: the query covers every word of a multi-word
+  // identifier (e.g. ["validate","token"] → validateToken). Strongest lexical signal.
+  if (nameWordSet.size >= 2 && nameWordHits === nameWordSet.size) {
+    score += 2.0;
+  }
+
   // Normalize via tanh saturation: bounded in [0, 1]
   return Math.tanh(score / LEXICAL_TEXT_SAT);
+}
+
+/** Strip a trailing " (kind)" decoration, e.g. "AuthService (class)" → "AuthService". */
+function stripKindSuffix(name: string): string {
+  return name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+}
+
+/** Split an identifier into lowercase word parts on camelCase/snake/non-alnum bounds. */
+function identifierWords(s: string): string[] {
+  const out: string[] = [];
+  for (const part of s.split(/[^A-Za-z0-9]+/)) {
+    const matches = part.match(/[A-Z]?[a-z]+|[A-Z]+(?![a-z])|\d+/g);
+    if (matches) {
+      for (const w of matches) {
+        const lw = w.toLowerCase();
+        if (lw.length > 1) out.push(lw);
+      }
+    }
+  }
+  return out;
 }
 
 // ─── Score Normalization ─────────────────────────────────────────────────────
@@ -96,6 +141,54 @@ export function normalizeScores(results: RetrievalResult[], collectionSize: numb
   });
 }
 
+// ─── Provenance Quality ──────────────────────────────────────────────────────
+
+/**
+ * Bounded ranking multiplier derived from provenance metadata.
+ *
+ * Results with no provenance metadata stay neutral. Current, high-confidence
+ * results backed by multiple source episodes receive a small boost; invalidated
+ * or superseded results are strongly demoted but not removed.
+ */
+export function provenanceQualityMultiplier(result: RetrievalResult): number {
+  const metadata = result.metadata ?? {};
+  let hasSignal = false;
+  let multiplier = 1;
+
+  const confidence = finiteNumber(metadata['confidence']);
+  if (confidence !== undefined) {
+    hasSignal = true;
+    multiplier += (clamp(confidence, 0, 1) - 0.5) * 0.2;
+  }
+
+  const sourceCount = Array.isArray(metadata['source_episode_ids'])
+    ? metadata['source_episode_ids'].filter(Boolean).length
+    : 0;
+  if (sourceCount > 0) {
+    hasSignal = true;
+    multiplier += Math.min(sourceCount, 5) * 0.03;
+  }
+
+  const signalCount = finiteNumber(metadata['signal_count']);
+  if (signalCount !== undefined && signalCount > 0) {
+    hasSignal = true;
+    multiplier += Math.min(signalCount, 10) * 0.01;
+  }
+
+  let invalidated = false;
+  if (metadata['invalidated_at'] || metadata['superseded_by']) {
+    hasSignal = true;
+    multiplier *= 0.15;
+    invalidated = true;
+  }
+
+  // Invalidated/superseded memories may fall BELOW the normal low-confidence floor — a
+  // stale fact should rank far beneath even a weak active one, so it drops out of the
+  // top context entirely rather than merely being demoted within it (stale-leak control).
+  const floor = invalidated ? 0.05 : 0.25;
+  return hasSignal ? clamp(multiplier, floor, 1.3) : 1;
+}
+
 // ─── Adaptive Weights ────────────────────────────────────────────────────────
 
 /**
@@ -118,6 +211,29 @@ export function computeQueryStats(query: string): QueryStats {
     narrativeHint,
     graphHint,
   };
+}
+
+// ─── Source-type intent ──────────────────────────────────────────────────────
+
+// Explicit code-type words signal the user wants code symbols, not prose. A query
+// like "payment charge functions" or "find the AuthService class" should favor Symbol
+// results over high-confidence semantic memories that merely mention the topic.
+const SYMBOL_TYPE_HINTS = new Set([
+  'function', 'functions', 'func', 'fn', 'method', 'methods', 'class', 'classes',
+  'interface', 'interfaces', 'struct', 'enum', 'def', 'symbol', 'symbols',
+]);
+
+/**
+ * Infer a source-type preference from explicit type words in the query.
+ * Returns per-source-type multiplicative boosts (additive over 1.0) to merge into
+ * the feedback boosts already applied in rrfFusion. Empty when no strong hint.
+ */
+export function inferSourceTypeBoost(query: string): Partial<Record<SourceType, number>> {
+  const tokens = query.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  if (tokens.some((t) => SYMBOL_TYPE_HINTS.has(t))) {
+    return { symbol: 0.25 };
+  }
+  return {};
 }
 
 export function adaptiveWeights(stats: QueryStats): AdaptiveWeights {
@@ -172,6 +288,21 @@ export function mmrDiversify(
     return new Set(path.split('/').filter(Boolean));
   });
 
+  // Normalize relevance to [0,1] so it is comparable to the [0,1] similarity term.
+  // RRF scores are tiny in absolute terms (~0.01–0.04); combined raw, the diversity
+  // penalty (1-λ)·maxSim utterly dwarfs λ·relevance and MMR degenerates into pure
+  // diversity sorting that ignores relevance. Min-max scaling restores the trade-off.
+  let minScore = Infinity;
+  let maxScore = -Infinity;
+  for (let i = 0; i < maxCandidates; i++) {
+    const s = ranked[i].score;
+    if (s < minScore) minScore = s;
+    if (s > maxScore) maxScore = s;
+  }
+  const scoreRange = maxScore - minScore;
+  const relNorm = (idx: number): number =>
+    scoreRange > 1e-12 ? (ranked[idx].score - minScore) / scoreRange : 1;
+
   const selected: RetrievalResult[] = [];
   const selectedIndices: number[] = []; // Track indices explicitly for cache lookups
   const remaining = new Set(Array.from({ length: maxCandidates }, (_, i) => i));
@@ -195,14 +326,14 @@ export function mmrDiversify(
     let bestMmrScore = -Infinity;
 
     for (const idx of remaining) {
-      const relevance = ranked[idx].score;
+      const relevance = relNorm(idx);
 
-      // Max similarity to any already-selected item (with early exit on perfect match)
+      // Max similarity to any already-selected item (early exit on identical item)
       let maxSim = 0;
       for (let si = 0; si < selected.length; si++) {
         const selIdx = selectedIndices[si];
         const sim = fastSimilarity(ranked[idx], selected[si], pathPartsCache[idx], pathPartsCache[selIdx]);
-        if (sim >= 1.0) { maxSim = 1.0; break; } // Same file — max penalty, no need to check more
+        if (sim >= 1.0) { maxSim = 1.0; break; } // Identical (same name+file) — max penalty
         if (sim > maxSim) maxSim = sim;
       }
 
@@ -241,10 +372,14 @@ function fastSimilarity(
   const pathA = (a.metadata.file_path as string) ?? '';
   const pathB = (b.metadata.file_path as string) ?? '';
 
-  if (pathA && pathB && pathA === pathB) return 1.0;
-
   const nameA = (a.metadata.name as string) ?? a.title;
   const nameB = (b.metadata.name as string) ?? b.title;
+
+  // Identical symbol (same name AND file) is true redundancy — full penalty.
+  if (pathA && pathB && pathA === pathB && nameA && nameB && nameA === nameB) return 1.0;
+
+  // Distinct symbols in the same file: a redundancy signal, not a duplicate.
+  if (pathA && pathB && pathA === pathB) return SAME_FILE_MMR_SIM;
 
   if (nameA && nameB && nameA === nameB) return 0.8;
 
@@ -260,4 +395,12 @@ function fastSimilarity(
   const union = setA.size + setB.size - intersection;
 
   return union > 0 ? 0.5 * (intersection / union) : 0;
+}
+
+function finiteNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
 }

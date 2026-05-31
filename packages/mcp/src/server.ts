@@ -34,6 +34,70 @@ export interface AMPMCPServer {
   startStdio(): Promise<void>;
 }
 
+export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 5_000;
+
+export async function closeSSEHandle(
+  handle: SSEHandle,
+  timeoutMs: number = DEFAULT_SHUTDOWN_TIMEOUT_MS,
+): Promise<void> {
+  const transports = Array.from(handle.transports.values());
+
+  await settleWithin(
+    Promise.all(transports.map(async (transport) => {
+      try {
+        await transport.close();
+      } catch {
+        // Best-effort close; shutdown should continue so systemd can restart.
+      }
+    })),
+    timeoutMs,
+    'SSE transport shutdown',
+  );
+
+  handle.transports.clear();
+  handle.servers.clear();
+
+  if (!handle.httpServer.listening) return;
+
+  await settleWithin(
+    new Promise<void>((resolve) => {
+      handle.httpServer.close(() => resolve());
+    }),
+    timeoutMs,
+    'HTTP server shutdown',
+    () => {
+      handle.httpServer.closeIdleConnections?.();
+      handle.httpServer.closeAllConnections?.();
+    },
+  );
+}
+
+async function settleWithin<T>(
+  operation: Promise<T>,
+  timeoutMs: number,
+  description: string,
+  onTimeout?: () => void,
+): Promise<T | undefined> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<undefined>((resolve) => {
+    timeout = setTimeout(() => {
+      try {
+        onTimeout?.();
+      } catch {
+        // Ignore timeout cleanup failures; the caller is already degrading.
+      }
+      console.error(`[amp-mcp] Timed out during ${description} after ${timeoutMs}ms; continuing shutdown.`);
+      resolve(undefined);
+    }, timeoutMs);
+  });
+
+  try {
+    return await Promise.race([operation, timeoutPromise]);
+  } finally {
+    if (timeout) clearTimeout(timeout);
+  }
+}
+
 // ─── Factory ──────────────────────────────────────────────────────────────────
 
 /**
@@ -145,10 +209,31 @@ export function createAMPServer(): AMPMCPServer {
       res.setHeader('Access-Control-Max-Age', '86400');
     }
 
+    const startedAt = Date.now();
+
+    function statusPayload(status: 'ok' | 'ready'): Record<string, unknown> {
+      return {
+        status,
+        service: 'amp-mcp',
+        transport: 'sse',
+        active_sessions: transports.size,
+        registered_sessions: servers.size,
+        auth_required: effectiveToken !== null,
+        uptime_ms: Date.now() - startedAt,
+      };
+    }
+
+    function sendJson(res: ServerResponse, statusCode: number, body: Record<string, unknown>): void {
+      res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(body));
+    }
+
     const httpServer = createServer(
       async (req: IncomingMessage, res: ServerResponse) => {
         try {
           const url = req.url ?? '/';
+          const requestUrl = new URL(url, 'http://localhost');
+          const pathname = requestUrl.pathname;
           const origin = req.headers['origin'] as string | undefined;
 
           // ── CORS preflight ───────────────────────────────────────────────
@@ -171,6 +256,15 @@ export function createAMPServer(): AMPMCPServer {
             return;
           }
 
+          // ── Non-streaming liveness check ─────────────────────────────────
+          // Intentionally unauthenticated: it exposes no secrets and lets local
+          // service managers verify process liveness without reading token files.
+          if (req.method === 'GET' && pathname === '/healthz') {
+            setCorsHeaders(res, origin);
+            sendJson(res, 200, statusPayload('ok'));
+            return;
+          }
+
           // ── Token auth (required by default) ──────────────────────────────
           if (!isAuthorized(req)) {
             res.writeHead(401);
@@ -181,7 +275,13 @@ export function createAMPServer(): AMPMCPServer {
           // Set CORS headers on every response
           setCorsHeaders(res, origin);
 
-          if (req.method === 'GET' && url === '/sse') {
+          // ── Authenticated readiness check ────────────────────────────────
+          if (req.method === 'GET' && pathname === '/readyz') {
+            sendJson(res, 200, statusPayload('ready'));
+            return;
+          }
+
+          if (req.method === 'GET' && pathname === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
             const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
             registerAllTools(perSessionServer);
@@ -199,9 +299,9 @@ export function createAMPServer(): AMPMCPServer {
             return;
           }
 
-          if (req.method === 'POST' && url.startsWith('/messages')) {
+          if (req.method === 'POST' && pathname === '/messages') {
             // Route POST message to the correct session
-            const sessionId = new URL(url, 'http://localhost').searchParams.get('sessionId');
+            const sessionId = requestUrl.searchParams.get('sessionId');
             const transport = sessionId ? transports.get(sessionId) : undefined;
 
             if (!transport) {
@@ -281,28 +381,22 @@ if (isMain) {
 
       // ── Graceful shutdown ───────────────────────────────────────────────
       let shuttingDown = false;
+      const shutdownTimeoutMs = parseInt(process.env['AMP_SHUTDOWN_TIMEOUT_MS'] ?? String(DEFAULT_SHUTDOWN_TIMEOUT_MS), 10);
 
       async function gracefulShutdown(signal: string): Promise<void> {
         if (shuttingDown) return;
         shuttingDown = true;
         console.error(`[amp-mcp] ${signal} received — shutting down gracefully`);
 
-        // 1. Stop accepting new HTTP connections
         if (sseHandle) {
-          await new Promise<void>((resolve) => {
-            sseHandle!.httpServer.close(() => resolve());
-          });
-
-          // 2. Close active SSE transports
-          for (const transport of sseHandle.transports.values()) {
-            try { await transport.close(); } catch { /* best-effort */ }
-          }
-          sseHandle.transports.clear();
-          sseHandle.servers.clear();
+          await closeSSEHandle(sseHandle, shutdownTimeoutMs);
         }
 
-        // 3. Disconnect Redis and Neo4j
-        await handles.shutdown();
+        await settleWithin(
+          handles.shutdown(),
+          shutdownTimeoutMs,
+          'Redis/Neo4j shutdown',
+        );
 
         console.error('[amp-mcp] Shutdown complete');
         process.exit(0);

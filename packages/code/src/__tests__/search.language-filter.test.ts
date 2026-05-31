@@ -40,7 +40,37 @@ function makeSymbolRecord(overrides: Partial<{
   };
 }
 
+function makeSemanticRecord(overrides: Partial<{
+  id: string;
+  content: string;
+  score: number;
+}> = {}) {
+  const props = {
+    id: overrides.id ?? `sem-${Math.random().toString(36).slice(2, 8)}`,
+    content: overrides.content ?? 'historical implementation note',
+  };
+  const score = overrides.score ?? 0.9;
+  return {
+    get: (key: string) => {
+      if (key === 's') return { properties: props };
+      if (key === 'score') return score;
+      return undefined;
+    },
+  };
+}
+
 function makeDriverWithRecords(records: ReturnType<typeof makeSymbolRecord>[]) {
+  const session = {
+    run: vi.fn(async () => ({ records })),
+    close: vi.fn(),
+  };
+  return {
+    driver: { session: vi.fn(() => session) } as any,
+    session,
+  };
+}
+
+function makeDriverWithAnyRecords(records: Array<ReturnType<typeof makeSymbolRecord> | ReturnType<typeof makeSemanticRecord>>) {
   const session = {
     run: vi.fn(async () => ({ records })),
     close: vi.fn(),
@@ -184,6 +214,142 @@ describe('vectorSearch language filter', () => {
     expect(results[0].kind).toBe('function');
   });
 
+  it('overfetches dense vector candidates when post-filters are active and caps returned matches', async () => {
+    const records = [
+      makeSymbolRecord({ id: 'sym-1', language: 'typescript' }),
+      makeSymbolRecord({ id: 'sym-2', language: 'typescript' }),
+      makeSymbolRecord({ id: 'sym-3', language: 'typescript' }),
+    ];
+
+    const { driver, session } = makeDriverWithRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    const results: CodeSearchResult[] = await (search as any).vectorSearch(
+      'some query',
+      2,
+      { language: 'typescript' },
+    );
+
+    const params = session.run.mock.calls[0][1] as { limit: { toNumber: () => number } };
+    expect(params.limit.toNumber()).toBeGreaterThan(2);
+    expect(results.map((r) => r.id)).toEqual(['sym-1', 'sym-2']);
+  });
+
+  it('applies file path filters case-insensitively to dense vector results', async () => {
+    const records = [
+      makeSymbolRecord({ id: 'sym-target', file_path: '/home/cerebro/projects/amp/packages/core/src/cli.ts' }),
+      makeSymbolRecord({ id: 'sym-other', file_path: '/home/cerebro/projects/other/packages/core/src/cli.ts' }),
+    ];
+
+    const { driver } = makeDriverWithRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    const results: CodeSearchResult[] = await (search as any).vectorSearch(
+      'snapshot cli',
+      20,
+      { file_path: 'AMP' },
+    );
+
+    expect(results.map((r) => r.id)).toEqual(['sym-target']);
+  });
+
+  it('applies language, path, and kind filters to lexical vector results', async () => {
+    const records = [
+      makeSymbolRecord({
+        id: 'sym-target',
+        language: 'typescript',
+        file_path: '/repo/src/auth/session.ts',
+        kind: 'function',
+      }),
+      makeSymbolRecord({
+        id: 'sym-wrong-language',
+        language: 'javascript',
+        file_path: '/repo/src/auth/session.js',
+        kind: 'function',
+      }),
+      makeSymbolRecord({
+        id: 'sym-wrong-path',
+        language: 'typescript',
+        file_path: '/repo/src/billing/session.ts',
+        kind: 'function',
+      }),
+      makeSymbolRecord({
+        id: 'sym-wrong-kind',
+        language: 'typescript',
+        file_path: '/repo/src/auth/AuthService.ts',
+        kind: 'class',
+      }),
+    ];
+
+    const { driver } = makeDriverWithRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    const results: CodeSearchResult[] = await (search as any).lexicalVectorSearch(
+      'session auth',
+      20,
+      { language: 'typescript', file_path: '/auth/', kind: 'function' },
+    );
+
+    expect(results.map((r) => r.id)).toEqual(['sym-target']);
+  });
+
+  it('overfetches lexical vector candidates when post-filters are active and caps returned matches', async () => {
+    const records = [
+      makeSymbolRecord({ id: 'sym-1', language: 'typescript' }),
+      makeSymbolRecord({ id: 'sym-2', language: 'typescript' }),
+      makeSymbolRecord({ id: 'sym-3', language: 'typescript' }),
+    ];
+
+    const { driver, session } = makeDriverWithRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    const results: CodeSearchResult[] = await (search as any).lexicalVectorSearch(
+      'session auth',
+      2,
+      { language: 'typescript' },
+    );
+
+    const params = session.run.mock.calls[0][1] as { limit: { toNumber: () => number } };
+    expect(params.limit.toNumber()).toBeGreaterThan(2);
+    expect(results.map((r) => r.id)).toEqual(['sym-1', 'sym-2']);
+  });
+
+  it('overfetches semantic vector candidates when an as_of cutoff is active and caps returned matches', async () => {
+    const records = [
+      makeSemanticRecord({ id: 'sem-1' }),
+      makeSemanticRecord({ id: 'sem-2' }),
+      makeSemanticRecord({ id: 'sem-3' }),
+    ];
+
+    const { driver, session } = makeDriverWithAnyRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    const results: CodeSearchResult[] = await (search as any).semanticVectorSearch(
+      'historical query',
+      2,
+      '2026-05-01T00:00:00.000Z',
+    );
+
+    const params = session.run.mock.calls[0][1] as { limit: { toNumber: () => number } };
+    expect(params.limit.toNumber()).toBeGreaterThan(2);
+    expect(results.map((r) => r.id)).toEqual(['sem-1', 'sem-2']);
+  });
+
   it('populates language field on all symbol results from fulltext search', async () => {
     // The fulltextSearch mapper should also include the language property
     const records = [
@@ -203,6 +369,22 @@ describe('vectorSearch language filter', () => {
 
     expect(results).toHaveLength(1);
     expect(results[0].language).toBe('typescript');
+  });
+
+  it('uses case-insensitive file path filtering in fulltext search', async () => {
+    const records = [
+      makeSymbolRecord({ id: 'sym-1', language: 'typescript', file_path: '/home/cerebro/projects/amp/src/a.ts' }),
+    ];
+    const { driver, session } = makeDriverWithRecords(records);
+    const embedding = makeEmbeddingProvider();
+
+    const { CodeSearch } = await import('../search.js');
+    const search = new CodeSearch(driver, embedding);
+
+    await (search as any).fulltextSearch('auth', 20, { file_path: 'AMP' });
+
+    const query = session.run.mock.calls[0][0] as string;
+    expect(query).toContain('toLower(s.file_path) CONTAINS toLower($file_path)');
   });
 });
 

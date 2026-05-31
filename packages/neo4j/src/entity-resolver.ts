@@ -35,6 +35,10 @@ export class EntityResolver {
    * @param tx - Optional transaction to run within (for atomicity with fact creation)
    */
   async resolve(text: string, type: string = 'concept', tx?: Transaction): Promise<ResolvedEntity> {
+    // Trim surrounding whitespace before resolving/creating — otherwise "auth-module" and
+    // " auth-module " resolve to different entities, the exact fragmentation this resolver
+    // exists to prevent (the exact and toLower matches are both whitespace-sensitive).
+    text = text.trim();
     // If a transaction is provided, run within it (caller manages session lifecycle).
     // Otherwise, open a session for the duration of this resolution.
     if (tx) {
@@ -54,6 +58,7 @@ export class EntityResolver {
    * Useful for queries where you don't want to create entities as a side effect.
    */
   async resolveExisting(text: string): Promise<ResolvedEntity | null> {
+    text = text.trim(); // same whitespace-insensitivity as resolve(), so lookups match
     const session = this.driver.session();
     try {
       // Staged queries with deterministic ordering (ORDER BY created_at ASC)

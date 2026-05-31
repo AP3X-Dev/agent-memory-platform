@@ -82,6 +82,30 @@ describe('EntityResolver', () => {
       const createCall = run.mock.calls[3];
       expect(createCall[1]).toEqual(expect.objectContaining({ text: 'NewThing', type: 'concept' }));
     });
+
+    it('trims surrounding whitespace so " AMP " resolves like "AMP" (no fragmentation)', async () => {
+      const { driver, run } = makeDriver([
+        { records: [mockRecord({ id: 'ent-1', name: 'AMP', aliases: [], created_at: '2026-01-01' })] },
+      ]);
+      const resolver = new EntityResolver(driver);
+
+      const result = await resolver.resolve('  AMP  ');
+      expect(result.id).toBe('ent-1');
+      expect(result.matchType).toBe('exact');
+      // the (whitespace-sensitive) exact match must be queried with the trimmed name
+      expect(run.mock.calls[0][1]).toEqual(expect.objectContaining({ text: 'AMP' }));
+    });
+
+    it('creates with a trimmed name when no match (whitespace not persisted)', async () => {
+      const { driver, run } = makeDriver([
+        { records: [] }, { records: [] }, { records: [] }, { records: [] },
+      ]);
+      const resolver = new EntityResolver(driver);
+
+      const result = await resolver.resolve('  NewThing  ');
+      expect(result.name).toBe('NewThing');
+      expect(run.mock.calls[3][1]).toEqual(expect.objectContaining({ text: 'NewThing' }));
+    });
   });
 
   describe('resolveExisting', () => {

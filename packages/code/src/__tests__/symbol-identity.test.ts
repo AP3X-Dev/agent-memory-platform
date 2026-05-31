@@ -147,6 +147,65 @@ describe('SymbolStore.findByCompositeKey', () => {
     const result = await store.findByCompositeKey('get', '/src/test.ts', 'method', null);
     expect(result).toBeNull();
   });
+
+  it('scopes and bounds dependency queries with file path, kind, and limit filters', async () => {
+    const { SymbolStore } = await import('../symbol-store.js');
+
+    const session = makeSession();
+    const driver = { session: vi.fn(() => session) } as any;
+    const store = new SymbolStore(driver);
+
+    await store.getCallers('helper', {
+      file_path: 'packages/code',
+      kind: 'function',
+      limit: 7,
+    });
+
+    const [query, params] = [
+      session.run.mock.calls[0][0] as string,
+      session.run.mock.calls[0][1] as Record<string, unknown>,
+    ];
+    expect(query).toContain('toLower(caller.file_path) CONTAINS toLower($file_path)');
+    expect(query).toContain('caller.kind = $kind');
+    expect(query).toContain('LIMIT $limit');
+    expect(params).toMatchObject({
+      name: 'helper',
+      file_path: 'packages/code',
+      kind: 'function',
+    });
+    expect((params.limit as { toNumber: () => number }).toNumber()).toBe(7);
+  });
+
+  it('scopes and bounds symbol lookup with name, file path, kind, and limit filters', async () => {
+    const { SymbolStore } = await import('../symbol-store.js');
+
+    const session = makeSession();
+    const driver = { session: vi.fn(() => session) } as any;
+    const store = new SymbolStore(driver);
+
+    await store.findSymbols({
+      name: 'helper',
+      file_path: 'packages/code',
+      kind: 'function',
+      limit: 5,
+    });
+
+    const [query, params] = [
+      session.run.mock.calls[0][0] as string,
+      session.run.mock.calls[0][1] as Record<string, unknown>,
+    ];
+    expect(query).toContain('MATCH (s:Symbol)');
+    expect(query).toContain('s.name = $name');
+    expect(query).toContain('toLower(s.file_path) CONTAINS toLower($file_path)');
+    expect(query).toContain('s.kind = $kind');
+    expect(query).toContain('LIMIT $limit');
+    expect(params).toMatchObject({
+      name: 'helper',
+      file_path: 'packages/code',
+      kind: 'function',
+    });
+    expect((params.limit as { toNumber: () => number }).toNumber()).toBe(5);
+  });
 });
 
 // ─── CodeIndexer tests (integration-style with mocked store/driver) ──────────

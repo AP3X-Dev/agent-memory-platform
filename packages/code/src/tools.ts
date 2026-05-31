@@ -6,7 +6,9 @@ import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { IndexResult, CodeSearchResult, SymbolNode, SymbolKind } from './types.js';
+import type { SymbolDependencyOptions, SymbolLookupOptions } from './symbol-store.js';
 import type { CodeWatcher } from './watcher.js';
+import { structuralSearch, type StructuralSearchLanguage } from './structural-search.js';
 
 // ─── Service interfaces (injected) ───────────────────────────────────────────
 
@@ -19,17 +21,20 @@ export interface ICodeSearch {
   search(query: string, options?: {
     language?: string; file_path?: string; kind?: string; limit?: number; include_semantics?: boolean; as_of?: string;
   }): Promise<CodeSearchResult[]>;
-  buildContext(task: string, maxTokens?: number, as_of?: string): Promise<{ task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }>;
+  buildContext(task: string, maxTokens?: number, as_of?: string, filters?: {
+    language?: string; file_path?: string; kind?: string;
+  }): Promise<{ task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }>;
   renderContextMarkdown(ctx: { task: string; symbols: CodeSearchResult[]; semantic_memories: Array<{ id: string; content: string; confidence: number }>; token_count: number }): string;
 }
 
 export interface ISymbolStore {
   getByFile(filePath: string): Promise<SymbolNode[]>;
   findByName(name: string, kind?: SymbolKind): Promise<SymbolNode[]>;
-  getCallers(symbolName: string): Promise<SymbolNode[]>;
-  getCallees(symbolName: string): Promise<SymbolNode[]>;
-  getImporters(symbolName: string): Promise<SymbolNode[]>;
-  getInheritanceChain(symbolName: string): Promise<SymbolNode[]>;
+  findSymbols(options: SymbolLookupOptions): Promise<SymbolNode[]>;
+  getCallers(symbolName: string, options?: SymbolDependencyOptions): Promise<SymbolNode[]>;
+  getCallees(symbolName: string, options?: SymbolDependencyOptions): Promise<SymbolNode[]>;
+  getImporters(symbolName: string, options?: SymbolDependencyOptions): Promise<SymbolNode[]>;
+  getInheritanceChain(symbolName: string, options?: SymbolDependencyOptions): Promise<SymbolNode[]>;
 }
 
 // ─── Injected instances ──────────────────────────────────────────────────────
@@ -56,6 +61,7 @@ export function setCodeServiceInstances(services: {
 export const CODE_TOOL_NAMES = [
   'amp_code_index',
   'amp_code_search',
+  'amp_code_ast_grep',
   'amp_code_symbols',
   'amp_code_deps',
   'amp_code_context',
@@ -120,6 +126,7 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       language: z.string().max(2000).optional().describe('Filter by language'),
       file_path: z.string().max(2000).optional().describe('Filter by file path (substring match)'),
       kind: z.string().max(2000).optional().describe('Filter by symbol kind (function, class, method, interface, type, variable, enum)'),
+      project_name: z.string().max(2000).optional().describe('Scope code symbols to project name using indexed file paths'),
       limit: z.number().int().positive().optional().default(20).describe('Max results'),
       include_semantics: z.boolean().optional().default(true).describe('Include semantic memory results alongside code'),
       as_of: z.string().optional().describe('ISO 8601 timestamp for point-in-time queries. When set, semantic memories are filtered to those created before this time.'),
@@ -129,7 +136,7 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       if (!codeSearch) throw new Error('Code services not initialised');
       const results = await codeSearch.search(args.query, {
         language: args.language,
-        file_path: args.file_path,
+        file_path: buildCodePathScope(args.file_path, args.project_name),
         kind: args.kind,
         limit: args.limit,
         include_semantics: args.include_semantics,
@@ -149,6 +156,39 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
+  // ─── amp_code_ast_grep ─────────────────────────────────────────────────
+  handles.push(server.tool(
+    'amp_code_ast_grep',
+    'Structural code search powered by ast-grep. Matches AST patterns instead of raw text, returning file/range hits plus captured meta variables. Supports JavaScript, TypeScript, and TSX/JSX files.',
+    {
+      pattern: z.string().min(1).max(4000).describe('ast-grep pattern, e.g. fetch($URL) or import { $NAME } from $MOD'),
+      path: z.string().max(2000).optional().default('.').describe('Project-relative path, directory, or file to search'),
+      language: z.enum(['javascript', 'typescript', 'tsx']).optional().describe('Optional language filter; omitted means infer from file extension'),
+      include: z.array(z.string().max(500)).optional().describe('Only include relative paths containing one of these substrings'),
+      exclude: z.array(z.string().max(500)).optional().describe('Exclude relative paths containing one of these substrings'),
+      limit: z.number().int().positive().max(200).optional().default(50).describe('Maximum matches to return'),
+      max_file_bytes: z.number().int().positive().max(50 * 1024 * 1024).optional().default(2 * 1024 * 1024).describe('Skip source files larger than this many bytes before reading/parsing'),
+    },
+    { readOnlyHint: true } satisfies ToolAnnotations,
+    async (args) => {
+      const baseDir = path.resolve(process.cwd());
+      const resolved = path.resolve(args.path ?? '.');
+      if (!resolved.startsWith(baseDir + path.sep) && resolved !== baseDir) {
+        throw new Error(`Path must be within project root: ${args.path}`);
+      }
+
+      const result = await structuralSearch(resolved, {
+        pattern: args.pattern,
+        language: args.language as StructuralSearchLanguage | undefined,
+        include: args.include,
+        exclude: args.exclude,
+        limit: args.limit,
+        max_file_bytes: args.max_file_bytes,
+      });
+      return textContent(JSON.stringify(result, null, 2));
+    },
+  ));
+
   // ─── amp_code_symbols ───────────────────────────────────────────────────
   handles.push(server.tool(
     'amp_code_symbols',
@@ -157,19 +197,21 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       file_path: z.string().max(2000).optional().describe('Get all symbols in this file'),
       name: z.string().max(2000).optional().describe('Find symbols with this name'),
       kind: z.string().max(2000).optional().describe('Filter by kind (function, class, method, interface, type, variable, enum)'),
+      project_name: z.string().max(2000).optional().describe('Scope symbols to project name using indexed file paths'),
+      limit: z.number().int().positive().max(100).optional().default(50).describe('Max symbols to return'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!symbolStore) throw new Error('Code services not initialised');
 
-      let results: SymbolNode[];
-      if (args.file_path) {
-        results = await symbolStore.getByFile(args.file_path);
-      } else if (args.name) {
-        results = await symbolStore.findByName(args.name, args.kind as SymbolKind | undefined);
-      } else {
-        throw new Error('Provide either file_path or name');
-      }
+      const filePathScope = buildCodePathScope(args.file_path, args.project_name);
+      if (!args.name && !filePathScope) throw new Error('Provide name, file_path, or project_name');
+      const results = await symbolStore.findSymbols({
+        name: args.name,
+        file_path: filePathScope,
+        kind: args.kind as SymbolKind | undefined,
+        limit: args.limit,
+      });
 
       const formatted = results.map((s) => ({
         id: s.id,
@@ -191,24 +233,33 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     {
       symbol_name: z.string().max(500).describe('Symbol name to query'),
       direction: z.enum(['callers', 'callees', 'importers', 'inheritance']).describe('Query direction'),
+      file_path: z.string().max(2000).optional().describe('Filter returned dependency symbols by file path substring'),
+      project_name: z.string().max(2000).optional().describe('Scope returned dependency symbols to project name using indexed file paths'),
+      kind: z.string().max(2000).optional().describe('Filter returned dependency symbols by kind'),
+      limit: z.number().int().positive().max(100).optional().default(50).describe('Max dependency results to return'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!symbolStore) throw new Error('Code services not initialised');
 
+      const dependencyOptions: SymbolDependencyOptions = {
+        file_path: buildCodePathScope(args.file_path, args.project_name),
+        kind: args.kind as SymbolKind | undefined,
+        limit: args.limit,
+      };
       let results: SymbolNode[];
       switch (args.direction) {
         case 'callers':
-          results = await symbolStore.getCallers(args.symbol_name);
+          results = await symbolStore.getCallers(args.symbol_name, dependencyOptions);
           break;
         case 'callees':
-          results = await symbolStore.getCallees(args.symbol_name);
+          results = await symbolStore.getCallees(args.symbol_name, dependencyOptions);
           break;
         case 'importers':
-          results = await symbolStore.getImporters(args.symbol_name);
+          results = await symbolStore.getImporters(args.symbol_name, dependencyOptions);
           break;
         case 'inheritance':
-          results = await symbolStore.getInheritanceChain(args.symbol_name);
+          results = await symbolStore.getInheritanceChain(args.symbol_name, dependencyOptions);
           break;
       }
 
@@ -235,11 +286,19 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
       task: z.string().max(5000).describe('Task description (natural language)'),
       max_tokens: z.number().int().positive().optional().default(6000).describe('Max tokens for the context package'),
       as_of: z.string().optional().describe('ISO 8601 timestamp for point-in-time queries. When set, semantic memories are filtered to those created before this time.'),
+      language: z.string().max(2000).optional().describe('Filter by language'),
+      file_path: z.string().max(2000).optional().describe('Filter by file path (substring match)'),
+      kind: z.string().max(2000).optional().describe('Filter by symbol kind (function, class, method, interface, type, variable, enum)'),
+      project_name: z.string().max(2000).optional().describe('Scope code symbols to project name using indexed file paths'),
     },
     { readOnlyHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!codeSearch) throw new Error('Code services not initialised');
-      const ctx = await codeSearch.buildContext(args.task, args.max_tokens, args.as_of);
+      const ctx = await codeSearch.buildContext(args.task, args.max_tokens, args.as_of, {
+        language: args.language,
+        file_path: buildCodePathScope(args.file_path, args.project_name),
+        kind: args.kind,
+      });
       const md = codeSearch.renderContextMarkdown(ctx);
       return textContent(md);
     },
@@ -296,4 +355,12 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
   ));
 
   return handles;
+}
+
+function buildCodePathScope(filePath?: string, projectName?: string): string | undefined {
+  if (filePath?.trim()) return filePath.trim();
+  const trimmed = projectName?.trim();
+  if (!trimmed) return undefined;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || undefined;
 }

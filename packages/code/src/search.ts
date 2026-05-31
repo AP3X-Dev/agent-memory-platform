@@ -7,6 +7,12 @@ import type { CodeSearchResult, CodeContext } from './types.js';
 import type { EmbeddingProvider } from '@amp/core';
 import { generateLexicalVector } from './vectors.js';
 
+interface CodeContextFilters {
+  language?: string;
+  file_path?: string;
+  kind?: string;
+}
+
 export class CodeSearch {
   constructor(
     private driver: Driver,
@@ -39,7 +45,7 @@ export class CodeSearch {
     const [fulltextResults, vectorResults, lexicalResults, semanticResults] = await Promise.all([
       this.fulltextSearch(options?.expandedTokens?.join(' ') ?? query, limit, options),
       this.vectorSearch(query, limit, options),
-      this.lexicalVectorSearch(query, limit),
+      this.lexicalVectorSearch(query, limit, options),
       includeSemantics ? this.semanticVectorSearch(query, limit, options?.as_of) : Promise.resolve([]),
     ]);
 
@@ -58,8 +64,9 @@ export class CodeSearch {
     task: string,
     maxTokens = 6000,
     as_of?: string,
+    filters?: CodeContextFilters,
   ): Promise<CodeContext> {
-    const results = await this.search(task, { limit: 30, include_semantics: true, as_of });
+    const results = await this.search(task, { limit: 30, include_semantics: true, as_of, ...filters });
 
     const symbols: CodeSearchResult[] = [];
     const semantics: Array<{ id: string; content: string; confidence: number }> = [];
@@ -67,7 +74,7 @@ export class CodeSearch {
 
     for (const result of results) {
       const estimatedTokens = Math.ceil((result.signature.length + result.doc_comment.length + 50) / 4);
-      if (tokenCount + estimatedTokens > maxTokens) break;
+      if (tokenCount + estimatedTokens > maxTokens) continue;
 
       if (result.source_type === 'symbol') {
         symbols.push(result);
@@ -141,7 +148,7 @@ export class CodeSearch {
         params.language = options.language;
       }
       if (options?.file_path) {
-        filters.push('s.file_path CONTAINS $file_path');
+        filters.push('toLower(s.file_path) CONTAINS toLower($file_path)');
         params.file_path = options.file_path;
       }
       if (options?.kind) {
@@ -188,13 +195,14 @@ export class CodeSearch {
   ): Promise<CodeSearchResult[]> {
     try {
       const queryEmbedding = await this.embedding.embed(query);
+      const candidateLimit = candidateLimitForPostFilters(limit, options);
       const session = this.driver.session();
       try {
         const result = await session.run(
           `CALL db.index.vector.queryNodes('symbol_embedding', $limit, $embedding)
            YIELD node AS s, score
            RETURN s, score`,
-          { limit: neo4j.int(limit), embedding: queryEmbedding },
+          { limit: neo4j.int(candidateLimit), embedding: queryEmbedding },
         );
 
         let results = result.records.map((r) => {
@@ -215,10 +223,10 @@ export class CodeSearch {
 
         // Apply post-filters (language matches the symbol's language property, not file extension)
         if (options?.language) results = results.filter((r) => r.language === options.language);
-        if (options?.file_path) results = results.filter((r) => r.file_path.includes(options.file_path!));
+        if (options?.file_path) results = results.filter((r) => includesCaseInsensitive(r.file_path, options.file_path!));
         if (options?.kind) results = results.filter((r) => r.kind === options.kind);
 
-        return results;
+        return results.slice(0, limit);
       } finally {
         await session.close();
       }
@@ -231,19 +239,21 @@ export class CodeSearch {
   private async lexicalVectorSearch(
     query: string,
     limit: number,
+    options?: { language?: string; file_path?: string; kind?: string },
   ): Promise<CodeSearchResult[]> {
     try {
       const lexVec = generateLexicalVector(query);
+      const candidateLimit = candidateLimitForPostFilters(limit, options);
       const session = this.driver.session();
       try {
         const result = await session.run(
           `CALL db.index.vector.queryNodes('symbol_lexical', $limit, $vector)
            YIELD node AS s, score
            RETURN s, score`,
-          { limit: neo4j.int(limit), vector: lexVec },
+          { limit: neo4j.int(candidateLimit), vector: lexVec },
         );
 
-        return result.records.map((r) => {
+        let results = result.records.map((r) => {
           const props = r.get('s').properties as Record<string, unknown>;
           return {
             id: props.id as string,
@@ -258,6 +268,12 @@ export class CodeSearch {
             score: r.get('score') as number,
           };
         });
+
+        if (options?.language) results = results.filter((r) => r.language === options.language);
+        if (options?.file_path) results = results.filter((r) => includesCaseInsensitive(r.file_path, options.file_path!));
+        if (options?.kind) results = results.filter((r) => r.kind === options.kind);
+
+        return results.slice(0, limit);
       } finally {
         await session.close();
       }
@@ -274,6 +290,8 @@ export class CodeSearch {
   ): Promise<CodeSearchResult[]> {
     try {
       const queryEmbedding = await this.embedding.embed(query);
+      const semanticLimit = Math.min(limit, 10);
+      const candidateLimit = candidateLimitForTemporalFilter(semanticLimit, Boolean(asOf));
       const session = this.driver.session();
       try {
         // When as_of is provided, post-filter semantic nodes to those created before the cutoff
@@ -283,7 +301,7 @@ export class CodeSearch {
            YIELD node AS s, score
            ${temporalFilter}
            RETURN s, score`,
-          { limit: neo4j.int(Math.min(limit, 10)), embedding: queryEmbedding, ...(asOf ? { asOf } : {}) },
+          { limit: neo4j.int(candidateLimit), embedding: queryEmbedding, ...(asOf ? { asOf } : {}) },
         );
 
         return result.records.map((r) => {
@@ -299,7 +317,7 @@ export class CodeSearch {
             doc_comment: '',
             score: (r.get('score') as number) * 0.8, // Slightly discount semantics vs code matches
           };
-        });
+        }).slice(0, semanticLimit);
       } finally {
         await session.close();
       }
@@ -352,4 +370,25 @@ function toNum(val: unknown): number {
     return (val as { toNumber: () => number }).toNumber();
   }
   return 0;
+}
+
+function candidateLimitForPostFilters(
+  limit: number,
+  options?: { language?: string; file_path?: string; kind?: string },
+): number {
+  if (!options?.language && !options?.file_path && !options?.kind) return limit;
+  return boundedOverfetchLimit(limit);
+}
+
+function candidateLimitForTemporalFilter(limit: number, hasTemporalFilter: boolean): number {
+  if (!hasTemporalFilter) return limit;
+  return boundedOverfetchLimit(limit);
+}
+
+function boundedOverfetchLimit(limit: number): number {
+  return Math.min(Math.max(limit * 5, 50), 200);
+}
+
+function includesCaseInsensitive(value: string, search: string): boolean {
+  return value.toLowerCase().includes(search.toLowerCase());
 }

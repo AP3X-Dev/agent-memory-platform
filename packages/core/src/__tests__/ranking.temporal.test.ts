@@ -162,6 +162,26 @@ describe("rankFacts", () => {
     expect(result[0].id).toBe(active.id);
   });
 
+  it("orders statuses active > tentative > disputed > invalidated at equal confidence", () => {
+    const now = new Date().toISOString();
+    const active = makeFact({ valid_at: now, confidence: 0.6, status: "active" as const });
+    const tentative = makeFact({ valid_at: now, confidence: 0.6, status: "tentative" as const });
+    const disputed = makeFact({ valid_at: now, confidence: 0.6, status: "disputed" as const });
+    const invalidated = makeFact({ valid_at: now, confidence: 0.6, status: "invalidated" as const });
+    const result = rankFacts([invalidated, disputed, tentative, active]);
+    expect(result.map((f) => f.status)).toEqual(["active", "tentative", "disputed", "invalidated"]);
+  });
+
+  it("never ranks a superseded fact above current truth, even at higher confidence", () => {
+    // The "what's true now" guarantee: an invalidated fact with high confidence must
+    // still rank below an active one with lower confidence (it was superseded).
+    const now = new Date().toISOString();
+    const active = makeFact({ valid_at: now, confidence: 0.6, status: "active" as const });
+    const invalidated = makeFact({ valid_at: now, confidence: 0.95, status: "invalidated" as const });
+    const result = rankFacts([invalidated, active]);
+    expect(result[0].id).toBe(active.id);
+  });
+
   it("facts decay 4x slower than memories", () => {
     const now = new Date();
     // At RECENCY_DECAY_DAYS * 4, fact recency = exp(-1) ≈ 0.368
@@ -185,6 +205,15 @@ describe("rankFacts", () => {
     const result = rankFacts([b, c, a]);
     expect(result[0].id).toBe(a.id);
     expect(result[result.length - 1].id).toBe(b.id);
+  });
+
+  it("does not let an invalid valid_at timestamp poison fact ordering", () => {
+    const invalid = makeFact({ id: "invalid-date", valid_at: "not-a-date", confidence: 0.2 });
+    const valid = makeFact({ id: "valid-date", valid_at: "2025-01-09T00:00:00Z", confidence: 0.9 });
+
+    const result = rankFacts([invalid, valid], new Date("2025-01-10T00:00:00Z"));
+
+    expect(result[0].id).toBe("valid-date");
   });
 });
 

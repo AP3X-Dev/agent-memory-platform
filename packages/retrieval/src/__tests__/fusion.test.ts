@@ -61,6 +61,24 @@ describe('rrfFusion', () => {
     expect(fused[0].id).toBe('b');
   });
 
+  it('uses provenance quality to demote invalidated results during fusion', () => {
+    const stale = makeResult('stale', 0.9, 'semantic');
+    stale.metadata = {
+      confidence: 0.9,
+      source_episode_ids: ['ep-1'],
+      invalidated_at: '2026-05-01T00:00:00.000Z',
+    };
+
+    const backed = makeResult('backed', 0.8, 'semantic');
+    backed.metadata = {
+      confidence: 0.95,
+      source_episode_ids: ['ep-1', 'ep-2', 'ep-3', 'ep-4'],
+    };
+
+    const fused = rrfFusion([[stale, backed]], 2);
+    expect(fused[0].id).toBe('backed');
+  });
+
   it('handles single-item lists', () => {
     const list1 = [makeResult('a', 0.9)];
     const fused = rrfFusion([list1], 10);

@@ -99,7 +99,7 @@ export interface EpisodeInput {
 
 // === Consolidation ===
 
-export type ProposalType = 'promote' | 'merge' | 'supersede' | 'decay';
+export type ProposalType = 'promote' | 'merge' | 'supersede' | 'decay' | 'reinforce';
 
 export interface ConsolidationProposal {
   id: string;
@@ -138,6 +138,13 @@ export interface AMPConfig {
 export interface EmbeddingProvider {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: string[]): Promise<number[][]>;
+}
+
+export interface ExtractionProvider {
+  extractAll(content: string): Promise<{
+    entities: Array<{ name: string; type?: string; description?: string }>;
+    claims: Array<{ content: string; about: string[]; confidence: number; tags: string[] }>;
+  }>;
 }
 
 // === Signal weights ===

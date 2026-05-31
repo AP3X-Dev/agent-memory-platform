@@ -115,27 +115,28 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 
   if (!shouldCommit) return;
 
-  // 2. Stage .amp/ changes
+  // 2. Stage snapshot changes. The default .amp path is intentionally ignored
+  // in source worktrees, so snapshot commits must force-add this explicit path.
   try {
-    execFileSync('git', ['add', snapshotPath], { stdio: 'inherit' });
+    execFileSync('git', ['add', '-f', snapshotPath], { stdio: 'inherit' });
   } catch (err) {
     console.error('git add failed:', err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
 
-  // 3. Check if there are staged changes
+  // 3. Check if there are staged snapshot changes only.
   try {
-    execFileSync('git', ['diff', '--cached', '--quiet'], { stdio: 'inherit' });
+    execFileSync('git', ['diff', '--cached', '--quiet', '--', snapshotPath], { stdio: 'inherit' });
     // Exit code 0 means no changes
     console.log('No changes to commit — snapshot is already up to date.');
     return;
   } catch (err: unknown) {
-    // Non-zero exit = there are staged changes — proceed with commit
+    // Non-zero exit = there are staged snapshot changes — proceed with commit.
   }
 
-  // 4. Commit
+  // 4. Commit only the snapshot path, preserving any unrelated staged work.
   try {
-    execFileSync('git', ['commit', '-m', message], { stdio: 'inherit' });
+    execFileSync('git', ['commit', '-m', message, '--', snapshotPath], { stdio: 'inherit' });
     console.log(`Snapshot committed: ${message}`);
   } catch (err) {
     console.error('git commit failed:', err instanceof Error ? err.message : String(err));

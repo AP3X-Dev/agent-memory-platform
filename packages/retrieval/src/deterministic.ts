@@ -35,7 +35,7 @@ export class DeterministicAssembler {
     // Step 1: Identify target entities
     const targets = options?.entity_scope?.length
       ? options.entity_scope
-      : await this.matchEntities(task);
+      : await this.matchEntities(task, options?.project_name);
 
     if (targets.length === 0) {
       sections.push({
@@ -159,20 +159,27 @@ export class DeterministicAssembler {
 
   // ─── Private graph queries ──────────────────────────────────────────────
 
-  private async matchEntities(task: string): Promise<string[]> {
+  private async matchEntities(task: string, projectNameOption?: string): Promise<string[]> {
     const session = this.driver.session();
     try {
       // Try fulltext search first (fast, uses index), fall back to CONTAINS
       const escaped = task
           .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
           .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
+      const projectName = normalizeProjectName(projectNameOption);
       try {
         const ftResult = await session.run(
           `CALL db.index.fulltext.queryNodes('entity_name_search', $query)
            YIELD node, score
+           WHERE $projectName IS NULL
+              OR toLower(COALESCE(node.name, '')) = toLower($projectName)
+              OR EXISTS {
+                MATCH (project:Entity)-[:CONTAINS*0..]->(node)
+                WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+              }
            RETURN node.name AS name
            ORDER BY score DESC LIMIT 5`,
-          { query: escaped.split(/\s+/).filter((w) => w.length > 2).join(' ') || escaped },
+          { query: escaped.split(/\s+/).filter((w) => w.length > 2).join(' ') || escaped, projectName },
         );
         if (ftResult.records.length > 0) {
           return ftResult.records.map((r) => r.get('name') as string);
@@ -187,12 +194,22 @@ export class DeterministicAssembler {
 
       const result = await session.run(
         `MATCH (e:Entity)
-         WHERE ANY(word IN $words WHERE toLower(e.name) CONTAINS word)
+         WHERE (
+           ANY(word IN $words WHERE toLower(e.name) CONTAINS word)
            OR ANY(word IN $words WHERE toLower(COALESCE(e.responsibility, '')) CONTAINS word)
+         )
+           AND (
+             $projectName IS NULL
+             OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             }
+           )
          RETURN e.name AS name
          ORDER BY size(e.name) DESC
          LIMIT 5`,
-        { words },
+        { words, projectName },
       );
       return result.records.map((r) => r.get('name') as string);
     } finally {
@@ -346,7 +363,7 @@ function budgetSection(
 
   for (const item of sorted) {
     const itemTokens = Math.ceil(item.content.length / 4);
-    if (tokens + itemTokens > remainingTokens) break;
+    if (tokens + itemTokens > remainingTokens) continue;
     budgeted.push(item);
     tokens += itemTokens;
   }
@@ -363,4 +380,11 @@ function toNum(val: unknown): number {
     return (val as { toNumber: () => number }).toNumber();
   }
   return 0;
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }

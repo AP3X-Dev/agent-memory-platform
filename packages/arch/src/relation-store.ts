@@ -21,6 +21,7 @@ export class StructuralRelationStore {
     toEntity: string,
     type: StructuralRelationType,
     properties?: Record<string, string>,
+    projectName?: string,
   ): Promise<boolean> {
     if (!VALID_RELATION_TYPES.has(type)) {
       throw new Error(`Invalid relation type: ${type}. Must be one of: ${[...VALID_RELATION_TYPES].join(', ')}`);
@@ -32,11 +33,13 @@ export class StructuralRelationStore {
       // Properties are passed via Neo4j parameters to prevent injection.
       const result = await session.run(
         `MATCH (a:Entity {name: $from}), (b:Entity {name: $to})
+         WHERE ${entityProjectFilter('a')}
+           AND ${entityProjectFilter('b')}
          MERGE (a)-[r:${type}]->(b)
          SET r += $props
          ${temporalSetClause('r')}
          RETURN a.name AS from, b.name AS to`,
-        { from: fromEntity, to: toEntity, props: properties ?? {}, now: new Date().toISOString() },
+        { from: fromEntity, to: toEntity, props: properties ?? {}, now: new Date().toISOString(), projectName: normalizeProjectName(projectName) },
       );
       return result.records.length > 0;
     } finally {
@@ -44,7 +47,7 @@ export class StructuralRelationStore {
     }
   }
 
-  async remove(fromEntity: string, toEntity: string, type: StructuralRelationType): Promise<void> {
+  async remove(fromEntity: string, toEntity: string, type: StructuralRelationType, projectName?: string): Promise<void> {
     if (!VALID_RELATION_TYPES.has(type)) return; // Validated against enum — safe for interpolation
     const session = this.driver.session();
     try {
@@ -53,8 +56,10 @@ export class StructuralRelationStore {
       await session.run(
         `MATCH (a:Entity {name: $from})-[r:${type}]->(b:Entity {name: $to})
          WHERE r.invalid_at IS NULL
+           AND ${entityProjectFilter('a')}
+           AND ${entityProjectFilter('b')}
          SET r.invalid_at = $now`,
-        { from: fromEntity, to: toEntity, now },
+        { from: fromEntity, to: toEntity, now, projectName: normalizeProjectName(projectName) },
       );
     } finally {
       await session.close();
@@ -64,16 +69,22 @@ export class StructuralRelationStore {
   /**
    * Get all entities that depend ON the given entity (entities that USE/CALL/EXTEND/LISTEN to it).
    */
-  async getDependents(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string }>> {
+  async getDependents(entityName: string, asOf?: string, projectName?: string): Promise<Array<{ name: string; relation: string }>> {
     const session = this.driver.session();
     try {
       const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
-      const params: Record<string, unknown> = { name: entityName };
+      const params: Record<string, unknown> = { name: entityName, projectName: normalizeProjectName(projectName) };
       if (asOf) params.asOf = asOf;
 
       const result = await session.run(
         `MATCH (dependent:Entity)-[r]->(target:Entity {name: $name})
-         WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
+         WHERE ($projectName IS NULL
+             OR toLower(COALESCE(target.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(target)
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             })
+           AND type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
            AND ${filter}
          RETURN dependent.name AS name, type(r) AS relation
          ORDER BY dependent.name ASC`,
@@ -91,16 +102,22 @@ export class StructuralRelationStore {
   /**
    * Get all entities that the given entity depends ON.
    */
-  async getDependencies(entityName: string, asOf?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>> {
+  async getDependencies(entityName: string, asOf?: string, projectName?: string): Promise<Array<{ name: string; relation: string; interface_desc: string }>> {
     const session = this.driver.session();
     try {
       const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
-      const params: Record<string, unknown> = { name: entityName };
+      const params: Record<string, unknown> = { name: entityName, projectName: normalizeProjectName(projectName) };
       if (asOf) params.asOf = asOf;
 
       const result = await session.run(
         `MATCH (source:Entity {name: $name})-[r]->(dep:Entity)
-         WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS']
+         WHERE ($projectName IS NULL
+             OR toLower(COALESCE(source.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(source)
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             })
+           AND type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'EMITS']
            AND ${filter}
          RETURN dep.name AS name, type(r) AS relation,
                 COALESCE(dep.interface_desc, '') AS interface_desc
@@ -186,6 +203,22 @@ export class StructuralRelationStore {
       await session.close();
     }
   }
+}
+
+function entityProjectFilter(alias: string): string {
+  return `($projectName IS NULL
+             OR toLower(COALESCE(${alias}.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(${alias})
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             })`;
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }
 
 function toNum(val: unknown): number {

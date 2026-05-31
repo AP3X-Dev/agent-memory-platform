@@ -13,11 +13,13 @@
     "packages/wiki"
   ],
   "scripts": {
-    "build": "tsc -b tsconfig.build.json",
+    "build": "node scripts/clean-build-artifacts.mjs && tsc -b tsconfig.build.json",
     "test": "npm run test --workspaces --if-present",
     "dev": "tsx packages/mcp/src/server.ts"
   },
-  "engines": { "node": ">=20.0.0" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "overrides": {
     "vite": "^6.4.2"
   }

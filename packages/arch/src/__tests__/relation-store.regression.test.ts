@@ -38,4 +38,46 @@ describe('StructuralRelationStore regression', () => {
     // session() should never have been called — validation happens before DB access
     expect(mockDriver.session).not.toHaveBeenCalled();
   });
+
+  it('scopes relationship creation to the requested project containment tree', async () => {
+    const runs: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const mockSession = {
+      run: vi.fn().mockImplementation(async (query: string, params?: Record<string, unknown>) => {
+        runs.push({ query, params });
+        return { records: [{ get: () => 'ok' }] };
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const mockDriver = {
+      session: vi.fn().mockReturnValue(mockSession),
+    };
+    const store = new StructuralRelationStore(mockDriver as never);
+
+    await store.create('Api', 'Database', 'USES', undefined, 'project:AMP');
+
+    expect(runs[0].params?.projectName).toBe('AMP');
+    expect(runs[0].query).toContain('$projectName IS NULL');
+    expect(runs[0].query).toContain('CONTAINS*0..');
+  });
+
+  it('scopes relationship invalidation to the requested project containment tree', async () => {
+    const runs: Array<{ query: string; params?: Record<string, unknown> }> = [];
+    const mockSession = {
+      run: vi.fn().mockImplementation(async (query: string, params?: Record<string, unknown>) => {
+        runs.push({ query, params });
+        return { records: [] };
+      }),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const mockDriver = {
+      session: vi.fn().mockReturnValue(mockSession),
+    };
+    const store = new StructuralRelationStore(mockDriver as never);
+
+    await store.remove('Api', 'Database', 'USES', 'project:AMP');
+
+    expect(runs[0].params?.projectName).toBe('AMP');
+    expect(runs[0].query).toContain('$projectName IS NULL');
+    expect(runs[0].query).toContain('CONTAINS*0..');
+  });
 });

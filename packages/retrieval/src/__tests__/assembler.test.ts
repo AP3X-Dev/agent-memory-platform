@@ -39,6 +39,7 @@ vi.mock('../scoring.js', () => ({
     lexicalVectorWeight: 0.3,
     lexicalTextWeight: 0.2,
   }),
+  inferSourceTypeBoost: vi.fn().mockReturnValue({}),
 }));
 
 // Mock fusion
@@ -219,6 +220,47 @@ describe('UnifiedAssembler', () => {
       );
     });
 
+    it('derives project tag scope from project_name for ranked memory retrieval', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        project_name: 'DealerBot.AI',
+      });
+
+      expect(memoryLayer.load).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: ['project:dealerbot.ai'],
+        }),
+      );
+    });
+
+    it('merges project_name with explicit tag_scope without duplicating project tags', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        project_name: 'AMP',
+        tag_scope: ['feature:retrieval'],
+      });
+
+      expect(memoryLayer.load).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tags: ['feature:retrieval', 'project:amp'],
+        }),
+      );
+    });
+
+    it('passes project_name to ranked code search as a file path scope', async () => {
+      await assembler.assemble('find auth code', {
+        strategy: 'ranked',
+        project_name: 'project:AMP',
+      });
+
+      expect(codeLayer.search).toHaveBeenCalledWith(
+        'find auth code',
+        expect.objectContaining({
+          file_path: 'AMP',
+        }),
+      );
+    });
+
     it('passes as_of temporal option to memory layer', async () => {
       await assembler.assemble('test', {
         strategy: 'ranked',
@@ -230,6 +272,63 @@ describe('UnifiedAssembler', () => {
           temporal: { as_of: '2025-06-01T00:00:00Z' },
         }),
       );
+    });
+
+    it('scopes ranked architecture search to the requested project containment tree', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        project_name: 'project:AMP',
+        include_code: false,
+        include_memory: false,
+      });
+
+      const archCall = driver.mockSession.run.mock.calls.find(
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('entity_arch_content'),
+      );
+
+      expect(archCall).toBeDefined();
+      const [query, params] = archCall as [string, Record<string, unknown>];
+      expect(query).toContain('$projectName IS NULL');
+      expect(query).toContain('CONTAINS*0..');
+      expect(params.projectName).toBe('AMP');
+    });
+
+    it('skips oversized ranked results and keeps later items that fit the token budget', async () => {
+      codeLayer.search = vi.fn().mockResolvedValue([
+        {
+          id: 'sym-oversized',
+          source_type: 'symbol',
+          name: 'oversized',
+          kind: 'function',
+          file_path: '/src/oversized.ts',
+          start_line: 1,
+          signature: 'function oversized(): void',
+          doc_comment: 'x'.repeat(2000),
+          score: 0.99,
+        },
+        {
+          id: 'sym-fitting',
+          source_type: 'symbol',
+          name: 'fitting',
+          kind: 'function',
+          file_path: '/src/fitting.ts',
+          start_line: 2,
+          signature: 'function fitting(): void',
+          doc_comment: 'small',
+          score: 0.5,
+        },
+      ]);
+
+      const ctx = await assembler.assemble('find fitting symbol', {
+        strategy: 'ranked',
+        include_arch: false,
+        include_memory: false,
+        max_tokens: 100,
+      });
+
+      const codeSection = ctx.sections.find((section) => section.source_type === 'symbol');
+      expect(codeSection?.items.map((item) => item.id)).toEqual(['sym-fitting']);
+      expect(ctx.token_count).toBeLessThanOrEqual(100);
     });
   });
 

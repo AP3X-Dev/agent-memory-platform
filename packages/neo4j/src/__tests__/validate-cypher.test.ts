@@ -260,4 +260,14 @@ describe('validateReadOnlyCypher', () => {
       validateReadOnlyCypher('CALL dbms.security.createUser("admin", "pass", false)'),
     ).toThrow(/CALL to a stored procedure/);
   });
+
+  it('rejects SHOW administrative commands', () => {
+    expect(() =>
+      validateReadOnlyCypher('SHOW USERS'),
+    ).toThrow(/administrative keyword "SHOW"/);
+
+    expect(() =>
+      validateReadOnlyCypher('USE system MATCH (n) RETURN n'),
+    ).toThrow(/administrative keyword "USE"/);
+  });
 });

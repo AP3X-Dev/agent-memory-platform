@@ -35,6 +35,14 @@ export { SymbolStore } from './symbol-store.js';
 export { CodeIndexer } from './indexer.js';
 export { ImportResolver } from './resolver.js';
 export { CodeSearch } from './search.js';
+export { structuralSearch } from './structural-search.js';
+export type {
+  StructuralSearchCapture,
+  StructuralSearchLanguage,
+  StructuralSearchMatch,
+  StructuralSearchOptions,
+  StructuralSearchResult,
+} from './structural-search.js';
 
 // Schema
 export { initCodeSchema } from './schema.js';

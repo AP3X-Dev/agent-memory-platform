@@ -4,6 +4,19 @@
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { SymbolNode, SymbolKind, SupportedLanguage } from './types.js';
 
+export interface SymbolDependencyOptions {
+  file_path?: string;
+  kind?: SymbolKind;
+  limit?: number;
+}
+
+export interface SymbolLookupOptions {
+  name?: string;
+  file_path?: string;
+  kind?: SymbolKind;
+  limit?: number;
+}
+
 export class SymbolStore {
   constructor(private driver: Driver) {}
 
@@ -194,13 +207,20 @@ export class SymbolStore {
     }
   }
 
-  async getCallers(symbolName: string): Promise<SymbolNode[]> {
+  async getCallers(symbolName: string, options: SymbolDependencyOptions = {}): Promise<SymbolNode[]> {
     const session = this.driver.session();
     try {
+      const filters = buildDependencyFilters('caller', options);
       const result = await session.run(
         `MATCH (caller:Symbol)-[:SYMBOL_CALLS]->(target:Symbol {name: $name})
-         RETURN caller ORDER BY caller.file_path ASC`,
-        { name: symbolName },
+         ${filters.whereClause}
+         RETURN caller ORDER BY caller.file_path ASC
+         LIMIT $limit`,
+        {
+          name: symbolName,
+          ...filters.params,
+          limit: neo4j.int(normalizeDependencyLimit(options.limit)),
+        },
       );
       return result.records.map((r) => mapSymbol(r.get('caller').properties));
     } finally {
@@ -208,13 +228,55 @@ export class SymbolStore {
     }
   }
 
-  async getCallees(symbolName: string): Promise<SymbolNode[]> {
+  async findSymbols(options: SymbolLookupOptions): Promise<SymbolNode[]> {
     const session = this.driver.session();
     try {
+      const filters: string[] = [];
+      const params: Record<string, unknown> = {
+        limit: neo4j.int(normalizeLookupLimit(options.limit)),
+      };
+
+      if (options.name?.trim()) {
+        filters.push('s.name = $name');
+        params.name = options.name.trim();
+      }
+      if (options.file_path?.trim()) {
+        filters.push('toLower(s.file_path) CONTAINS toLower($file_path)');
+        params.file_path = options.file_path.trim();
+      }
+      if (options.kind) {
+        filters.push('s.kind = $kind');
+        params.kind = options.kind;
+      }
+
+      const whereClause = filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '';
+      const result = await session.run(
+        `MATCH (s:Symbol)
+         ${whereClause}
+         RETURN s ORDER BY s.file_path ASC, s.start_line ASC
+         LIMIT $limit`,
+        params,
+      );
+      return result.records.map((r) => mapSymbol(r.get('s').properties));
+    } finally {
+      await session.close();
+    }
+  }
+
+  async getCallees(symbolName: string, options: SymbolDependencyOptions = {}): Promise<SymbolNode[]> {
+    const session = this.driver.session();
+    try {
+      const filters = buildDependencyFilters('callee', options);
       const result = await session.run(
         `MATCH (source:Symbol {name: $name})-[:SYMBOL_CALLS]->(callee:Symbol)
-         RETURN callee ORDER BY callee.file_path ASC`,
-        { name: symbolName },
+         ${filters.whereClause}
+         RETURN callee ORDER BY callee.file_path ASC
+         LIMIT $limit`,
+        {
+          name: symbolName,
+          ...filters.params,
+          limit: neo4j.int(normalizeDependencyLimit(options.limit)),
+        },
       );
       return result.records.map((r) => mapSymbol(r.get('callee').properties));
     } finally {
@@ -222,13 +284,20 @@ export class SymbolStore {
     }
   }
 
-  async getImporters(symbolName: string): Promise<SymbolNode[]> {
+  async getImporters(symbolName: string, options: SymbolDependencyOptions = {}): Promise<SymbolNode[]> {
     const session = this.driver.session();
     try {
+      const filters = buildDependencyFilters('importer', options);
       const result = await session.run(
         `MATCH (importer:Symbol)-[:SYMBOL_IMPORTS]->(target:Symbol {name: $name})
-         RETURN importer ORDER BY importer.file_path ASC`,
-        { name: symbolName },
+         ${filters.whereClause}
+         RETURN importer ORDER BY importer.file_path ASC
+         LIMIT $limit`,
+        {
+          name: symbolName,
+          ...filters.params,
+          limit: neo4j.int(normalizeDependencyLimit(options.limit)),
+        },
       );
       return result.records.map((r) => mapSymbol(r.get('importer').properties));
     } finally {
@@ -236,14 +305,22 @@ export class SymbolStore {
     }
   }
 
-  async getInheritanceChain(symbolName: string): Promise<SymbolNode[]> {
+  async getInheritanceChain(symbolName: string, options: SymbolDependencyOptions = {}): Promise<SymbolNode[]> {
     const session = this.driver.session();
     try {
+      const filters = buildDependencyFilters('symbol', options);
       const result = await session.run(
         `MATCH path = (child:Symbol {name: $name})-[:SYMBOL_INHERITS*]->(ancestor:Symbol)
          UNWIND nodes(path) AS n
-         RETURN DISTINCT n AS symbol ORDER BY length(path) ASC`,
-        { name: symbolName },
+         WITH DISTINCT n AS symbol, length(path) AS depth
+         ${filters.whereClause}
+         RETURN symbol ORDER BY depth ASC, symbol.file_path ASC
+         LIMIT $limit`,
+        {
+          name: symbolName,
+          ...filters.params,
+          limit: neo4j.int(normalizeDependencyLimit(options.limit)),
+        },
       );
       return result.records.map((r) => mapSymbol(r.get('symbol').properties));
     } finally {
@@ -293,4 +370,40 @@ function toNum(val: unknown): number {
     return (val as { toNumber: () => number }).toNumber();
   }
   return 0;
+}
+
+function buildDependencyFilters(
+  alias: string,
+  options: SymbolDependencyOptions,
+): { whereClause: string; params: Record<string, unknown> } {
+  const filters: string[] = [];
+  const params: Record<string, unknown> = {};
+
+  if (options.file_path?.trim()) {
+    filters.push(`toLower(${alias}.file_path) CONTAINS toLower($file_path)`);
+    params.file_path = options.file_path.trim();
+  }
+  if (options.kind) {
+    filters.push(`${alias}.kind = $kind`);
+    params.kind = options.kind;
+  }
+
+  return {
+    whereClause: filters.length > 0 ? `WHERE ${filters.join(' AND ')}` : '',
+    params,
+  };
+}
+
+function normalizeDependencyLimit(limit: number | undefined): number {
+  if (limit == null) return 50;
+  const floored = Math.floor(limit);
+  if (!Number.isFinite(floored) || floored <= 0) return 50;
+  return Math.min(floored, 100);
+}
+
+function normalizeLookupLimit(limit: number | undefined): number {
+  if (limit == null) return 50;
+  const floored = Math.floor(limit);
+  if (!Number.isFinite(floored) || floored <= 0) return 50;
+  return Math.min(floored, 100);
 }

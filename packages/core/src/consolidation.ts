@@ -310,8 +310,12 @@ export class ConsolidationEngine {
         const newConfidence = Math.max(0, node.confidence - 0.1 * (corrections.length + contradictions.length));
         proposals.push(buildSupersedePropsal(scope, node, newConfidence, cluster.totalWeight));
       } else {
-        // Reinforce — decay proposal: bump confidence gently
-        proposals.push(buildDecayProposal(scope, node, cluster.totalWeight));
+        // Reinforce — the knowledge held true, so RAISE confidence (gently, with
+        // diminishing returns toward 1.0). Previously this incorrectly called
+        // buildDecayProposal, which DECAYED confidence by 5% — so repeatedly-confirmed
+        // (i.e. most-validated) memories lost confidence every cycle, backwards for a
+        // memory layer.
+        proposals.push(buildReinforceProposal(scope, node, cluster.totalWeight));
       }
     }
 
@@ -351,7 +355,9 @@ export class ConsolidationEngine {
             await this._disputeRelatedFacts(before.content);
           }
         }
-      } else if (proposal.type === 'decay') {
+      } else if (proposal.type === 'decay' || proposal.type === 'reinforce') {
+        // Both are confidence adjustments applied via updateConfidence; they differ
+        // only in direction (decay lowers, reinforce raises).
         const targetId = proposal.affected_ids[0];
         if (targetId) {
           const after = proposal.after as { confidence?: number };
@@ -412,6 +418,7 @@ export class ConsolidationEngine {
             subject: input.subject,
             predicate: input.predicate,
             object: input.object,
+            entity_id: null,
             source_episode_ids: episodeIds,
             valid_at: now,
             invalid_at: null,
@@ -432,6 +439,7 @@ export class ConsolidationEngine {
             subject: input.subject,
             predicate: input.predicate,
             object: input.object,
+            entity_id: null,
             source_episode_ids: episodeIds,
             valid_at: now,
             invalid_at: null,
@@ -516,6 +524,30 @@ function buildDecayProposal(
     before: { ...node } as Record<string, unknown>,
     after: {
       confidence: decayedConfidence,
+    } as Record<string, unknown>,
+    score,
+    created_at: new Date().toISOString(),
+  };
+}
+
+// Gentle confidence gain on reinforcement: move a small fraction toward 1.0, so
+// confidence rises with diminishing returns and is bounded at 1.0 (can never exceed it).
+const REINFORCE_FACTOR = 0.05;
+
+function buildReinforceProposal(
+  scope: string,
+  node: SemanticNode,
+  score: number,
+): ConsolidationProposal {
+  const reinforcedConfidence = Math.min(1, node.confidence + (1 - node.confidence) * REINFORCE_FACTOR);
+  return {
+    id: nanoid(),
+    type: 'reinforce',
+    scope,
+    affected_ids: [node.id],
+    before: { ...node } as Record<string, unknown>,
+    after: {
+      confidence: reinforcedConfidence,
     } as Record<string, unknown>,
     score,
     created_at: new Date().toISOString(),

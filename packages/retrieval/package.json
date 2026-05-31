@@ -7,12 +7,13 @@
   "scripts": {
     "build": "tsc -b",
     "test": "vitest run",
-    "bench": "tsx bench/benchmark.ts"
+    "bench": "tsx bench/benchmark.ts",
+    "bench:quality": "tsx bench/quality-eval.ts"
   },
   "dependencies": {
-    "@amp/core": "*",
     "@amp/arch": "*",
     "@amp/code": "*",
+    "@amp/core": "*",
     "@amp/redis": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "neo4j-driver": "^5.27.0",

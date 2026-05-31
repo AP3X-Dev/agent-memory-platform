@@ -23,6 +23,13 @@ const MUTATING_KEYWORDS = [
   'FOREACH', 'LOAD',
 ];
 
+const ADMINISTRATIVE_COMMAND_RE = /^\s*(SHOW|USE)\b/i;
+const MAX_RAW_CYPHER_LIMIT = 100;
+
+function stripTrailingSemicolons(cypher: string): string {
+  return cypher.trim().replace(/;+\s*$/g, '');
+}
+
 /**
  * Validates that a Cypher query is read-only.
  *
@@ -51,6 +58,14 @@ export function validateReadOnlyCypher(cypher: string): void {
   // e.g. $SET, $DELETE, $REMOVE should not trigger keyword checks
   stripped = stripped.replace(/\$\w+/g, ' ');
 
+  const adminMatch = stripped.match(ADMINISTRATIVE_COMMAND_RE);
+  if (adminMatch) {
+    throw new Error(
+      `Cypher validation failed: query contains administrative keyword "${adminMatch[1].toUpperCase()}". ` +
+      'Only graph read queries are allowed via amp_query.',
+    );
+  }
+
   // Step 4: Check for mutating keywords
   for (const kw of MUTATING_KEYWORDS) {
     const re = new RegExp(`\\b${kw}\\b`, 'i');
@@ -76,6 +91,13 @@ export function validateReadOnlyCypher(cypher: string): void {
       'CALL {} subqueries are permitted.',
     );
   }
+}
+
+function normalizeRawCypherLimit(limit: number): number {
+  const floored = Math.floor(limit);
+  if (Number.isNaN(floored)) return 1;
+  if (!Number.isFinite(floored)) return MAX_RAW_CYPHER_LIMIT;
+  return Math.min(MAX_RAW_CYPHER_LIMIT, Math.max(1, floored));
 }
 
 export class ScopedQuery {
@@ -400,17 +422,16 @@ export class ScopedQuery {
     }
   }
 
-  async rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]> {
+  async rawCypher(cypher: string, limit: number, params: Record<string, unknown> = {}): Promise<Record<string, unknown>[]> {
     // Validate that the query is read-only before executing
     validateReadOnlyCypher(cypher);
 
     const session = this.driver.session();
     try {
-      // Append LIMIT clause only if not already present (case-insensitive)
-      const hasLimit = /\bLIMIT\b/i.test(cypher);
-      const finalCypher = hasLimit ? cypher : `${cypher.trimEnd()} LIMIT ${limit}`;
+      const safeLimit = normalizeRawCypherLimit(limit);
+      const finalCypher = `CALL {\n${stripTrailingSemicolons(cypher)}\n}\nRETURN * LIMIT ${safeLimit}`;
 
-      const result = await session.run(finalCypher, {});
+      const result = await session.run(finalCypher, params);
       return result.records.map((r) => {
         const obj: Record<string, unknown> = {};
         for (const key of r.keys) {
@@ -453,6 +474,7 @@ function mapFactNode(props: Record<string, unknown>): FactNode {
     subject: props.subject as string,
     predicate: props.predicate as string,
     object: props.object as string,
+    entity_id: (props.entity_id as string | null) ?? null,
     source_episode_ids: (props.source_episode_ids as string[]) ?? [],
     valid_at: props.valid_at as string,
     invalid_at: (props.invalid_at as string) ?? null,

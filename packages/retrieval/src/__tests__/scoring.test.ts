@@ -7,6 +7,7 @@ import {
   computeQueryStats,
   adaptiveWeights,
   mmrDiversify,
+  provenanceQualityMultiplier,
 } from '../scoring.js';
 import type { RetrievalResult } from '../types.js';
 
@@ -98,6 +99,35 @@ describe('normalizeScores', () => {
   });
 });
 
+// ─── provenanceQualityMultiplier ────────────────────────────────────────────
+
+describe('provenanceQualityMultiplier', () => {
+  it('boosts high-confidence results with multiple source episodes', () => {
+    const weak = makeResult('weak', 0.5, '/src/weak.ts');
+    weak.metadata = { confidence: 0.2, source_episode_ids: [] };
+
+    const backed = makeResult('backed', 0.5, '/src/backed.ts');
+    backed.metadata = { confidence: 0.95, source_episode_ids: ['ep-1', 'ep-2', 'ep-3'] };
+
+    expect(provenanceQualityMultiplier(backed)).toBeGreaterThan(provenanceQualityMultiplier(weak));
+  });
+
+  it('demotes invalidated or superseded results', () => {
+    const current = makeResult('current', 0.5, '/src/current.ts');
+    current.metadata = { confidence: 0.8, source_episode_ids: ['ep-1'] };
+
+    const invalidated = makeResult('invalidated', 0.5, '/src/invalidated.ts');
+    invalidated.metadata = { confidence: 0.8, source_episode_ids: ['ep-1'], invalidated_at: '2026-05-01T00:00:00.000Z' };
+
+    expect(provenanceQualityMultiplier(invalidated)).toBeLessThan(provenanceQualityMultiplier(current));
+    expect(provenanceQualityMultiplier(invalidated)).toBeLessThan(1);
+  });
+
+  it('leaves results without provenance metadata unchanged', () => {
+    expect(provenanceQualityMultiplier(makeResult('plain', 0.5, '/src/plain.ts'))).toBe(1);
+  });
+});
+
 // ─── computeQueryStats ───────────────────────────────────────────────────────
 
 describe('computeQueryStats', () => {
@@ -172,17 +202,37 @@ describe('mmrDiversify', () => {
     expect(diversified).toHaveLength(3);
   });
 
-  it('penalizes same-file results', () => {
+  it('penalizes same-file results when relevance is comparable', () => {
+    // With equally-relevant candidates, diversity is the legitimate tiebreaker: the
+    // different-file result outranks the same-file sibling of the top pick. (MMR
+    // relevance is min-max normalized so the diversity penalty is meaningful rather
+    // than being dwarfed by tiny absolute RRF scores.)
     const results: RetrievalResult[] = [
       makeResult('a', 0.9, '/src/auth.ts'),
-      makeResult('b', 0.85, '/src/auth.ts'), // Same file
-      makeResult('c', 0.8, '/src/db.ts'),    // Different file
+      makeResult('b', 0.6, '/src/auth.ts'), // same file as a
+      makeResult('c', 0.6, '/src/db.ts'),   // different file, equal relevance to b
     ];
     const diversified = mmrDiversify(results, 3);
-    // c (different file) should rank above b (same file as a) despite lower raw score
     const cIdx = diversified.findIndex((r) => r.id === 'c');
     const bIdx = diversified.findIndex((r) => r.id === 'b');
     expect(cIdx).toBeLessThan(bIdx);
+  });
+
+  it('keeps a strongly-relevant same-file sibling over a much weaker cross-file result', () => {
+    // Distinct symbols in one file are not duplicates. A hard 1.0 same-file penalty
+    // would evict the high-relevance sibling `b` for the far weaker `c`; the softened
+    // penalty retains it. Common in code memory (sibling functions in one file).
+    // b (same file as the top pick) is only slightly more relevant than c (different
+    // file). A hard 1.0 same-file penalty would evict b for c; the softened penalty
+    // retains the more-relevant sibling. Common in code memory (sibling functions).
+    const results: RetrievalResult[] = [
+      makeResult('a', 0.95, '/src/payment/charge.ts'),
+      makeResult('b', 0.85, '/src/payment/charge.ts'), // same file as a
+      makeResult('c', 0.8, '/src/utils/date.ts'),      // different file, slightly weaker
+    ];
+    const top2 = mmrDiversify(results, 2);
+    expect(top2.map((r) => r.id)).toContain('b');
+    expect(top2.map((r) => r.id)).not.toContain('c');
   });
 });
 

@@ -32,4 +32,28 @@ describe('code tools.ts regression', () => {
     expect(validationIdx).toBeLessThan(indexFileIdx);
     expect(validationIdx).toBeLessThan(indexProjectIdx);
   });
+
+  it('amp_code_context exposes project and file path scoping for direct code context calls', () => {
+    expect(TOOLS_SOURCE).toContain('project_name');
+    expect(TOOLS_SOURCE).toContain('buildCodePathScope');
+    expect(TOOLS_SOURCE).toContain('file_path: buildCodePathScope(args.file_path, args.project_name)');
+  });
+
+  it('amp_code_search exposes project and file path scoping for direct code search calls', () => {
+    const scopedSearchCalls = TOOLS_SOURCE.match(/file_path: buildCodePathScope\(args\.file_path, args\.project_name\)/g) ?? [];
+
+    expect(scopedSearchCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('amp_code_ast_grep exposes ast-grep structural search as a read-only code tool', () => {
+    expect(TOOLS_SOURCE).toContain("'amp_code_ast_grep'");
+    expect(TOOLS_SOURCE).toContain('structuralSearch(resolved');
+    expect(TOOLS_SOURCE).toContain('readOnlyHint: true');
+    expect(TOOLS_SOURCE).toContain('language: z.enum([\'javascript\', \'typescript\', \'tsx\'])');
+  });
+
+  it('amp_code_ast_grep exposes and forwards max_file_bytes for large-repo safety', () => {
+    expect(TOOLS_SOURCE).toContain('max_file_bytes');
+    expect(TOOLS_SOURCE).toContain('max_file_bytes: args.max_file_bytes');
+  });
 });

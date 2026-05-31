@@ -18,18 +18,21 @@ export class ImpactAnalyzer {
    *
    * @param entityName  Entity to analyze
    * @param asOf        Optional ISO timestamp — only traverse relationships active at this time
+   * @param projectName Optional project scope for duplicate entity names
    */
-  async blastRadius(entityName: string, asOf?: string): Promise<ImpactResult> {
+  async blastRadius(entityName: string, asOf?: string, projectName?: string): Promise<ImpactResult> {
     const session = this.driver.session();
     try {
       const filter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
-      const params: Record<string, unknown> = { name: entityName };
+      const params: Record<string, unknown> = { name: entityName, projectName: normalizeProjectName(projectName) };
       if (asOf) params.asOf = asOf;
 
       // Direct dependents (1 hop)
       const directResult = await session.run(
         `MATCH (dep:Entity)-[r]->(target:Entity {name: $name})
-         WHERE type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
+         WHERE ${entityProjectFilter('target')}
+           AND ${entityProjectFilter('dep')}
+           AND type(r) IN ['USES', 'CALLS', 'EXTENDS', 'IMPLEMENTS', 'LISTENS']
            AND ${filter}
          RETURN DISTINCT dep.name AS name`,
         params,
@@ -41,6 +44,8 @@ export class ImpactAnalyzer {
       const transitiveResult = await session.run(
         `MATCH path = (dep:Entity)-[:USES|CALLS|EXTENDS|IMPLEMENTS|LISTENS*2..5]->(target:Entity {name: $name})
          WHERE dep.name <> $name
+           AND ${entityProjectFilter('target')}
+           AND ${entityProjectFilter('dep')}
            AND ALL(r IN relationships(path) WHERE ${activeRelationshipFilter('r', asOf ? 'asOf' : undefined)})
          RETURN DISTINCT dep.name AS name`,
         params,
@@ -52,18 +57,21 @@ export class ImpactAnalyzer {
       // Co-aspect entities (share at least one aspect)
       const coAspectResult = await session.run(
         `MATCH (a:Aspect)-[:APPLIES_TO]->(target:Entity {name: $name})
+         WHERE ${entityProjectFilter('target')}
          MATCH (a)-[:APPLIES_TO]->(co:Entity)
          WHERE co.name <> $name
+           AND ${entityProjectFilter('co')}
          RETURN DISTINCT co.name AS name`,
-        { name: entityName },
+        params,
       );
       const coAspectEntities = coAspectResult.records.map((r) => r.get('name') as string);
 
       // Affected aspects
       const aspectResult = await session.run(
         `MATCH (a:Aspect)-[:APPLIES_TO]->(e:Entity {name: $name})
+         WHERE ${entityProjectFilter('e')}
          RETURN a.name AS name, a.stability_tier AS tier`,
-        { name: entityName },
+        params,
       );
       const affectedAspects = aspectResult.records.map((r) => r.get('name') as string);
       const tiers = aspectResult.records.map((r) => r.get('tier') as string);
@@ -91,4 +99,20 @@ export class ImpactAnalyzer {
       await session.close();
     }
   }
+}
+
+function entityProjectFilter(alias: string): string {
+  return `($projectName IS NULL
+             OR toLower(COALESCE(${alias}.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(${alias})
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             })`;
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }

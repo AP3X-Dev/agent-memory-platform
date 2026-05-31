@@ -28,6 +28,7 @@ export {
   normalizeScores,
   computeQueryStats,
   adaptiveWeights,
+  inferSourceTypeBoost,
   mmrDiversify,
 } from './scoring.js';
 

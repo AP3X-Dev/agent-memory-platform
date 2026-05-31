@@ -201,6 +201,46 @@ describe('DeterministicAssembler', () => {
       const noMatch = sections.find((s) => s.heading === 'No matching entities found');
       expect(noMatch).toBeUndefined();
     });
+
+    it('scopes fulltext entity matching to the requested project containment tree', async () => {
+      const run = vi.fn()
+        .mockResolvedValueOnce(mockNeo4jResult([{ name: 'AuthService' }]))
+        .mockResolvedValue(mockNeo4jResult([]));
+      const mockDriver = {
+        session: vi.fn().mockReturnValue({
+          run,
+          close: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const asm = new DeterministicAssembler(mockDriver as never);
+      await asm.assemble('auth service', { project_name: 'project:AMP' });
+
+      const [query, params] = run.mock.calls[0] as [string, Record<string, unknown>];
+      expect(query).toContain('$projectName IS NULL');
+      expect(query).toContain('CONTAINS*0..');
+      expect(params.projectName).toBe('AMP');
+    });
+
+    it('scopes keyword fallback entity matching to the requested project containment tree', async () => {
+      const run = vi.fn()
+        .mockRejectedValueOnce(new Error('No such index'))
+        .mockResolvedValueOnce(mockNeo4jResult([]));
+      const mockDriver = {
+        session: vi.fn().mockReturnValue({
+          run,
+          close: vi.fn().mockResolvedValue(undefined),
+        }),
+      };
+
+      const asm = new DeterministicAssembler(mockDriver as never);
+      await asm.assemble('auth service', { project_name: 'DealerBot.AI' });
+
+      const [query, params] = run.mock.calls[1] as [string, Record<string, unknown>];
+      expect(query).toContain('$projectName IS NULL');
+      expect(query).toContain('CONTAINS*0..');
+      expect(params.projectName).toBe('DealerBot.AI');
+    });
   });
 
   describe('token budgeting', () => {
@@ -238,6 +278,39 @@ describe('DeterministicAssembler', () => {
       // With tight budget, not all items should make it through
       const totalItems = sections.reduce((sum, s) => sum + s.items.length, 0);
       expect(totalItems).toBeLessThan(20);
+    });
+
+    it('skips oversized section items and keeps later items that fit the remaining budget', async () => {
+      let callIdx = 0;
+      const mockDriver = {
+        session: vi.fn().mockImplementation(() => {
+          callIdx++;
+          if (callIdx === 1) {
+            return {
+              run: vi.fn().mockResolvedValue(
+                mockNeo4jResult([
+                  { name: 'Root', depth: 0, responsibility: 'x'.repeat(2000) },
+                  { name: 'Service', depth: 1, responsibility: 'Small useful context' },
+                ]),
+              ),
+              close: vi.fn().mockResolvedValue(undefined),
+            };
+          }
+          return {
+            run: vi.fn().mockResolvedValue(mockNeo4jResult([])),
+            close: vi.fn().mockResolvedValue(undefined),
+          };
+        }),
+      };
+
+      const asm = new DeterministicAssembler(mockDriver as never);
+      const sections = await asm.assemble('test', {
+        entity_scope: ['Target'],
+        max_tokens: 100,
+      });
+
+      const hierarchy = sections.find((s) => s.heading === 'Domain Hierarchy');
+      expect(hierarchy?.items.map((item) => item.id)).toEqual(['hier-Service']);
     });
   });
 

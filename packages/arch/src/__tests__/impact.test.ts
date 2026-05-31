@@ -180,6 +180,21 @@ describe('ImpactAnalyzer', () => {
     });
   });
 
+  describe('project scoping', () => {
+    it('normalizes project_name and applies the containment boundary to every blast-radius query', async () => {
+      mockSession.run.mockResolvedValue(mockResult([]));
+
+      await analyzer.blastRadius('AuthService', undefined, 'project:AMP');
+
+      expect(mockSession.run).toHaveBeenCalledTimes(4);
+      for (const [query, params] of mockSession.run.mock.calls) {
+        expect(params).toMatchObject({ projectName: 'AMP' });
+        expect(query).toContain('$projectName IS NULL');
+        expect(query).toContain('CONTAINS*0..');
+      }
+    });
+  });
+
   it('returns empty arrays when entity has no dependents', async () => {
     mockSession.run.mockResolvedValue(mockResult([]));
 

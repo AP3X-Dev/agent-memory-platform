@@ -152,8 +152,7 @@ export class CodeWatcher {
    */
   queueReindex(filePath: string): void {
     const abs = resolve(filePath);
-    const ext = extname(abs);
-    if (!this.extensions.has(ext)) return;
+    if (!this.shouldTrackPath(abs)) return;
     this.debouncedReindex(abs);
   }
 
@@ -177,25 +176,26 @@ export class CodeWatcher {
   }
 
   private handleFileEvent(rootPath: string, filename: string): void {
-    const ext = extname(filename);
-
-    // Only watch supported extensions
-    if (!this.extensions.has(ext)) return;
-
-    // Skip excluded patterns
-    const parts = filename.split(/[/\\]/);
-    for (const part of parts) {
-      if (this.excludePatterns.has(part)) return;
-    }
-
-    // Skip test files if configured
-    if (this.skipTests) {
-      const lowerFilename = filename.toLowerCase();
-      if (TEST_FILE_PATTERNS.some((pattern) => lowerFilename.includes(pattern))) return;
-    }
-
     const fullPath = resolve(rootPath, filename);
+    if (!this.shouldTrackPath(fullPath)) return;
     this.debouncedReindex(fullPath);
+  }
+
+  private shouldTrackPath(filePath: string): boolean {
+    const ext = extname(filePath);
+    if (!this.extensions.has(ext)) return false;
+
+    const parts = filePath.split(/[/\\]/);
+    for (const part of parts) {
+      if (this.excludePatterns.has(part)) return false;
+    }
+
+    if (this.skipTests) {
+      const lowerPath = filePath.toLowerCase();
+      if (TEST_FILE_PATTERNS.some((pattern) => lowerPath.includes(pattern))) return false;
+    }
+
+    return true;
   }
 
   private debouncedReindex(filePath: string): void {

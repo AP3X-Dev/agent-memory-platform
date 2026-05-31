@@ -118,6 +118,32 @@ describe('CodeWatcher', () => {
     expect(watcher.getPendingCount()).toBe(1);
   });
 
+  it('queueReindex ignores excluded directories like watcher file events', () => {
+    watcher = new CodeWatcher(mockIndexer, mockDeleter, { debounceMs: 100 });
+
+    watcher.queueReindex('/tmp/test/node_modules/pkg/index.ts');
+    watcher.queueReindex('/tmp/test/dist/bundle.js');
+
+    expect(watcher.getPendingCount()).toBe(0);
+  });
+
+  it('queueReindex ignores test files by default like watcher file events', () => {
+    watcher = new CodeWatcher(mockIndexer, mockDeleter, { debounceMs: 100 });
+
+    watcher.queueReindex('/tmp/test/src/service.test.ts');
+    watcher.queueReindex('/tmp/test/src/__tests__/service.ts');
+
+    expect(watcher.getPendingCount()).toBe(0);
+  });
+
+  it('queueReindex accepts test files when skipTests is disabled', () => {
+    watcher = new CodeWatcher(mockIndexer, mockDeleter, { debounceMs: 100, skipTests: false });
+
+    watcher.queueReindex('/tmp/test/src/service.test.ts');
+
+    expect(watcher.getPendingCount()).toBe(1);
+  });
+
   it('multiple rapid queueReindex calls for same file only produce one pending', () => {
     watcher = new CodeWatcher(mockIndexer, mockDeleter, { debounceMs: 500 });
     watcher.queueReindex('/tmp/test/src/service.ts');

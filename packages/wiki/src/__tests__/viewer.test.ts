@@ -16,6 +16,7 @@ const TEST_PORT = 39742; // High port unlikely to conflict
 
 async function setupTestWiki(): Promise<void> {
   await mkdir(join(testDir, 'projects', 'test-project'), { recursive: true });
+  await mkdir(join(testDir, 'projects', 'other-project'), { recursive: true });
   await mkdir(join(testDir, 'library'), { recursive: true });
   await mkdir(join(testDir, 'topics'), { recursive: true });
 
@@ -33,10 +34,22 @@ async function setupTestWiki(): Promise<void> {
     'utf-8',
   );
 
+  await writeFile(
+    join(testDir, 'projects', 'other-project', '_index.md'),
+    '---\nproject: other-project\ntags: [testing]\n---\n\n# Other Project\n\nAnother project for search filtering.\n',
+    'utf-8',
+  );
+
   // Create entity article
   await writeFile(
     join(testDir, 'projects', 'test-project', 'widget.md'),
-    '---\nentity: widget\ntype: component\nconfidence: 0.85\n---\n\n# Widget\n\n## Architecture\n\nWidget uses reactive patterns.\n\n## History\n\nSome history here.\n',
+    '---\nentity: widget\ntype: component\nconfidence: 0.85\n---\n\n# Widget\n\n## Architecture\n\nWidget uses reactive patterns. SharedToken belongs to test-project.\n\n## History\n\nSome history here.\n',
+    'utf-8',
+  );
+
+  await writeFile(
+    join(testDir, 'projects', 'other-project', 'other-widget.md'),
+    '---\nentity: other-widget\ntype: component\nconfidence: 0.75\n---\n\n# Other Widget\n\nSharedToken belongs to other-project.\n',
     'utf-8',
   );
 
@@ -51,6 +64,27 @@ async function setupTestWiki(): Promise<void> {
   await writeFile(
     join(testDir, 'topics', '_index.md'),
     '---\ntitle: Topics\n---\n\n# Topics\n\nNo topics yet.\n',
+    'utf-8',
+  );
+
+  await writeFile(
+    join(testDir, 'topics', 'concurrency.md'),
+    [
+      '---',
+      'title: concurrency',
+      '---',
+      '',
+      '# concurrency',
+      '',
+      '## [[projects/test-project/_index|Test Project]]',
+      '',
+      'Concurrency notes for Test Project.',
+      '',
+      '## Related Topics',
+      '',
+      'See [[topics/testing|testing]].',
+      '',
+    ].join('\n'),
     'utf-8',
   );
 }
@@ -133,11 +167,73 @@ describe('WikiViewer', () => {
     expect(html).toContain('1 HITS');
   });
 
+  it('search matches multi-term queries when terms are separated in the page', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/search?q=reactive+history`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Widget');
+    expect(html).toContain('1 HITS');
+  });
+
   it('search returns no results for unknown query', async () => {
     const res = await fetch(`http://localhost:${TEST_PORT}/search?q=xyznonexistent123`);
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('No results found');
+  });
+
+  it('search ranks title matches ahead of incidental body matches', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/search?q=Test+Project`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    const firstResult = html.match(/<a class="result" href="([^"]+)">[\s\S]*?<div class="title">([^<]+)<\/div>/);
+    expect(firstResult?.[1]).toBe('/wiki/projects/test-project/_index');
+    expect(firstResult?.[2]).toBe('Test Project');
+  });
+
+  it('search filters results by project slug', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/search?q=SharedToken&project=test-project`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+    expect(html).toContain('Widget');
+    expect(html).toContain('1 HITS');
+    expect(html).not.toContain('Other Widget');
+  });
+
+  it('renders project breadcrumbs and scoped search controls on project pages', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/wiki/projects/test-project/widget`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    expect(html).toContain('<div class="project-context">');
+    expect(html).toContain('<a href="/wiki/_index">PORTAL</a>');
+    expect(html).toContain('<a href="/wiki/projects/test-project/_index">Test Project</a>');
+    expect(html).toContain('<span class="here">Widget</span>');
+    expect(html).toContain('href="/wiki/projects/test-project/_graph"');
+    expect(html).toContain('name="project" value="test-project"');
+    expect(html).toContain('placeholder="Search Test Project"');
+  });
+
+  it('shows project filter context and a clear path on filtered search pages', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/search?q=SharedToken&project=test-project`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    expect(html).toContain('<a href="/wiki/projects/test-project/_index">Test Project</a>');
+    expect(html).toContain('<span class="filter-pill">PROJECT: Test Project</span>');
+    expect(html).toContain('<a class="clear-filter" href="/search?q=SharedToken">CLEAR</a>');
+  });
+
+  it('renders topic sidebar headings with readable labels and matching anchors', async () => {
+    const res = await fetch(`http://localhost:${TEST_PORT}/wiki/topics/concurrency`);
+    expect(res.status).toBe(200);
+    const html = await res.text();
+
+    expect(html).toContain('<li><a href="#test-project">Test Project</a></li>');
+    expect(html).toContain('<h2 id="test-project"><a href="/wiki/projects/test-project/_index" class="wikilink">Test Project</a></h2>');
+    expect(html).toContain('<li><a href="#related-topics">Related Topics</a></li>');
+    expect(html).toContain('<h2 id="related-topics">Related Topics</h2>');
+    expect(html).not.toContain('[[projects/test-project/_index|Test Project]]');
   });
 
   it('builds sidebar with project navigation', async () => {

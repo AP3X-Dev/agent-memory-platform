@@ -147,6 +147,19 @@ function createMockDriver(queryResponses: Map<string, ReturnType<typeof mockResu
   } as unknown as Driver;
 }
 
+function createParamAwareMockDriver(
+  handler: (query: string, params?: Record<string, unknown>) => ReturnType<typeof mockResult>,
+): Driver {
+  const mockSession = {
+    run: vi.fn(async (query: string, params?: Record<string, unknown>) => handler(query, params)),
+    close: vi.fn(async () => {}),
+  } as unknown as Session;
+
+  return {
+    session: vi.fn(() => mockSession),
+  } as unknown as Driver;
+}
+
 // WikiCompiler tests
 
 describe('WikiCompiler', () => {
@@ -248,6 +261,116 @@ describe('WikiCompiler', () => {
     }
   });
 
+  it('uses canonical human-facing project rows for the portal index', async () => {
+    const projects = [
+      mockRecord({
+        id: 'proj-alpha-title',
+        name: 'Project Alpha',
+        type: 'project',
+        description: 'Human name wins',
+        aliases: null,
+        created_at: '2026-01-01T00:00:00Z',
+      }),
+      mockRecord({
+        id: 'proj-alpha-slug',
+        name: 'project-alpha',
+        type: 'project',
+        description: 'Duplicate slug row',
+        aliases: null,
+        created_at: '2026-01-01T00:00:00Z',
+      }),
+      mockRecord({
+        id: 'proj-boot',
+        name: '__boot_smoke__',
+        type: 'project',
+        description: 'Internal smoke-test scope',
+        aliases: null,
+        created_at: '2026-01-01T00:00:00Z',
+      }),
+    ];
+
+    const alphaEntity = mockRecord({
+      id: 'ent-alpha',
+      name: 'AlphaEngine',
+      type: 'module',
+      description: 'Core engine',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+
+    const alphaEpisodic = mockRecord({
+      id: 'ep-alpha',
+      task: '[project:project-alpha] Implemented engine',
+      content: 'Implemented AlphaEngine',
+      outcome: 'approved',
+      session_id: 'session-alpha',
+      created_at: '2026-05-01T10:00:00Z',
+    });
+
+    const bootEpisodic = mockRecord({
+      id: 'ep-boot',
+      task: '[project:__boot_smoke__] Smoke run',
+      content: 'Boot smoke completed',
+      outcome: 'approved',
+      session_id: 'session-boot',
+      created_at: '2026-05-02T10:00:00Z',
+    });
+
+    const driver = createParamAwareMockDriver((query, params) => {
+      if (query.includes('collect(DISTINCT e.name) AS entities')) return mockResult([]);
+      if (query.includes('ep.task STARTS WITH')) return mockResult([]);
+      if (query.includes("(e:Entity {type: 'project'})")) return mockResult(projects);
+      if (query.includes('CONTAINS*1..')) {
+        return params?.projectName === 'Project Alpha' || params?.projectName === 'project-alpha'
+          ? mockResult([alphaEntity])
+          : mockResult([]);
+      }
+      if (query.includes('-[:MODIFIED]->')) return mockResult([]);
+      if (query.includes('ep.task CONTAINS $tag')) {
+        if (params?.tag === '[project:project-alpha]') return mockResult([alphaEpisodic]);
+        if (params?.tag === '[project:__boot_smoke__]') return mockResult([bootEpisodic]);
+        return mockResult([]);
+      }
+      if (query.includes('UNWIND s.tags')) return mockResult([]);
+      if (query.includes('labels(n)[0]')) {
+        return mockResult([
+          mockRecord({ label: 'Entity', cnt: 4 }),
+          mockRecord({ label: 'Semantic', cnt: 0 }),
+          mockRecord({ label: 'Episodic', cnt: 2 }),
+          mockRecord({ label: 'Source', cnt: 0 }),
+        ]);
+      }
+      if (query.includes('MATCH (s:Source)')) return mockResult([]);
+      if (query.includes('LIMIT $limit')) return mockResult([alphaEpisodic, bootEpisodic]);
+      if (query.includes('count(s) AS cnt')) return mockResult([mockRecord({ cnt: 0 })]);
+      if (query.includes('[:ABOUT]->(e:Entity {name: $name})')) return mockResult([]);
+      if (query.includes('parent:Entity')) return mockResult([]);
+      if (query.includes('->(child:Entity)')) return mockResult([]);
+      if (query.includes('(other:Entity)-[r2]->')) return mockResult([]);
+      if (query.includes('[:CITES]->(src:Source')) return mockResult([]);
+      return mockResult([]);
+    });
+    const compiler = new WikiCompiler(driver);
+
+    const os = await import('node:os');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const outputDir = path.join(os.tmpdir(), `amp-wiki-human-nav-${Date.now()}`);
+
+    try {
+      await compiler.compile(outputDir);
+
+      const portal = await fs.readFile(path.join(outputDir, '_index.md'), 'utf-8');
+      const alphaRows = portal.match(/\[\[projects\/project-alpha\/_index\|/g) ?? [];
+      expect(alphaRows).toHaveLength(1);
+      expect(portal).toContain('[[projects/project-alpha/_index|Project Alpha]]');
+      expect(portal).not.toContain('__boot_smoke__');
+      expect(portal).toContain('> **1** projects');
+    } finally {
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
   it('compiles within 500ms budget on a realistic-sized mock graph', async () => {
     // Simulate a graph with 2 projects, 20 entities each, 50 semantics, 219 episodics
     const entities = Array.from({ length: 20 }, (_, i) => mockRecord({
@@ -329,6 +452,180 @@ describe('WikiCompiler', () => {
 
       // The compile should complete well under 500ms with batched queries
       expect(elapsed).toBeLessThan(500);
+    } finally {
+      await fs.rm(outputDir, { recursive: true, force: true });
+    }
+  });
+
+  it('honors project scope when compiling a single project wiki', async () => {
+    const alphaProject = mockRecord({
+      id: 'proj-alpha',
+      name: 'alpha',
+      type: 'project',
+      description: 'Alpha project',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const betaProject = mockRecord({
+      id: 'proj-beta',
+      name: 'beta',
+      type: 'project',
+      description: 'Beta project',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const alphaEntity = mockRecord({
+      id: 'ent-alpha',
+      name: 'AlphaEngine',
+      type: 'module',
+      description: 'Alpha engine',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const betaEntity = mockRecord({
+      id: 'ent-beta',
+      name: 'BetaEngine',
+      type: 'module',
+      description: 'Beta engine',
+      aliases: null,
+      created_at: '2026-01-01T00:00:00Z',
+    });
+    const alphaSemantic = mockRecord({
+      id: 'sem-alpha',
+      content: 'Alpha keeps project-scoped wiki output focused',
+      confidence: 0.9,
+      tags: ['project:alpha', 'alpha-topic'],
+      entities: ['AlphaEngine'],
+      updated_at: '2026-04-01T00:00:00Z',
+      entity_refs: [],
+    });
+    const betaSemantic = mockRecord({
+      id: 'sem-beta',
+      content: 'Beta should not leak into alpha wiki output',
+      confidence: 0.95,
+      tags: ['project:beta', 'beta-topic'],
+      entities: ['BetaEngine'],
+      updated_at: '2026-04-01T00:00:00Z',
+      entity_refs: [],
+    });
+    const alphaEpisodic = mockRecord({
+      id: 'ep-alpha',
+      task: '[project:alpha] Alpha task',
+      content: 'Alpha activity',
+      outcome: 'approved',
+      session_id: 'session-alpha',
+      created_at: '2026-05-01T10:00:00Z',
+    });
+    const betaEpisodic = mockRecord({
+      id: 'ep-beta',
+      task: '[project:beta] Beta task',
+      content: 'Beta activity',
+      outcome: 'approved',
+      session_id: 'session-beta',
+      created_at: '2026-05-02T10:00:00Z',
+    });
+    const alphaSource = mockRecord({
+      id: 'src-alpha',
+      title: 'Alpha Source',
+      source_type: 'note',
+      path: '/tmp/alpha.md',
+      project_tag: 'project:alpha',
+      created_at: '2026-05-01T00:00:00Z',
+    });
+    const betaSource = mockRecord({
+      id: 'src-beta',
+      title: 'Beta Source',
+      source_type: 'note',
+      path: '/tmp/beta.md',
+      project_tag: 'project:beta',
+      created_at: '2026-05-01T00:00:00Z',
+    });
+
+    const driver = createParamAwareMockDriver((query, params) => {
+      if (query.includes('collect(DISTINCT e.name) AS entities')) return mockResult([alphaSemantic, betaSemantic]);
+      if (query.includes('ep.task STARTS WITH')) return mockResult([]);
+      if (query.includes("(e:Entity {type: 'project'})")) return mockResult([alphaProject, betaProject]);
+      if (query.includes('CONTAINS*1..')) {
+        if (params?.projectName === 'alpha') return mockResult([alphaEntity]);
+        if (params?.projectName === 'beta') return mockResult([betaEntity]);
+        return mockResult([]);
+      }
+      if (query.includes('-[:MODIFIED]->')) return mockResult([]);
+      if (query.includes('ep.task CONTAINS $tag')) {
+        if (params?.tag === '[project:alpha]') return mockResult([alphaEpisodic]);
+        if (params?.tag === '[project:beta]') return mockResult([betaEpisodic]);
+        return mockResult([]);
+      }
+      if (query.includes('ep.task CONTAINS $name OR ep.content CONTAINS')) return mockResult([]);
+      if (query.includes('MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $name})')) {
+        if (params?.name === 'AlphaEngine') return mockResult([alphaSemantic, betaSemantic]);
+        if (params?.name === 'BetaEngine') return mockResult([betaSemantic]);
+        return mockResult([]);
+      }
+      if (query.includes('parent:Entity')) return mockResult([]);
+      if (query.includes('->(child:Entity)')) return mockResult([]);
+      if (query.includes('MATCH (s:Semantic)-[:ABOUT]->(target:Entity')) return mockResult([]);
+      if (query.includes('(other:Entity)-[r2]->')) return mockResult([]);
+      if (query.includes('MATCH (s:Semantic)-[:ABOUT]->(e:Entity {name: $name})\n       MATCH (s)-[:CITES]->(src:Source)')) return mockResult([]);
+      if (query.includes('MATCH (s:Source)')) return mockResult([alphaSource, betaSource]);
+      if (query.includes('MATCH (s:Semantic)-[:CITES]->(src:Source')) {
+        if (params?.sourceId === 'src-alpha') return mockResult([alphaSemantic]);
+        if (params?.sourceId === 'src-beta') return mockResult([betaSemantic]);
+        return mockResult([]);
+      }
+      if (query.includes('UNWIND s.tags')) {
+        return mockResult([
+          mockRecord({ tag: 'alpha-topic', count: 3, projects: [] }),
+          mockRecord({ tag: 'beta-topic', count: 3, projects: [] }),
+        ]);
+      }
+      if (query.includes('labels(n)[0]')) {
+        return mockResult([
+          mockRecord({ label: 'Entity', cnt: 4 }),
+          mockRecord({ label: 'Semantic', cnt: 2 }),
+          mockRecord({ label: 'Episodic', cnt: 2 }),
+          mockRecord({ label: 'Source', cnt: 2 }),
+        ]);
+      }
+      if (query.includes('LIMIT $limit')) return mockResult([betaEpisodic, alphaEpisodic]);
+      return mockResult([]);
+    });
+
+    const compiler = new WikiCompiler(driver);
+    const os = await import('node:os');
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const outputDir = path.join(os.tmpdir(), `amp-wiki-project-scope-${Date.now()}`);
+
+    try {
+      await compiler.compile(outputDir, 'project:alpha');
+
+      const portal = await fs.readFile(path.join(outputDir, '_index.md'), 'utf-8');
+      expect(portal).toContain('> **1** projects');
+      expect(portal).toContain('Alpha keeps project-scoped wiki output focused');
+      expect(portal).not.toContain('Beta should not leak');
+
+      const decisions = await fs.readFile(path.join(outputDir, '_decisions.md'), 'utf-8');
+      expect(decisions).toContain('Alpha keeps project-scoped wiki output focused');
+      expect(decisions).not.toContain('Beta should not leak');
+
+      const recent = await fs.readFile(path.join(outputDir, '_recent.md'), 'utf-8');
+      expect(recent).toContain('Alpha task');
+      expect(recent).not.toContain('Beta task');
+
+      const alphaArticle = await fs.readFile(path.join(outputDir, 'projects', 'alpha', 'alphaengine.md'), 'utf-8');
+      expect(alphaArticle).toContain('Alpha keeps project-scoped wiki output focused');
+      expect(alphaArticle).not.toContain('Beta should not leak');
+
+      const library = await fs.readFile(path.join(outputDir, 'library', '_index.md'), 'utf-8');
+      expect(library).toContain('Alpha Source');
+      expect(library).not.toContain('Beta Source');
+
+      const topics = await fs.readFile(path.join(outputDir, 'topics', '_index.md'), 'utf-8');
+      expect(topics).toContain('alpha-topic');
+      expect(topics).not.toContain('beta-topic');
+
+      await expect(fs.stat(path.join(outputDir, 'projects', 'beta', '_index.md'))).rejects.toThrow();
     } finally {
       await fs.rm(outputDir, { recursive: true, force: true });
     }

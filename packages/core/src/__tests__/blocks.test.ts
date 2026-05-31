@@ -206,6 +206,20 @@ describe('MemoryBlockService.promote', () => {
     expect(neo4j.save).toHaveBeenCalledOnce();
   });
 
+  it('deletes the stale session-scoped copy when promoting to core', async () => {
+    // working block keyed by session id; promoting to core strips session_id (new key),
+    // so the old session-scoped Redis entry must be removed or it lingers as stale.
+    const block = makeBlock({ tier: 'working', session_id: 'sess-1' });
+    const redis = makeRedis({ get: vi.fn().mockResolvedValue(block) });
+    const neo4j = makeNeo4j();
+    const service = new MemoryBlockService(redis, neo4j);
+
+    const result = await service.promote('project:test', 'working_state', 'working', 'core', 'sess-1');
+    expect(result.tier).toBe('core');
+    expect(result.session_id).toBeUndefined();
+    expect(redis.delete).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
+  });
+
   it('throws when block not found', async () => {
     const redis = makeRedis();
     const neo4j = makeNeo4j();

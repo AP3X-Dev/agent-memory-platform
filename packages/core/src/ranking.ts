@@ -10,8 +10,7 @@ export function rankMemories(
   now: Date = new Date(),
 ): Array<SemanticNode & { score: number }> {
   const scored = memories.map((memory) => {
-    const ageDays =
-      (now.getTime() - new Date(memory.updated_at).getTime()) / (1000 * 60 * 60 * 24);
+    const ageDays = ageInDays(memory.updated_at, now);
     const recencyScore = Math.exp(-ageDays / RECENCY_DECAY_DAYS);
     const relevance = memory.relevanceScore ?? 0.5;
     const score = memory.confidence * recencyScore * relevance;
@@ -28,7 +27,7 @@ export function budgetTokens<T extends { tokens: number }>(items: T[], maxTokens
   let used = 0;
 
   for (const item of items) {
-    if (used + item.tokens > maxTokens) break;
+    if (item.tokens > maxTokens || used + item.tokens > maxTokens) continue;
     result.push(item);
     used += item.tokens;
   }
@@ -42,22 +41,47 @@ export function estimateTokens(text: string): number {
 }
 
 /**
+ * Per-status ranking multiplier for facts. In historical/interval/evolution temporal
+ * modes, fact sets can include non-active facts, so ranking MUST demote them — a
+ * superseded fact must never rank alongside the current truth ("what is true now").
+ *   active      — current truth, full weight
+ *   tentative   — observed once, not yet confirmed; ranks below active
+ *   disputed    — contradicted but not resolved; penalized
+ *   invalidated — superseded by a newer fact; strongly demoted (kept for history, not trusted)
+ */
+const FACT_STATUS_MULTIPLIER: Record<FactNode['status'], number> = {
+  active: 1.0,
+  tentative: 0.7,
+  disputed: 0.5,
+  invalidated: 0.15,
+};
+
+/**
  * Rank facts by confidence, recency (using valid_at), and status.
- * Active facts get a base boost. Disputed facts get a penalty.
+ * Current (active) facts rank above tentative/disputed/superseded ones.
  */
 export function rankFacts(
   facts: FactNode[],
   now: Date = new Date(),
 ): FactNode[] {
   const scored = facts.map((fact) => {
-    const ageDays =
-      (now.getTime() - new Date(fact.valid_at).getTime()) / (1000 * 60 * 60 * 24);
+    const ageDays = ageInDays(fact.valid_at, now);
     const recencyScore = Math.exp(-ageDays / (RECENCY_DECAY_DAYS * FACT_DECAY_MULTIPLIER));
-    const statusMultiplier = fact.status === 'disputed' ? 0.5 : 1.0;
+    const statusMultiplier = FACT_STATUS_MULTIPLIER[fact.status] ?? 1.0;
     const score = fact.confidence * recencyScore * statusMultiplier;
     return { fact, score };
   });
 
   scored.sort((a, b) => b.score - a.score);
   return scored.map((s) => s.fact);
+}
+
+function ageInDays(timestamp: string, now: Date): number {
+  const parsed = new Date(timestamp).getTime();
+  if (!Number.isFinite(parsed)) return 0;
+
+  const ageMs = now.getTime() - parsed;
+  if (!Number.isFinite(ageMs) || ageMs < 0) return 0;
+
+  return ageMs / (1000 * 60 * 60 * 24);
 }

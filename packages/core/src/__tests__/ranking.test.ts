@@ -114,6 +114,19 @@ describe('rankMemories', () => {
     expect(typeof ranked[0].score).toBe('number');
   });
 
+  it('keeps a finite score when updated_at is invalid', () => {
+    const node = makeNode({
+      id: 'bad-date',
+      confidence: 0.8,
+      updated_at: 'not-a-date',
+      relevanceScore: 0.7,
+    });
+
+    const ranked = rankMemories([node], new Date('2025-01-10T00:00:00Z'));
+
+    expect(Number.isFinite(ranked[0].score)).toBe(true);
+  });
+
   it('returns empty array for empty input', () => {
     expect(rankMemories([], new Date())).toEqual([]);
   });
@@ -161,6 +174,19 @@ describe('budgetTokens', () => {
   it('returns empty array when first item already exceeds budget', () => {
     const items = [{ tokens: 500 }];
     expect(budgetTokens(items, 100)).toEqual([]);
+  });
+
+  it('skips oversized items and continues filling the remaining budget', () => {
+    const items = [
+      { tokens: 500, label: 'oversized' },
+      { tokens: 40, label: 'first-fit' },
+      { tokens: 70, label: 'too-large-after-first-fit' },
+      { tokens: 30, label: 'second-fit' },
+    ];
+
+    const result = budgetTokens(items, 100);
+
+    expect(result.map((item) => item.label)).toEqual(['first-fit', 'second-fit']);
   });
 });
 

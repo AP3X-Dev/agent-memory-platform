@@ -58,7 +58,7 @@ Commands:
 Options:
   --output    Output directory (default: /home/cerebro/projects/amp/wiki)
   --port      Viewer port (default: 3200)
-  --project   Project tag (for lint only)
+  --project   Project tag for compile/lint (default compile: all)
 `);
     process.exit(0);
   }
@@ -73,13 +73,14 @@ Options:
 
     const outputDir = (flags['output'] as string) ?? '/home/cerebro/projects/amp/wiki';
     const port = parseInt((flags['port'] as string) ?? '3200', 10);
+    const projectTag = (flags['project'] as string) ?? 'all';
 
     switch (command) {
       case 'compile': {
         const compiler = new WikiCompiler(driver);
         console.error('[wiki-cli] Compiling wiki...');
 
-        const result = await compiler.compile(outputDir);
+        const result = await compiler.compile(outputDir, projectTag);
 
         console.error(`[wiki-cli] Done.`);
         console.error(`  Projects:       ${result.projects_compiled}`);
@@ -105,8 +106,8 @@ Options:
       }
 
       case 'lint': {
-        const projectTag = flags['project'] as string;
-        if (!projectTag) {
+        const lintProjectTag = flags['project'] as string;
+        if (!lintProjectTag) {
           console.error('[wiki-cli] --project required for lint');
           process.exit(1);
         }
@@ -117,7 +118,7 @@ Options:
           : undefined;
 
         const result = await linter.lint({
-          project_tag: projectTag,
+          project_tag: lintProjectTag,
           checks,
         });
         console.log(result.summary);
@@ -130,7 +131,7 @@ Options:
         const compiler = new WikiCompiler(driver);
         console.error('[wiki-cli] Compiling wiki...');
 
-        const result = await compiler.compile(outputDir);
+        const result = await compiler.compile(outputDir, projectTag);
 
         console.error(`[wiki-cli] Compiled: ${result.projects_compiled} projects, ${result.articles_compiled} articles`);
 
