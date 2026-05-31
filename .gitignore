@@ -34,3 +34,23 @@ packages/oni/
 # Personal agent configs (use .example templates instead)
 CLAUDE.md
 GEMINI.md
+
+# === Universal ===
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+
+# === Secrets / keys ===
+*.pem
+*.key
+id_rsa*
+credentials.json
+serviceAccountKey.json
+*.p12
+*.pfx
+
+# === Environment files (keep the example template) ===
+.env.*
+!.env.example
