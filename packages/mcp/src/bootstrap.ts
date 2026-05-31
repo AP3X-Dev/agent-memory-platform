@@ -3,7 +3,7 @@
 
 import { createRedisClient } from '@amp/redis';
 import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore, BlockStore as RedisBlockStore } from '@amp/redis';
-import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore, FactStore } from '@amp/neo4j';
+import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore, FactStore, ProvenanceTraversal } from '@amp/neo4j';
 import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService, EMBEDDING_DIM } from '@amp/core';
 import type { AMPConfig } from '@amp/core';
 import { setServiceInstances } from './tools.js';
@@ -91,6 +91,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const scopedQuery = new ScopedQuery(driver);
   const gds = new GDSAlgorithms(driver);
   const factStoreInstance = new FactStore(driver);
+  const provenanceTraversal = new ProvenanceTraversal(driver);
 
   // ─── Operational status tracking ────────────────────────────────────────────
   const status = {
@@ -123,7 +124,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   // Build memory block stores with cache invalidation hook
   const redisBlockStore = new RedisBlockStore(redis);
   const neo4jBlockStore = new Neo4jBlockStore(driver);
-  const cacheInvalidator = { invalidateByScope: (scope: string) => cache.invalidateByScope(scope) };
+  const cacheInvalidator = {
+    invalidateByScope: async (scope: string): Promise<void> => {
+      await cache.invalidateByScope(scope);
+    },
+  };
   const memoryBlockServiceInstance = new MemoryBlockService(redisBlockStore, neo4jBlockStore, cacheInvalidator);
 
   // Build services
@@ -170,6 +175,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     bootstrapService: bootstrapGraphService,
     memoryBlockService: memoryBlockServiceInstance,
     factStore: factStoreInstance,
+    provenance: provenanceTraversal,
   });
 
   console.error('[amp-mcp] Memory block and fact services initialized');
@@ -299,12 +305,12 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   console.error('[amp-mcp] Retrieval services initialized');
 
   // ─── Wiki services ─────────────────────────────────────────────────────────
-  // WikiCompiler.compile() takes a single outputDir string; the IWikiCompiler
-  // interface used by MCP tools accepts a CompileInput object, so we adapt.
+  // WikiCompiler.compile() accepts outputDir plus an optional project tag; the
+  // IWikiCompiler interface used by MCP tools accepts a CompileInput object.
   const rawWikiCompiler = new WikiCompiler(driver);
   const wikiCompilerAdapter = {
     compile: async (input: CompileInput): Promise<CompileV2Result> =>
-      rawWikiCompiler.compile(input.output_dir),
+      rawWikiCompiler.compile(input.output_dir, input.project_tag),
   };
   const ingestionServiceInstance = new IngestionService(driver);
   const wikiLinterInstance = new WikiLinter(driver);

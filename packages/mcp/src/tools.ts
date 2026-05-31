@@ -23,7 +23,7 @@ export interface IConsolidationEngine {
 }
 
 export interface IScopedQuery {
-  rawCypher(cypher: string, limit: number): Promise<Record<string, unknown>[]>;
+  rawCypher(cypher: string, limit: number, params?: Record<string, unknown>): Promise<Record<string, unknown>[]>;
 }
 
 export interface IMemoryBlockService {
@@ -62,6 +62,11 @@ export interface IFactStore {
   diff(entityName: string, from: string, to: string): Promise<FactDiff>;
 }
 
+export interface IProvenanceTraversal {
+  traceOrigin(semanticId: string): Promise<Array<{ id: string; label: string; content: string; relationship: string }>>;
+  supersessionHistory(semanticId: string): Promise<Array<{ id: string; content: string; confidence: number }>>;
+}
+
 export interface ICodeIndexerService {
   indexProject(rootPath: string, options?: { include?: string[]; exclude?: string[] }): Promise<{
     files_parsed: number;
@@ -82,6 +87,7 @@ let bootstrapService: IBootstrapGraphService | null = null;
 let memoryBlockService: IMemoryBlockService | null = null;
 let factStore: IFactStore | null = null;
 let codeIndexerService: ICodeIndexerService | null = null;
+let provenanceTraversal: IProvenanceTraversal | null = null;
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
@@ -91,6 +97,7 @@ export function setServiceInstances(services: {
   memoryBlockService?: IMemoryBlockService;
   factStore?: IFactStore;
   codeIndexer?: ICodeIndexerService;
+  provenance?: IProvenanceTraversal;
 }): void {
   ampService = services.ampService;
   consolidationEngine = services.consolidationEngine;
@@ -99,13 +106,14 @@ export function setServiceInstances(services: {
   memoryBlockService = services.memoryBlockService ?? null;
   factStore = services.factStore ?? null;
   codeIndexerService = services.codeIndexer ?? null;
+  provenanceTraversal = services.provenance ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
   'amp_load', 'amp_store', 'amp_grep', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
-  'amp_ingest_codebase',
+  'amp_ingest_codebase', 'amp_provenance',
   'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
   'amp_memory_promote', 'amp_memory_archive',
   'amp_timeline', 'amp_fact_diff',
@@ -134,9 +142,9 @@ export interface DomainInfo {
 export const DOMAIN_DESCRIPTIONS: Record<ToolDomain, string> = {
   memory: 'Block memory operations: replace, rewrite, promote, archive',
   temporal: 'Temporal queries: timeline, fact diff',
-  admin: 'Administrative: raw queries, consolidation, bootstrap, resolve, provenance',
+  admin: 'Administrative: raw queries, consolidation, bootstrap, resolve, codebase ingestion, provenance',
   research: 'Research campaigns: init, log, context, tree, contradictions, consolidate',
-  code: 'Code intelligence: index, search, symbols, deps, context',
+  code: 'Code intelligence: index, search, AST-grep, symbols, deps, context, file watcher',
   arch: 'Architecture: register, relate, aspects, impact, drift, context',
   wiki: 'Wiki: compile, ingest, lint',
   retrieval: 'Retrieval feedback (amp_context stays in Tier 1)',
@@ -155,6 +163,7 @@ export const CORE_DOMAIN_TOOLS: Record<string, ToolDomain> = {
   amp_bootstrap: 'admin',
   amp_resolve: 'admin',
   amp_ingest_codebase: 'admin',
+  amp_provenance: 'admin',
 };
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -177,6 +186,10 @@ const AmpStoreSchema = {
   session_id: z.string().max(500).describe('Session identifier'),
   task: z.string().max(5000).describe('Task description for this episode'),
   content: z.string().max(10000).describe('Episodic content to store'),
+  entities: z.array(z.string().max(500)).optional().describe('Entity IDs to link to this episode'),
+  model_id: z.string().max(500).optional().describe('Model ID to link to this episode'),
+  scope: z.string().max(500).optional().describe('Canonical scope for this episode, usually project:<name>'),
+  tags: z.array(z.string().max(500)).optional().describe('Tags for this episode. Include project:<name> for project scoping.'),
   outcome: z
     .enum(['approved', 'revised', 'rejected', 'abandoned'])
     .optional()
@@ -195,7 +208,7 @@ const AmpStoreSchema = {
 
 const AmpQuerySchema = {
   query: z.string().max(5000).describe('Cypher query to run against Neo4j'),
-  limit: z.number().int().positive().optional().default(10).describe('Maximum number of results'),
+  limit: z.number().int().positive().max(100).optional().default(10).describe('Maximum number of results, capped at 100'),
 };
 
 const AmpConsolidateSchema = {
@@ -318,7 +331,11 @@ const AmpGrepSchema = {
     .describe('Node types to search. Default: all types.'),
   scope: z.string().optional().describe('Project scope tag to filter by (e.g., "project:amp").'),
   case_sensitive: z.boolean().optional().describe('Case-sensitive matching. Default: false.'),
-  limit: z.number().max(50).optional().describe('Max results to return. Default: 20.'),
+  limit: z.number().int().positive().max(50).optional().describe('Max results to return. Default: 20.'),
+};
+
+const AmpProvenanceSchema = {
+  semantic_id: z.string().max(200).describe('Semantic node ID to trace (e.g. "amp-sem-xyz"). Get IDs from amp_load/amp_grep results.'),
 };
 
 // ─── Handler implementations ─────────────────────────────────────────────────
@@ -339,6 +356,10 @@ export type ToolHandlers = {
     content: string;
     outcome?: 'approved' | 'revised' | 'rejected' | 'abandoned';
     signals?: Array<{ type: 'reinforcement' | 'correction' | 'contradiction'; target_id: string; detail: string }>;
+    entities?: string[];
+    model_id?: string;
+    scope?: string;
+    tags?: string[];
   }) => ToolResult;
   amp_grep: (args: {
     pattern: string;
@@ -349,6 +370,7 @@ export type ToolHandlers = {
     limit?: number;
   }) => ToolResult;
   amp_query: (args: { query: string; limit?: number }) => ToolResult;
+  amp_provenance: (args: { semantic_id: string }) => ToolResult;
   amp_consolidate: (args: {
     action: 'run' | 'status' | 'review';
     scope?: string;
@@ -392,6 +414,13 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
   return { content: [{ type: 'text' as const, text }] };
 }
 
+function normalizeBoundedPositiveInt(value: number | undefined, defaultValue: number, maxValue: number): number {
+  if (value == null) return defaultValue;
+  const floored = Math.floor(value);
+  if (!Number.isFinite(floored) || floored <= 0) return defaultValue;
+  return Math.min(floored, maxValue);
+}
+
 export function buildToolHandlers(): ToolHandlers {
   return {
     async amp_load(args) {
@@ -416,6 +445,10 @@ export function buildToolHandlers(): ToolHandlers {
         content: args.content,
         outcome: args.outcome,
         signals: args.signals,
+        entities: args.entities,
+        model_id: args.model_id,
+        scope: args.scope,
+        tags: args.tags,
       };
       const result = await ampService.store(input);
       if (result.duplicate) {
@@ -430,7 +463,7 @@ export function buildToolHandlers(): ToolHandlers {
       const pattern = args.pattern;
       const isRegex = args.regex ?? false;
       const caseSensitive = args.case_sensitive ?? false;
-      const limit = args.limit ?? 20;
+      const limit = normalizeBoundedPositiveInt(args.limit, 20, 50);
       const nodeTypes = args.node_types ?? ['episodic', 'semantic', 'fact', 'block', 'entity'];
 
       // Validate regex if regex mode
@@ -442,22 +475,22 @@ export function buildToolHandlers(): ToolHandlers {
         }
       }
 
-      // Escape a string for safe inline use in a Cypher string literal
-      function cypherEscape(str: string): string {
-        return str.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"');
-      }
-
       // Build the Neo4j match expression for a given field
-      const escaped = cypherEscape(pattern);
+      const grepParams = {
+        grepPattern: pattern,
+        grepPatternLower: pattern.toLowerCase(),
+        grepRegex: caseSensitive ? `.*${pattern}.*` : `(?i).*${pattern}.*`,
+        grepScope: args.scope ?? '',
+      };
+
       function matchExpr(field: string): string {
         if (isRegex) {
-          const regexLiteral = caseSensitive ? `'.*${escaped}.*'` : `'(?i).*${escaped}.*'`;
-          return `${field} =~ ${regexLiteral}`;
+          return `${field} =~ $grepRegex`;
         }
         if (caseSensitive) {
-          return `${field} CONTAINS '${escaped}'`;
+          return `${field} CONTAINS $grepPattern`;
         }
-        return `toLower(${field}) CONTAINS toLower('${escaped}')`;
+        return `toLower(${field}) CONTAINS $grepPatternLower`;
       }
 
       interface GrepResult {
@@ -533,14 +566,13 @@ export function buildToolHandlers(): ToolHandlers {
       }
 
       // Execute queries per node type
-      const perTypeLimit = Math.min(limit, 50);
-      const escapedScope = args.scope ? cypherEscape(args.scope) : '';
+      const perTypeLimit = limit;
 
       if (nodeTypes.includes('episodic')) {
-        const scopeFilter = args.scope ? ` AND e.task CONTAINS '${escapedScope}'` : '';
+        const scopeFilter = args.scope ? ' AND e.task CONTAINS $grepScope' : '';
         const cypher = `MATCH (e:Episodic) WHERE (${matchExpr('e.content')} OR ${matchExpr('e.task')})${scopeFilter} RETURN e ORDER BY e.created_at DESC`;
         try {
-          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
             const e = row.e as Record<string, unknown>;
             const content = (e.content as string) ?? '';
@@ -561,10 +593,10 @@ export function buildToolHandlers(): ToolHandlers {
       }
 
       if (nodeTypes.includes('semantic')) {
-        const scopeFilter = args.scope ? ` AND '${escapedScope}' IN s.tags` : '';
+        const scopeFilter = args.scope ? ' AND $grepScope IN s.tags' : '';
         const cypher = `MATCH (s:Semantic) WHERE ${matchExpr('s.content')}${scopeFilter} RETURN s ORDER BY s.confidence DESC`;
         try {
-          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
             const s = row.s as Record<string, unknown>;
             addResult(
@@ -578,12 +610,12 @@ export function buildToolHandlers(): ToolHandlers {
       }
 
       if (nodeTypes.includes('fact')) {
-        const scopeFilter = args.scope ? ` AND f.scope = '${escapedScope}'` : '';
+        const scopeFilter = args.scope ? ' AND f.scope = $grepScope' : '';
         // By default only search active facts — invalidated facts are historical noise
         const statusFilter = ` AND f.status = 'active'`;
         const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter}${statusFilter} RETURN f ORDER BY f.updated_at DESC`;
         try {
-          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
             const f = row.f as Record<string, unknown>;
             const sub = (f.subject as string) ?? '';
@@ -604,10 +636,10 @@ export function buildToolHandlers(): ToolHandlers {
       }
 
       if (nodeTypes.includes('block')) {
-        const scopeFilter = args.scope ? ` AND b.scope = '${escapedScope}'` : '';
+        const scopeFilter = args.scope ? ' AND b.scope = $grepScope' : '';
         const cypher = `MATCH (b:MemoryBlock) WHERE (${matchExpr('b.content')} OR ${matchExpr('b.name')})${scopeFilter} RETURN b ORDER BY b.updated_at DESC`;
         try {
-          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
             const b = row.b as Record<string, unknown>;
             const content = (b.content as string) ?? '';
@@ -629,14 +661,14 @@ export function buildToolHandlers(): ToolHandlers {
       if (nodeTypes.includes('entity')) {
         // Search name, description, and aliases
         const aliasMatch = isRegex
-          ? `any(a IN COALESCE(ent.aliases, []) WHERE a =~ '${caseSensitive ? `.*${escaped}.*` : `(?i).*${escaped}.*`}')`
+          ? 'any(a IN COALESCE(ent.aliases, []) WHERE a =~ $grepRegex)'
           : caseSensitive
-            ? `any(a IN COALESCE(ent.aliases, []) WHERE a CONTAINS '${escaped}')`
-            : `any(a IN COALESCE(ent.aliases, []) WHERE toLower(a) CONTAINS toLower('${escaped}'))`;
+            ? 'any(a IN COALESCE(ent.aliases, []) WHERE a CONTAINS $grepPattern)'
+            : 'any(a IN COALESCE(ent.aliases, []) WHERE toLower(a) CONTAINS $grepPatternLower)';
         const descMatch = `ent.description IS NOT NULL AND ${matchExpr('ent.description')}`;
         const cypher = `MATCH (ent:Entity) WHERE ${matchExpr('ent.name')} OR (${descMatch}) OR ${aliasMatch} RETURN ent`;
         try {
-          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit);
+          const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
             const ent = row.ent as Record<string, unknown>;
             const name = (ent.name as string) ?? '';
@@ -707,16 +739,41 @@ export function buildToolHandlers(): ToolHandlers {
     async amp_query(args) {
       if (!scopedQuery) throw new Error('ScopedQuery not initialised');
 
-      // Block write operations — amp_query is read-only
-      const upper = args.query.toUpperCase().trim();
-      const writeOps = ['CREATE', 'MERGE', 'DELETE', 'DETACH', 'SET ', 'REMOVE', 'DROP', 'CALL {'];
-      if (writeOps.some((op) => upper.startsWith(op) || upper.includes(` ${op}`))) {
-        throw new Error('amp_query is read-only. Use amp_store, amp_bootstrap, or domain-specific tools for writes.');
-      }
-
       const limit = args.limit ?? 10;
       const rows = await scopedQuery.rawCypher(args.query, limit);
       return textContent(JSON.stringify(rows, null, 2));
+    },
+
+    async amp_provenance(args) {
+      if (!provenanceTraversal) throw new Error('ProvenanceTraversal not initialised');
+      const [origin, supersessions] = await Promise.all([
+        provenanceTraversal.traceOrigin(args.semantic_id),
+        provenanceTraversal.supersessionHistory(args.semantic_id),
+      ]);
+
+      const clip = (s: string) => (s.length > 160 ? s.slice(0, 160) + '…' : s);
+      const lines: string[] = [`# Provenance: ${args.semantic_id}`, ''];
+
+      lines.push('## Origin lineage (PROMOTED_FROM episodic · SUPERSEDES chain)');
+      if (origin.length === 0) {
+        lines.push('_No origin lineage found — node is a root, or the ID does not exist._');
+      } else {
+        for (const n of origin) {
+          lines.push(`- **${n.label}** \`${n.id}\` —[${n.relationship}]→ ${clip(n.content)}`);
+        }
+      }
+      lines.push('');
+
+      lines.push('## Supersession history (predecessors this node replaced)');
+      if (supersessions.length === 0) {
+        lines.push('_No superseded predecessors._');
+      } else {
+        for (const s of supersessions) {
+          lines.push(`- \`${s.id}\` (confidence ${s.confidence.toFixed(2)}): ${clip(s.content)}`);
+        }
+      }
+
+      return textContent(lines.join('\n'));
     },
 
     async amp_consolidate(args) {
@@ -1214,6 +1271,14 @@ export function registerTools(
     handlers.amp_ingest_codebase,
   ));
 
+  addToDomain('admin', server.tool(
+    'amp_provenance',
+    'Trace the full lifecycle of a semantic memory node: its origin lineage (PROMOTED_FROM the episode it was consolidated from, and any SUPERSEDES chain) plus its supersession history (the predecessors it replaced, with their confidence). Use to audit where a piece of knowledge came from and how it evolved. Pass a semantic_id from amp_load/amp_grep results.',
+    AmpProvenanceSchema,
+    ANN_READONLY_IDEMPOTENT,
+    handlers.amp_provenance,
+  ));
+
   // ─── Tier 1 — amp_tools gateway ──────────────────────────────────────────
 
   tier1.push(server.tool(
@@ -1311,13 +1376,23 @@ export function registerTools(
 
 // ─── Domain tool name mapping ────────────────────────────────────────────────
 
+/**
+ * Tools that are always enabled (Tier 1) and therefore intentionally absent
+ * from DOMAIN_TOOL_NAMES_MAP. Kept explicit so the drift-guard test can verify
+ * that every registered tool is accounted for as either Tier 1 or a domain tool.
+ */
+export const ALWAYS_ON_TOOL_NAMES = [
+  'amp_load', 'amp_store', 'amp_grep', 'amp_memory_read', 'amp_memory_insert',
+  'amp_tools', 'amp_context',
+] as const;
+
 /** Map of domain → tool names, for listing in amp_tools. */
-const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
+export const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
   memory: ['amp_memory_replace', 'amp_memory_rewrite', 'amp_memory_promote', 'amp_memory_archive'],
   temporal: ['amp_timeline', 'amp_fact_diff'],
-  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve', 'amp_ingest_codebase'],
+  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve', 'amp_ingest_codebase', 'amp_provenance'],
   research: ['amp_research_init', 'amp_research_log', 'amp_research_context', 'amp_research_tree', 'amp_research_contradictions', 'amp_research_consolidate'],
-  code: ['amp_code_index', 'amp_code_search', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context'],
+  code: ['amp_code_index', 'amp_code_search', 'amp_code_ast_grep', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context', 'amp_code_watch'],
   arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
   wiki: ['amp_compile', 'amp_ingest', 'amp_lint'],
   retrieval: ['amp_feedback'],

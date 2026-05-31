@@ -9,7 +9,7 @@ Persistent memory system for AI agents. Knowledge compounds across sessions — 
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to avoid overwhelming agents with 38 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
+AMP uses progressive disclosure to avoid overwhelming agents with 42 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
 
 ### Always-Visible Tools (Tier 1)
 
@@ -33,9 +33,9 @@ Call `amp_tools(action: "enable", domain: "<name>")` to activate a domain's tool
 |--------|---------------|----------------|
 | `memory` | `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive` (4) | Session end — promoting/archiving memory blocks |
 | `temporal` | `amp_timeline`, `amp_fact_diff` (2) | Investigating fact history or change tracking |
-| `admin` | `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_provenance` (5) | Graph queries, project setup, provenance tracing |
+| `admin` | `amp_query`, `amp_consolidate`, `amp_bootstrap`, `amp_resolve`, `amp_ingest_codebase`, `amp_provenance` (6) | Graph queries, project setup, codebase ingestion, provenance tracing |
 | `research` | `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate` (6) | Experiment campaigns |
-| `code` | `amp_code_index`, `amp_code_search`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context` (5) | Code search, symbol lookup, dependency analysis |
+| `code` | `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` (7) | Code search, structural AST search, symbol lookup, dependency analysis, auto-reindex |
 | `arch` | `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context` (6) | Architecture context, blast radius, drift detection |
 | `wiki` | `amp_compile`, `amp_ingest`, `amp_lint` (3) | Wiki compilation, source ingestion, health checks |
 | `retrieval` | `amp_feedback` (1) | Recording retrieval usefulness for ranking improvement |
@@ -82,10 +82,12 @@ What do you need?
 │
 ├─ Code search / symbols
 │  ├─ Find implementations ──────────────── amp_code_search [enable: code]
+│  ├─ Structural AST pattern search ─────── amp_code_ast_grep [enable: code]
 │  ├─ List symbols in a file ────────────── amp_code_symbols [enable: code]
 │  ├─ Who calls / imports X? ────────────── amp_code_deps [enable: code]
 │  ├─ Code context for a task ───────────── amp_code_context [enable: code]
-│  └─ Index a project ──────────────────── amp_code_index [enable: code]
+│  ├─ Index a project ──────────────────── amp_code_index [enable: code]
+│  └─ Auto-reindex on file change ───────── amp_code_watch [enable: code]
 │
 ├─ Architecture
 │  ├─ Context for an entity ─────────────── amp_arch_context [enable: arch]
@@ -119,12 +121,7 @@ These are not slash commands. Follow these rules automatically during normal wor
 
 1. Check for `## AMP Memory` config in the project's agent config file (CLAUDE.md, .cursorrules, AGENTS.md, etc.). If missing, enable the `admin` domain (`amp_tools(action: "enable", domain: "admin")`), then bootstrap — scan the repo and call `amp_bootstrap`.
 2. Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`. Reuse for all stores this session.
-3. Read core memory for always-visible context:
-   ```
-   amp_memory_read(tier: "core")
-   ```
-   This returns persona, user preferences, and project state blocks that persist across sessions.
-4. Load task-specific memory:
+3. Load task-specific memory — this **automatically includes the core blocks** (persona, user, project_state), so no separate read step is needed:
    ```
    amp_context(task: "<user's request>", project_name: "<project>", max_tokens: 8000)
    ```
@@ -132,9 +129,13 @@ These are not slash commands. Follow these rules automatically during normal wor
    ```
    amp_load(task: "<user's request>", tags: ["project:<tag>"], max_tokens: 4000)
    ```
+4. To re-read one specific block later, name it explicitly (there is no "read whole tier" call):
+   ```
+   amp_memory_read(block: "user", scope: "project:<tag>")
+   ```
 5. Let loaded memory silently inform your work.
 
-**No domain enablement needed at session start.** All tools used here (`amp_memory_read`, `amp_context`, `amp_load`) are Tier 1 (always visible).
+**No domain enablement needed at session start.** All tools used here (`amp_context`, `amp_load`, `amp_memory_read`) are Tier 1 (always visible).
 
 ### Before Modifying Code
 
@@ -198,13 +199,15 @@ Don't store: routine edits, things derivable from code/git, raw code blocks, eph
 
 During a session, use the memory tier tools to maintain structured state. Note that `amp_memory_read` and `amp_memory_insert` are always visible, but `amp_memory_replace`, `amp_memory_promote`, and `amp_memory_archive` require enabling the `memory` domain first.
 
+Every memory-block call takes a `block` name and an optional `scope` (the project tag). Working-tier blocks also take `session_id`. There is no `tier` parameter — a block's tier is fixed by the block, and `amp_memory_promote` is what moves it between tiers.
+
 | When | Action | Domain |
 |------|--------|--------|
-| Session start | `amp_memory_read(tier: "core")` — read always-visible blocks | always visible |
-| During work | `amp_memory_insert(tier: "working", block: "working_state", content: "...")` — update session context | always visible |
-| User states preference | Enable `memory` domain, then `amp_memory_replace(tier: "core", block: "user", old: "...", new: "...")` | memory |
-| Session end | Enable `memory` domain, then `amp_memory_promote(block: "...", from_tier: "working", to_tier: "core")` | memory |
-| Session end | `amp_memory_archive(block: "working_state")` — clean up session-scoped blocks | memory |
+| Session start | Core blocks arrive automatically in `amp_load`/`amp_context`; to re-read one: `amp_memory_read(block: "user", scope: "project:<tag>")` | always visible |
+| During work | `amp_memory_insert(block: "working_state", text: "...", scope: "project:<tag>", session_id: "<id>")` — append session context | always visible |
+| User states preference | Enable `memory` domain, then `amp_memory_replace(block: "user", old_text: "...", new_text: "...", scope: "project:<tag>")` | memory |
+| Session end | Enable `memory` domain, then `amp_memory_promote(block: "...", from_tier: "working", to_tier: "core", scope: "project:<tag>", session_id: "<id>")` | memory |
+| Session end | `amp_memory_archive(block: "working_state", scope: "project:<tag>", session_id: "<id>")` — clean up session-scoped blocks | memory |
 
 Three tiers:
 - **Core** (always visible, ~15% token budget) — persona, user preferences, project state
@@ -235,7 +238,7 @@ Facts are subject-predicate-object triples with `valid_at`/`invalid_at`/`status`
 
 ---
 
-## Tool Reference — Always Visible (6 tools)
+## Tool Reference — Always Visible (7 tools)
 
 ### amp_tools
 
@@ -253,7 +256,7 @@ Domains: `memory`, `temporal`, `admin`, `research`, `code`, `arch`, `wiki`, `ret
 
 ## Tool Reference — Core Memory (15 tools)
 
-> **Note:** `amp_load`, `amp_store`, `amp_memory_read`, and `amp_memory_insert` are always visible. All other tools in this section require enabling their respective domain first (`admin` for query/consolidate/resolve/bootstrap/provenance, `temporal` for timeline/fact_diff, `memory` for replace/rewrite/promote/archive).
+> **Note:** `amp_load`, `amp_store`, `amp_memory_read`, and `amp_memory_insert` are always visible. All other tools in this section require enabling their respective domain first (`admin` for query/consolidate/bootstrap/resolve/ingest_codebase/provenance, `temporal` for timeline/fact_diff, `memory` for replace/rewrite/promote/archive).
 
 ### amp_load
 
@@ -353,7 +356,7 @@ Chronological fact history for an entity. Returns subject-predicate-object tripl
 
 ```json
 { "entity": "auth-module" }
-{ "entity": "auth-module", "predicate": "uses-framework" }
+{ "entity": "auth-module", "include_episodes": true, "limit": 50 }
 ```
 
 ### amp_fact_diff
@@ -370,51 +373,51 @@ What changed between two timestamps. Returns added, removed, and modified facts.
 
 ### amp_memory_read
 
-Read memory blocks from a tier. Returns structured blocks with content.
+Read one named memory block. Returns its content, tier, and metadata (or `{found:false}`). There is no `tier` argument and no bulk read — name the block. Core blocks are already included automatically in `amp_load`/`amp_context` output.
 
 ```json
-{ "tier": "core" }
-{ "tier": "working", "block": "working_state" }
-{ "tier": "archive", "query": "auth decisions" }
+{ "block": "persona", "scope": "project:my-api" }
+{ "block": "working_state", "scope": "project:my-api", "session_id": "session-20260328-140000" }
 ```
 
-Tiers: `core` (always visible), `working` (session-scoped), `archive` (searchable).
+Params: `block` (required), `scope` (project tag), `session_id` (for working-tier blocks).
 Default blocks: `persona`, `user`, `current_objective`, `working_state`, `project_state`, `open_questions`.
 
 ### amp_memory_insert
 
-Insert or append content to a memory block. Creates the block if it doesn't exist.
+Append text to a memory block. Creates the block if it doesn't exist. The parameter is `text` (not `content`).
 
 ```json
 {
-  "tier": "working",
   "block": "working_state",
-  "content": "Currently refactoring auth module. Halfway through JWT migration."
+  "text": "Currently refactoring auth module. Halfway through JWT migration.",
+  "scope": "project:my-api",
+  "session_id": "session-20260328-140000"
 }
 ```
 
 ### amp_memory_replace
 
-Replace specific content within a memory block.
+Find and replace exact text within a memory block. Throws if `old_text` is not found. Params are `old_text`/`new_text` (not `old`/`new`).
 
 ```json
 {
-  "tier": "core",
   "block": "user",
-  "old": "Prefers tabs",
-  "new": "Prefers 2-space indentation (changed 2026-03)"
+  "old_text": "Prefers tabs",
+  "new_text": "Prefers 2-space indentation (changed 2026-03)",
+  "scope": "project:my-api"
 }
 ```
 
 ### amp_memory_rewrite
 
-Full rewrite of a memory block. Use when incremental replace is insufficient.
+Full rewrite of a memory block (overwrites entire content). Use when incremental replace is insufficient.
 
 ```json
 {
-  "tier": "working",
   "block": "current_objective",
-  "content": "Implementing temporal facts for AMP core. Need to add timeline queries and fact diffing."
+  "content": "Implementing temporal facts for AMP core. Need to add timeline queries and fact diffing.",
+  "scope": "project:my-api"
 }
 ```
 
@@ -480,7 +483,7 @@ Record whether retrieval results were useful. Improves future rankings.
 
 ---
 
-## Tool Reference — Code Intelligence (5 tools)
+## Tool Reference — Code Intelligence (7 tools)
 
 > **Requires:** `amp_tools(action: "enable", domain: "code")`
 
@@ -512,6 +515,14 @@ Hybrid search across code symbols and semantic memories. Combines fulltext + vec
 }
 ```
 
+### amp_code_ast_grep
+
+Structural code search via ast-grep — matches AST patterns instead of raw text, returning file/range hits plus captured meta-variables. Use when you need to find a syntactic shape (e.g. all calls of a function, all awaits) rather than a string. Supports JavaScript, TypeScript, and TSX/JSX.
+
+```json
+{ "pattern": "await $EXPR", "path": "src", "language": "typescript", "limit": 50 }
+```
+
 ### amp_code_symbols
 
 Query specific symbols by file path or name.
@@ -536,6 +547,16 @@ Build code-aware context for a task. Returns relevant symbols + semantic memorie
 
 ```json
 { "task": "add rate limiting to the auth endpoint", "max_tokens": 6000 }
+```
+
+### amp_code_watch
+
+Start, stop, or check the background file watcher that auto-reindexes source files when they change — keeps the symbol graph fresh without manual `amp_code_index` re-runs.
+
+```json
+{ "action": "start", "path": "/absolute/path/to/project" }
+{ "action": "status" }
+{ "action": "stop" }
 ```
 
 ---

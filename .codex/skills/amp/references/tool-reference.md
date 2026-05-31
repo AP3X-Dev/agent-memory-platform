@@ -34,25 +34,28 @@
 | `amp_timeline` | Chronological fact history for an entity |
 | `amp_fact_diff` | What changed between two timestamps |
 
-### admin (5 tools)
+### admin (6 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `amp_query` | Read-only Cypher against Neo4j |
 | `amp_consolidate` | Run/check/review consolidation |
-| `amp_resolve` | Resolve amp:// URIs to markdown |
 | `amp_bootstrap` | One-time project graph setup |
+| `amp_resolve` | Resolve amp:// URIs to markdown |
+| `amp_ingest_codebase` | One-shot project setup: scan + bootstrap + index + seed |
 | `amp_provenance` | Trace full lifecycle of a semantic node |
 
-### code (5 tools)
+### code (7 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `amp_code_index` | AST-based code indexing (TS, JS, Python, Go, Rust) |
 | `amp_code_search` | Hybrid fulltext + vector code search |
+| `amp_code_ast_grep` | Structural AST search via ast-grep patterns (JS/TS/TSX) |
 | `amp_code_symbols` | Query symbols by file/name/kind |
 | `amp_code_deps` | Symbol deps: callers, callees, importers, inheritance |
 | `amp_code_context` | Code-aware context assembly for a task |
+| `amp_code_watch` | Background watcher that auto-reindexes changed files |
 
 ### arch (6 tools)
 

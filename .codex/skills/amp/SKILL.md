@@ -25,9 +25,9 @@ Call `amp_tools(action: "enable", domain: "<name>")` before using:
 
 - `memory` (4) — `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive`
 - `temporal` (2) — `amp_timeline`, `amp_fact_diff`
-- `admin` (5) — `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_provenance`
+- `admin` (6) — `amp_query`, `amp_consolidate`, `amp_bootstrap`, `amp_resolve`, `amp_ingest_codebase`, `amp_provenance`
 - `research` (6) — `amp_research_init/log/context/tree/contradictions/consolidate`
-- `code` (5) — `amp_code_index/search/symbols/deps/context`
+- `code` (7) — `amp_code_index/search/ast_grep/symbols/deps/context/watch`
 - `arch` (6) — `amp_arch_register/relate/aspect`, `amp_impact`, `amp_arch_drift/context`
 - `wiki` (3) — `amp_compile`, `amp_ingest`, `amp_lint`
 - `retrieval` (1) — `amp_feedback`
@@ -60,7 +60,7 @@ Call `amp_tools(action: "enable", domain: "<name>")` before using:
 
 ## Autonomous Behavior
 
-Load memory at session start using Tier 1 tools only — no domain enablement needed. Read core memory (`amp_memory_read`) for always-visible context. Store decisions, preferences, bug fixes, and conventions automatically (`amp_store`). Update working memory during sessions (`amp_memory_insert`).
+Load memory at session start using Tier 1 tools only — no domain enablement needed. `amp_context`/`amp_load` automatically include the core blocks, so no separate read step is needed (use `amp_memory_read(block: "<name>")` only to re-read one specific block). Store decisions, preferences, bug fixes, and conventions automatically (`amp_store`). Update working memory during sessions (`amp_memory_insert`).
 
 Before modifying code: enable `code` or `arch` domain via `amp_tools`, then load module context. Before planning: enable `arch` domain for architecture decisions and blast radius analysis.
 

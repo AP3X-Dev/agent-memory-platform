@@ -182,6 +182,28 @@ describe('amp_store handler', () => {
       expect.objectContaining({ signals }),
     );
   });
+
+  it('passes project scope metadata to AMPService.store', async () => {
+    const handlers = buildToolHandlers();
+    await handlers.amp_store({
+      session_id: 'sess-3',
+      task: 'capture decision',
+      content: 'content',
+      tags: ['project:amp', 'hardening'],
+      entities: ['entity-amp'],
+      model_id: 'gpt-5',
+      scope: 'project:amp',
+    } as never);
+
+    expect(mockAmpService.store).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tags: ['project:amp', 'hardening'],
+        entities: ['entity-amp'],
+        model_id: 'gpt-5',
+        scope: 'project:amp',
+      }),
+    );
+  });
 });
 
 describe('amp_query handler', () => {
@@ -207,6 +229,17 @@ describe('amp_query handler', () => {
     expect(mockScopedQuery.rawCypher).toHaveBeenCalledWith(expect.any(String), 10);
   });
 
+  it('allows read-only CALL subqueries and delegates validation to ScopedQuery', async () => {
+    const handlers = buildToolHandlers();
+    const query = 'CALL { MATCH (n:Semantic) RETURN n } RETURN n';
+
+    await expect(handlers.amp_query({ query, limit: 5 })).resolves.toEqual(
+      expect.objectContaining({ content: expect.any(Array) }),
+    );
+
+    expect(mockScopedQuery.rawCypher).toHaveBeenCalledWith(query, 5);
+  });
+
   it('throws when ScopedQuery is not initialised', async () => {
     setServiceInstances({
       ampService: mockAmpService,
@@ -217,6 +250,66 @@ describe('amp_query handler', () => {
     const handlers = buildToolHandlers();
     await expect(handlers.amp_query({ query: 'MATCH (n) RETURN n' })).rejects.toThrow(
       'ScopedQuery not initialised',
+    );
+  });
+});
+
+describe('amp_provenance handler', () => {
+  const mockProvenance = {
+    traceOrigin: vi.fn().mockResolvedValue([
+      { id: 'amp-ep-1', label: 'Episodic', content: 'Original session where this was decided', relationship: 'PROMOTED_FROM' },
+    ]),
+    supersessionHistory: vi.fn().mockResolvedValue([
+      { id: 'amp-sem-old', content: 'Old superseded claim', confidence: 0.42 },
+    ]),
+  };
+
+  it('traces origin lineage and supersession history into markdown', async () => {
+    setServiceInstances({
+      ampService: mockAmpService,
+      consolidationEngine: mockConsolidationEngine,
+      scopedQuery: mockScopedQuery,
+      bootstrapService: mockBootstrapService,
+      provenance: mockProvenance,
+    });
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_provenance({ semantic_id: 'amp-sem-xyz' });
+
+    expect(mockProvenance.traceOrigin).toHaveBeenCalledWith('amp-sem-xyz');
+    expect(mockProvenance.supersessionHistory).toHaveBeenCalledWith('amp-sem-xyz');
+    const text = result.content[0].text;
+    expect(text).toContain('# Provenance: amp-sem-xyz');
+    expect(text).toContain('PROMOTED_FROM');
+    expect(text).toContain('amp-ep-1');
+    expect(text).toContain('amp-sem-old');
+    expect(text).toContain('0.42');
+  });
+
+  it('renders empty-state sections when no lineage exists', async () => {
+    setServiceInstances({
+      ampService: mockAmpService,
+      consolidationEngine: mockConsolidationEngine,
+      scopedQuery: mockScopedQuery,
+      bootstrapService: mockBootstrapService,
+      provenance: { traceOrigin: vi.fn().mockResolvedValue([]), supersessionHistory: vi.fn().mockResolvedValue([]) },
+    });
+    const handlers = buildToolHandlers();
+    const result = await handlers.amp_provenance({ semantic_id: 'amp-sem-root' });
+    expect(result.content[0].text).toContain('No origin lineage found');
+    expect(result.content[0].text).toContain('No superseded predecessors');
+  });
+
+  it('throws when ProvenanceTraversal is not initialised', async () => {
+    setServiceInstances({
+      ampService: mockAmpService,
+      consolidationEngine: mockConsolidationEngine,
+      scopedQuery: mockScopedQuery,
+      bootstrapService: mockBootstrapService,
+      // provenance intentionally omitted
+    });
+    const handlers = buildToolHandlers();
+    await expect(handlers.amp_provenance({ semantic_id: 'x' })).rejects.toThrow(
+      'ProvenanceTraversal not initialised',
     );
   });
 });
@@ -556,9 +649,9 @@ describe('amp_grep handler', () => {
   });
 
   it('supports case-sensitive matching', async () => {
-    vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string) => {
-      // Case-sensitive should use CONTAINS directly without toLower
-      if (cypher.includes('Semantic') && cypher.includes("CONTAINS 'JWT'") && !cypher.includes('toLower')) {
+    vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string, _limit: number, params?: Record<string, unknown>) => {
+      // Case-sensitive should use CONTAINS directly with the parameter, without toLower.
+      if (cypher.includes('Semantic') && cypher.includes('CONTAINS $grepPattern') && !cypher.includes('toLower') && params?.grepPattern === 'JWT') {
         return [{ s: { id: 'sem-1', content: 'Uses JWT tokens', confidence: 0.9 } }];
       }
       return [];
@@ -593,21 +686,21 @@ describe('amp_grep handler', () => {
   });
 
   it('filters by scope', async () => {
-    vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string) => {
+    vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string, _limit: number, params?: Record<string, unknown>) => {
       // Episodic scope filter via task CONTAINS
-      if (cypher.includes('Episodic') && cypher.includes("task CONTAINS 'project:amp'")) {
+      if (cypher.includes('Episodic') && cypher.includes('task CONTAINS $grepScope') && params?.grepScope === 'project:amp') {
         return [{ e: { id: 'ep-1', content: 'JWT auth decision', task: '[project:amp] auth', created_at: '2026-04-05' } }];
       }
       // Semantic scope filter via tags
-      if (cypher.includes('Semantic') && cypher.includes("'project:amp' IN s.tags")) {
+      if (cypher.includes('Semantic') && cypher.includes('$grepScope IN s.tags') && params?.grepScope === 'project:amp') {
         return [{ s: { id: 'sem-1', content: 'JWT pattern used', confidence: 0.8 } }];
       }
       // Fact scope filter via f.scope
-      if (cypher.includes('Fact') && cypher.includes("f.scope = 'project:amp'")) {
+      if (cypher.includes('Fact') && cypher.includes('f.scope = $grepScope') && params?.grepScope === 'project:amp') {
         return [];
       }
       // Block scope filter via b.scope
-      if (cypher.includes('MemoryBlock') && cypher.includes("b.scope = 'project:amp'")) {
+      if (cypher.includes('MemoryBlock') && cypher.includes('b.scope = $grepScope') && params?.grepScope === 'project:amp') {
         return [];
       }
       return [];
@@ -716,10 +809,37 @@ describe('amp_grep handler', () => {
     expect(text).toContain('3 matches');
   });
 
-  it('escapes special characters in pattern for exact match', async () => {
+  it('normalizes fractional and invalid direct-call limits before querying and counting results', async () => {
+    const manyResults = Array.from({ length: 4 }, (_, i) => ({
+      s: { id: `sem-${i}`, content: `JWT usage pattern ${i}`, confidence: 0.5 },
+    }));
     vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string) => {
-      // The pattern should be escaped — single quotes escaped
-      if (cypher.includes('Semantic') && cypher.includes("it\\'s")) {
+      if (cypher.includes('Semantic')) return manyResults;
+      return [];
+    });
+
+    const handlers = buildToolHandlers();
+    const fractional = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'], limit: 2.8 });
+    expect(fractional.content[0].text).toContain('2 matches');
+    expect(mockScopedQuery.rawCypher).toHaveBeenLastCalledWith(
+      expect.stringContaining('Semantic'),
+      2,
+      expect.any(Object),
+    );
+
+    vi.mocked(mockScopedQuery.rawCypher).mockClear();
+    const invalid = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'], limit: -5 as never });
+    expect(invalid.content[0].text).toContain('4 matches');
+    expect(mockScopedQuery.rawCypher).toHaveBeenLastCalledWith(
+      expect.stringContaining('Semantic'),
+      20,
+      expect.any(Object),
+    );
+  });
+
+  it('passes special characters in exact-match patterns as parameters', async () => {
+    vi.mocked(mockScopedQuery.rawCypher).mockImplementation(async (cypher: string, _limit: number, params?: Record<string, unknown>) => {
+      if (cypher.includes('Semantic') && cypher.includes('$grepPatternLower') && params?.grepPattern === "it's") {
         return [{ s: { id: 'sem-1', content: "it's a test", confidence: 0.5 } }];
       }
       return [];
@@ -730,5 +850,33 @@ describe('amp_grep handler', () => {
 
     const text = result.content[0].text;
     expect(text).toContain('1 match');
+  });
+
+  it('parameterizes pattern and scope instead of interpolating user text into Cypher', async () => {
+    const dangerousPattern = "JWT' OR 1=1 //";
+    const dangerousScope = "project:amp' OR true //";
+
+    vi.mocked(mockScopedQuery.rawCypher).mockResolvedValue([]);
+
+    const handlers = buildToolHandlers();
+    await handlers.amp_grep({
+      pattern: dangerousPattern,
+      scope: dangerousScope,
+      node_types: ['semantic'],
+    });
+
+    expect(mockScopedQuery.rawCypher).toHaveBeenCalledTimes(1);
+    const [cypher, limit, params] = vi.mocked(mockScopedQuery.rawCypher).mock.calls[0];
+    expect(limit).toBe(20);
+    expect(cypher).toContain('s.content');
+    expect(cypher).toContain('$grepPatternLower');
+    expect(cypher).toContain('$grepScope');
+    expect(cypher).not.toContain(dangerousPattern);
+    expect(cypher).not.toContain(dangerousScope);
+    expect(params).toMatchObject({
+      grepPattern: dangerousPattern,
+      grepPatternLower: dangerousPattern.toLowerCase(),
+      grepScope: dangerousScope,
+    });
   });
 });

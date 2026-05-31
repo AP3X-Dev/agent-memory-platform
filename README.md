@@ -54,7 +54,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 31 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 7 tools by default. The other 35 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
@@ -156,12 +156,14 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 | `amp_arch_drift` | Detect when code has changed since the agent last looked |
 | `amp_arch_context` | Deterministic architectural context — same graph always produces same output |
 
-### Code Intelligence (5 tools)
+### Code Intelligence (7 tools)
 | Tool | What it does for you |
 |------|---------------------|
 | `amp_code_index` | AST-parse your project — every function, class, import becomes searchable |
 | `amp_code_search` | Hybrid search: fulltext + dense vectors + lexical vectors + semantic memory |
+| `amp_code_ast_grep` | Structural AST search with ast-grep patterns and meta-variable captures |
 | `amp_code_deps` | "Who calls this function? What does it import? What inherits from it?" |
+| `amp_code_watch` | Background watcher — auto-reindexes source files as they change |
 
 ### Research & Experiments (6 tools)
 | Tool | What it does for you |
@@ -184,7 +186,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│          38 tools · 6 domains · progressive       │
+│          42 tools · 6 domains · progressive       │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│
@@ -221,6 +223,18 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 | `OPENAI_API_KEY` | — | For embedding-based semantic search (optional — works without) |
 | `MCP_PORT` | `3101` | MCP server port |
 | `AMP_API_TOKEN` | — | Optional Bearer token for SSE endpoint auth |
+
+## MCP Health Checks
+
+When running the SSE server, AMP exposes two non-streaming HTTP checks:
+
+```bash
+curl http://localhost:3101/healthz
+curl -H "Authorization: Bearer $AMP_API_TOKEN" http://localhost:3101/readyz
+```
+
+- `GET /healthz` is unauthenticated liveness. It returns process status only and never includes token material.
+- `GET /readyz` is authenticated readiness. It verifies the same Bearer token gate as `/sse` without opening an SSE stream.
 
 ## Development
 
