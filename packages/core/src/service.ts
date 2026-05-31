@@ -66,7 +66,7 @@ export interface Neo4jLayer {
     linkSignal(episodicId: string, signal: Signal): Promise<void>;
   };
   query: {
-    byScope(scope: { entities?: string[]; tags?: string[]; limit: number }): Promise<SemanticNode[]>;
+    byScope(scope: { entities?: string[]; tags?: string[]; limit: number; asOf?: string }): Promise<SemanticNode[]>;
     byVector(embedding: number[], limit: number): Promise<Array<SemanticNode & { score: number }>>;
     /** Graph-structural retrieval: expand from seed entities via ABOUT and SAME_EPISODE edges (optional) */
     expandByGraph?(entityNames: string[], depth?: number, maxPerHop?: number, asOf?: string): Promise<SemanticNode[]>;
@@ -185,37 +185,31 @@ export class AMPService {
     const cached = await this.redis.cache.get(scopeHash);
     if (cached) return cached;
 
-    // 2. Fetch memory blocks (if blocks service available)
+    // 2. Cache miss → fetch all independent layers CONCURRENTLY.
+    // Blocks (core/working), semantics+vector, and facts are mutually
+    // independent; only graph expansion (below) depends on their results.
+    // Launching them together collapses three sequential round-trip phases
+    // into one — load latency goes from sum() to max() of the three.
     // Budget: core=15%, working=10%, facts=15%, archive=60% of max_tokens
     const CORE_BUDGET_RATIO = 0.15;
     const WORKING_BUDGET_RATIO = 0.10;
     const FACT_BUDGET_RATIO = 0.15;
 
-    let coreBlocks: MemoryBlock[] = [];
-    let workingBlocks: MemoryBlock[] = [];
     const projectTag = scope.tags?.find((t) => t.startsWith('project:')) ?? scope.tags?.[0];
-
-    if (this.blocks && projectTag) {
-      const blockResults = await Promise.all([
-        this.blocks.listBlocks(projectTag, 'core'),
-        scope.session_id
-          ? this.blocks.listBlocks(projectTag, 'working', scope.session_id)
-          : Promise.resolve([]),
-      ]);
-      coreBlocks = blockResults[0].filter((b) => b.content.length > 0);
-      workingBlocks = blockResults[1].filter((b) => b.content.length > 0);
-
-      // Truncate blocks that exceed their tier budget
-      const coreBudget = Math.floor(maxTokens * CORE_BUDGET_RATIO);
-      const workingBudget = Math.floor(maxTokens * WORKING_BUDGET_RATIO);
-      coreBlocks = truncateBlocksToTokenBudget(coreBlocks, coreBudget);
-      workingBlocks = truncateBlocksToTokenBudget(workingBlocks, workingBudget);
-    }
-
-    // 3. Cache miss → query Neo4j (semantics + vector)
     // Pass asOf from temporal options so semantic queries filter inactive ABOUT edges consistently
     const asOf = scope.temporal?.as_of;
-    const [byScope, byVector] = await Promise.all([
+
+    const blocksPromise: Promise<[MemoryBlock[], MemoryBlock[]]> =
+      this.blocks && projectTag
+        ? Promise.all([
+            this.blocks.listBlocks(projectTag, 'core'),
+            scope.session_id
+              ? this.blocks.listBlocks(projectTag, 'working', scope.session_id)
+              : Promise.resolve([] as MemoryBlock[]),
+          ])
+        : Promise.resolve([[], []] as [MemoryBlock[], MemoryBlock[]]);
+
+    const semanticsPromise = Promise.all([
       this.neo4j.query.byScope({
         entities: scope.entities,
         tags: scope.tags,
@@ -225,12 +219,32 @@ export class AMPService {
       this._vectorSearch(scope.task, 20),
     ]);
 
-    // 3b. Query facts if fact layer is available
+    const factsPromise: Promise<FactNode[][]> =
+      this.neo4j.fact && scope.entities && scope.entities.length > 0
+        ? Promise.all(scope.entities.map((e) => this.neo4j.fact!.getActive(e, scope.temporal)))
+        : Promise.resolve([]);
+
+    const [[coreRaw, workingRaw], [byScope, byVector], factResults] = await Promise.all([
+      blocksPromise,
+      semanticsPromise,
+      factsPromise,
+    ]);
+
+    // Process blocks: filter empties, truncate to tier budget
+    let coreBlocks: MemoryBlock[] = [];
+    let workingBlocks: MemoryBlock[] = [];
+    if (this.blocks && projectTag) {
+      coreBlocks = coreRaw.filter((b) => b.content.length > 0);
+      workingBlocks = workingRaw.filter((b) => b.content.length > 0);
+      const coreBudget = Math.floor(maxTokens * CORE_BUDGET_RATIO);
+      const workingBudget = Math.floor(maxTokens * WORKING_BUDGET_RATIO);
+      coreBlocks = truncateBlocksToTokenBudget(coreBlocks, coreBudget);
+      workingBlocks = truncateBlocksToTokenBudget(workingBlocks, workingBudget);
+    }
+
+    // Process facts: dedup by id, then rank
     let facts: FactNode[] = [];
-    if (this.neo4j.fact && scope.entities && scope.entities.length > 0) {
-      const factResults = await Promise.all(
-        scope.entities.map((e) => this.neo4j.fact!.getActive(e, scope.temporal)),
-      );
+    if (factResults.length > 0) {
       const seenFactIds = new Set<string>();
       for (const entityFacts of factResults) {
         for (const fact of entityFacts) {
@@ -328,7 +342,7 @@ export class AMPService {
       ctx,
       sources,
       this.config.cache.contextTTL,
-      scope.tags,
+      cacheScopeKeysForLoad(scope),
     );
 
     return ctx;
@@ -386,40 +400,44 @@ export class AMPService {
     };
     await this.neo4j.episodic.create(node);
 
-    // 4. Link relationships
-    await this.neo4j.episodic.linkToAgent(id, input.agent_id);
-
+    // 4. Link relationships — all independent of one another once the
+    // episodic node exists, so fan them out concurrently. Previously the
+    // entity links ran in a sequential loop (N entities = N serial round-trips).
+    const linkPromises: Promise<unknown>[] = [
+      this.neo4j.episodic.linkToAgent(id, input.agent_id),
+    ];
     if (input.entities) {
       for (const entityId of input.entities) {
-        await this.neo4j.episodic.linkToEntity(id, entityId);
+        linkPromises.push(this.neo4j.episodic.linkToEntity(id, entityId));
       }
     }
-
     if (input.model_id) {
-      await this.neo4j.episodic.linkToModel(id, input.model_id);
+      linkPromises.push(this.neo4j.episodic.linkToModel(id, input.model_id));
     }
+    await Promise.all(linkPromises);
 
-    // 5. Publish signals and link them
+    await this.invalidateContextScopes([scope, ...(tags ?? []), ...(input.entities ?? [])]);
+
+    // 5. Publish signals and link them. Each signal's four ops (Neo4j link,
+    // stream publish, cache invalidate, queue increment) are mutually
+    // independent, and signals are independent of each other — run concurrently.
     if (input.signals && input.signals.length > 0) {
-      for (const signal of input.signals) {
-        // Link in Neo4j
-        await this.neo4j.episodic.linkSignal(id, signal);
-
-        // Publish to stream
-        const streamSignal: StreamSignal = {
-          ...signal,
-          source_session: input.session_id,
-          agent_id: input.agent_id,
-          timestamp: new Date().toISOString(),
-        };
-        await this.redis.signals.publish(streamSignal);
-
-        // Invalidate caches for the signal target
-        await this.redis.cache.invalidateByNodeId(signal.target_id);
-
-        // Update consolidation queue
-        await this.redis.queue.incrementScore(signal.target_id, 1);
-      }
+      await Promise.all(
+        input.signals.map((signal) => {
+          const streamSignal: StreamSignal = {
+            ...signal,
+            source_session: input.session_id,
+            agent_id: input.agent_id,
+            timestamp: new Date().toISOString(),
+          };
+          return Promise.all([
+            this.neo4j.episodic.linkSignal(id, signal),
+            this.redis.signals.publish(streamSignal),
+            this.redis.cache.invalidateByNodeId(signal.target_id),
+            this.redis.queue.incrementScore(signal.target_id, 1),
+          ]);
+        }),
+      );
     }
 
     // 6. Dedup mark already done atomically in step 1 via checkAndMark
@@ -457,6 +475,7 @@ export class AMPService {
         const factInputs = await extractFacts(content, apiKey);
         const now = new Date().toISOString();
         const createdFactIds: string[] = [];
+        const changedFactScopes = new Set<string>();
 
         for (const fi of factInputs) {
           // Normalize predicate before comparison
@@ -472,6 +491,9 @@ export class AMPService {
             // Same fact already exists — skip (consolidation can boost confidence later)
             continue;
           }
+
+          changedFactScopes.add(fi.subject);
+          for (const tag of fi.tags ?? []) changedFactScopes.add(tag);
 
           const newFactId = `fact-${nanoid(12)}`;
           const newFact: FactNode = {
@@ -534,9 +556,14 @@ export class AMPService {
               if (!mentionedPredicates.has(normalizedPred) && fact.confidence > 0.1) {
                 const newConfidence = Math.max(0.1, fact.confidence * 0.9); // 10% decay
                 await factLayer.updateConfidence!(fact.id, newConfidence);
+                changedFactScopes.add(entityName);
               }
             }
           }
+        }
+
+        if (changedFactScopes.size > 0) {
+          await this.invalidateContextScopes(changedFactScopes);
         }
 
         return; // Success — exit retry loop
@@ -575,6 +602,25 @@ export class AMPService {
     await this.redis.embeddings.set(text, emb, this.config.cache.embeddingTTL);
     return emb;
   }
+
+  private async invalidateContextScopes(scopes: Iterable<string | null | undefined>): Promise<void> {
+    const uniqueScopes = new Set<string>();
+    for (const scope of scopes) {
+      const trimmed = scope?.trim();
+      if (trimmed) uniqueScopes.add(trimmed);
+    }
+
+    for (const scope of uniqueScopes) {
+      try {
+        await this.redis.cache.invalidateByScope(scope);
+      } catch (err) {
+        console.warn(
+          `[amp-cache] Context cache invalidation failed for scope "${scope}":`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -588,6 +634,19 @@ function hashScope(scope: LoadScope): string {
     temporal: scope.temporal ?? null,
   });
   return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+}
+
+function cacheScopeKeysForLoad(scope: LoadScope): string[] {
+  const keys = new Set<string>();
+  for (const tag of scope.tags ?? []) {
+    const trimmed = tag.trim();
+    if (trimmed) keys.add(trimmed);
+  }
+  for (const entity of scope.entities ?? []) {
+    const trimmed = entity.trim();
+    if (trimmed) keys.add(trimmed);
+  }
+  return Array.from(keys);
 }
 
 function renderBlocksMarkdown(coreBlocks: MemoryBlock[], workingBlocks: MemoryBlock[]): string {

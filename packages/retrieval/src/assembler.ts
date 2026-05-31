@@ -15,7 +15,7 @@ import { rrfFusion, dedup } from './fusion.js';
 import { DeterministicAssembler } from './deterministic.js';
 import { FeedbackTracker, type FeedbackRedisLayer } from './feedback.js';
 import { expandQuery } from './expand.js';
-import { computeQueryStats, lexicalTextScore, adaptiveWeights } from './scoring.js';
+import { computeQueryStats, lexicalTextScore, adaptiveWeights, inferSourceTypeBoost } from './scoring.js';
 import { classifyIntent } from './intent.js';
 import type { QueryIntent } from './intent.js';
 import type { EmbeddingProvider } from '@amp/core';
@@ -23,7 +23,7 @@ import type { EmbeddingProvider } from '@amp/core';
 // ─── Dependency interfaces ───────────────────────────────────────────────────
 
 export interface AssemblerCodeLayer {
-  search(query: string, options?: { limit?: number; include_semantics?: boolean; expandedTokens?: string[] }): Promise<
+  search(query: string, options?: { limit?: number; include_semantics?: boolean; expandedTokens?: string[]; file_path?: string }): Promise<
     Array<{ id: string; source_type: string; name: string; kind: string; file_path: string; start_line: number; signature: string; doc_comment: string; score: number }>
   >;
 }
@@ -164,6 +164,16 @@ export class UnifiedAssembler {
 
     // Intent-aware query expansion
     const expansion = expandQuery(task, intent);
+    const memoryTagScope = buildMemoryTagScope(opts.tag_scope, opts.project_name);
+    const codePathScope = normalizeProjectName(opts.project_name) ?? undefined;
+
+    // Feedback boosts and collection size don't depend on the layer results —
+    // kick them off now so they overlap the (slower) layer fetches instead of
+    // running as a sequential tail afterward.
+    const boostsPromise: Promise<BoostFactors | undefined> = this.feedback
+      .getBoosts()
+      .catch(() => undefined);
+    const collectionSizePromise = this.getCollectionSize();
 
     // Gather results from each layer in parallel (individual failures don't crash assembly)
     const promises: Promise<void>[] = [];
@@ -179,7 +189,12 @@ export class UnifiedAssembler {
 
     if (opts.include_code && this.codeLayer) {
       promises.push(
-        this.codeLayer.search(task, { limit: 20, include_semantics: false, expandedTokens: expansion.tokens })
+        this.codeLayer.search(task, {
+          limit: 20,
+          include_semantics: false,
+          expandedTokens: expansion.tokens,
+          ...(codePathScope ? { file_path: codePathScope } : {}),
+        })
           .then((results) => {
             lists.push(results.map((r) => ({
               id: r.id,
@@ -199,7 +214,7 @@ export class UnifiedAssembler {
         this.memoryLayer.load({
           task,
           entities: opts.entity_scope,
-          tags: opts.tag_scope,
+          tags: memoryTagScope,
           max_tokens: Math.floor(opts.max_tokens / 3),
           ...(opts.as_of ? { temporal: { as_of: opts.as_of } } : {}),
         })
@@ -210,14 +225,22 @@ export class UnifiedAssembler {
 
     await Promise.all(promises);
 
-    // Get feedback boosts (non-critical)
-    let boosts: BoostFactors | undefined;
-    try {
-      boosts = await this.feedback.getBoosts();
-    } catch { /* proceed without boosts */ }
+    // Feedback boosts (non-critical) — already in flight, just await the result
+    let boosts: BoostFactors | undefined = await boostsPromise;
 
-    // Get collection size for dynamic k scaling (cached 60s to avoid per-request query)
-    const collectionSize = await this.getCollectionSize();
+    // Merge query-derived source-type preference: an explicit "find function/class …"
+    // query should favor Symbol results over prose that merely mentions the topic.
+    const sourceTypeBoost = inferSourceTypeBoost(task);
+    if (Object.keys(sourceTypeBoost).length > 0) {
+      if (!boosts) boosts = { entity_boosts: {}, source_type_boosts: {} as BoostFactors['source_type_boosts'] };
+      for (const [type, boost] of Object.entries(sourceTypeBoost)) {
+        const key = type as keyof BoostFactors['source_type_boosts'];
+        boosts.source_type_boosts[key] = (boosts.source_type_boosts[key] ?? 0) + boost;
+      }
+    }
+
+    // Collection size for dynamic k scaling — already in flight, await the result
+    const collectionSize = await collectionSizePromise;
 
     // Build lexical text boost function (applied inside fusion, between normalization and MMR)
     const queryStats = computeQueryStats(task);
@@ -289,12 +312,19 @@ export class UnifiedAssembler {
       const escaped = task
         .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
         .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
+      const projectName = normalizeProjectName(opts.project_name);
       const result = await session.run(
         `CALL db.index.fulltext.queryNodes('entity_arch_content', $query)
          YIELD node AS e, score
+         WHERE $projectName IS NULL
+            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+            OR EXISTS {
+              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+            }
          RETURN e, score
          ORDER BY score DESC LIMIT 15`,
-        { query: `${escaped}*` },
+        { query: `${escaped}*`, projectName },
       );
 
       return result.records.map((r) => {
@@ -343,11 +373,47 @@ function parseMemoryMarkdown(markdown: string, sourceIds: string[]): RetrievalRe
       title: firstLine.slice(0, 80),
       content: section.trim(),
       score,
-      metadata: {},
+      metadata: confMatch ? { confidence: score } : {},
     });
   }
 
   return results;
+}
+
+function buildMemoryTagScope(tagScope?: string[], projectName?: string): string[] | undefined {
+  const tags: string[] = [];
+  const seen = new Set<string>();
+
+  for (const tag of tagScope ?? []) {
+    const trimmed = tag.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    tags.push(trimmed);
+  }
+
+  const projectTag = normalizeProjectTag(projectName);
+  if (projectTag && !seen.has(projectTag)) {
+    tags.push(projectTag);
+  }
+
+  return tags.length > 0 ? tags : undefined;
+}
+
+function normalizeProjectTag(projectName?: string): string | undefined {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return undefined;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  if (!withoutPrefix) return undefined;
+  return `project:${withoutPrefix.toLowerCase()}`;
+}
+
+function normalizeProjectName(projectName?: string): string | null {
+  const trimmed = projectName?.trim();
+  if (!trimmed) return null;
+  const withoutPrefix = trimmed.replace(/^project:/i, '').trim();
+  return withoutPrefix || null;
 }
 
 function groupAndBudget(results: RetrievalResult[], maxTokens: number): ContextSection[] {
@@ -364,7 +430,7 @@ function groupAndBudget(results: RetrievalResult[], maxTokens: number): ContextS
 
   for (const result of results) {
     const itemTokens = Math.ceil(result.content.length / 4);
-    if (tokenCount + itemTokens > maxTokens) break;
+    if (tokenCount + itemTokens > maxTokens) continue;
 
     const key = result.source_type;
     if (!groups.has(key)) {

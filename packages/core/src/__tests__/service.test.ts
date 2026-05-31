@@ -50,6 +50,7 @@ function makeRedis(overrides: Partial<RedisLayer> = {}): RedisLayer {
     cache: {
       get: vi.fn().mockResolvedValue(null),
       set: vi.fn().mockResolvedValue(undefined),
+      invalidateByScope: vi.fn().mockResolvedValue(0),
       invalidateByNodeId: vi.fn().mockResolvedValue(1),
     },
     embeddings: {
@@ -110,6 +111,7 @@ describe('AMPService.load', () => {
       cache: {
         get: vi.fn().mockResolvedValue(cachedCtx),
         set: vi.fn().mockResolvedValue(undefined),
+        invalidateByScope: vi.fn().mockResolvedValue(0),
         invalidateByNodeId: vi.fn().mockResolvedValue(0),
       },
     });
@@ -154,6 +156,26 @@ describe('AMPService.load', () => {
     expect(result.tokens).toBeGreaterThan(0);
     // Should cache the result
     expect(redis.cache.set).toHaveBeenCalledOnce();
+  });
+
+  it('tracks both tag and entity keys for targeted cache invalidation', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const scope: LoadScope = {
+      task: 'load auth context',
+      entities: ['auth-module'],
+      tags: ['project:test'],
+      max_tokens: 2000,
+    };
+    await service.load(scope);
+
+    expect(redis.cache.set).toHaveBeenCalledOnce();
+    const cacheScopeKeys = vi.mocked(redis.cache.set).mock.calls[0][4];
+    expect(cacheScopeKeys).toEqual(expect.arrayContaining(['project:test', 'auth-module']));
   });
 
   it('merges byScope and byVector results, deduplicating by id', async () => {
@@ -273,6 +295,30 @@ describe('AMPService.store', () => {
     expect(neo4j.episodic.create).toHaveBeenCalledOnce();
     expect(neo4j.episodic.linkToAgent).toHaveBeenCalledWith(result.id, 'agent-1');
     expect(redis.dedup.checkAndMark).toHaveBeenCalledOnce();
+  });
+
+  it('invalidates tag and entity scoped context caches after storing a new episode', async () => {
+    const redis = makeRedis();
+    const neo4j = makeNeo4j();
+    const embedding = makeEmbedding();
+
+    const service = new AMPService(redis, neo4j, embedding, makeConfig());
+
+    const input: EpisodeInput = {
+      session_id: 'sess-cache-1',
+      agent_id: 'agent-1',
+      task: 'update auth memory',
+      content: 'Auth module now prefers PKCE.',
+      tags: ['project:test', 'feature:auth'],
+      entities: ['auth-module'],
+    };
+
+    const result = await service.store(input);
+
+    expect(result.duplicate).toBe(false);
+    expect(redis.cache.invalidateByScope).toHaveBeenCalledWith('project:test');
+    expect(redis.cache.invalidateByScope).toHaveBeenCalledWith('feature:auth');
+    expect(redis.cache.invalidateByScope).toHaveBeenCalledWith('auth-module');
   });
 
   it('publishes signals and invalidates caches when signals are present', async () => {
@@ -511,6 +557,54 @@ describe('AMPService.load with memory blocks', () => {
 
     expect(blocks.listBlocks).toHaveBeenCalledWith('project:my-proj', 'core');
   });
+
+  it('PERF-REGRESSION: fans out blocks, byScope, byVector, and facts concurrently', async () => {
+    // The independent load branches (core blocks, semantic byScope, vector
+    // search, entity facts) must all be in flight at once — collapsing what
+    // used to be three sequential round-trip phases into one. We assert this
+    // with a barrier: every branch increments a counter on entry and then
+    // awaits a shared promise that only resolves once all four have entered.
+    // If load() ever reverts to awaiting one branch before starting the next,
+    // the barrier never fills and this test deadlocks → times out → fails.
+    const EXPECTED = 4; // core blocks, byScope, byVector, fact.getActive
+    let entered = 0;
+    let release!: () => void;
+    const allEntered = new Promise<void>((r) => { release = r; });
+    const gate = (): Promise<void> => {
+      if (++entered >= EXPECTED) release();
+      return allEntered;
+    };
+
+    const blocks: BlocksLayer = {
+      listBlocks: vi.fn().mockImplementation(async (_scope: string, tier: string) => {
+        if (tier === 'core') await gate();
+        return [];
+      }),
+    };
+    const factLayer = makeFactLayer();
+    vi.mocked(factLayer.getActive).mockImplementation(async () => { await gate(); return []; });
+    const redis = makeRedis();
+    const neo4j = makeNeo4j({
+      query: {
+        byScope: vi.fn().mockImplementation(async () => { await gate(); return []; }),
+        byVector: vi.fn().mockImplementation(async () => { await gate(); return []; }),
+      },
+      fact: factLayer,
+    });
+    const embedding = makeEmbedding();
+    const service = new AMPService(redis, neo4j, embedding, makeConfig(), blocks);
+
+    const scope: LoadScope = {
+      task: 'concurrent load',
+      entities: ['agent'],
+      tags: ['project:test'],
+      session_id: 'sess-1',
+      max_tokens: 2000,
+    };
+    await service.load(scope);
+
+    expect(entered).toBe(EXPECTED);
+  });
 });
 
 // ─── Real-time fact extraction in store ─────────────────────────────────────
@@ -594,6 +688,7 @@ describe('AMPService.store — real-time fact extraction', () => {
     expect(createdFact.source_episode_ids).toEqual([result.id]);
     expect(createdFact.confidence).toBe(0.5);
     expect(createdFact.supersedes_fact_id).toBeNull();
+    expect(redis.cache.invalidateByScope).toHaveBeenCalledWith('auth-module');
   });
 
   it('auto-invalidates conflicting fact and creates replacement with supersedes_fact_id', async () => {
