@@ -1,0 +1,21 @@
+---
+id: bkXjj4yO-hWIoDHUupeRk
+session_id: session-20260603-audit
+agent_id: mcp
+task: Comprehensive read-only multi-agent audit of Agent-Assist-CR (8 dimensions, every finding adversarially verified) to drive a significant enhancement/optimization pass.
+created_at: "2026-06-04T00:20:15.323Z"
+---
+
+Ran a 59-agent audit (find + adversarial-verify) against current code. Platform is mature/healthy; ~9 candidate findings were REFUTED on verification (DeepGram double-cost race [benign], unhandled-500 'breaks renderer' [renderer synthesizes error client-side via axios/IPC], asyncio.run chat fallback [dead in prod], unbounded per-Job state [jobs are append-only, never removed], golden_evals non-HVAC gap [cross-trade coverage exists in tests/services/], SubmitCoalescer untested [submit_with_latch is a 1-line passthrough already driven by latch tests], openai_prompt_cache untested [test_stage_cost_tracking covers it], window_transcript_suffix untested [covered via integration through real call path], drain helper partial-failure untested [test_drain_coordinator_coverage covers it]).
+
+CONFIRMED, by design-priority tier:
+ACCURACY (#1 priority):
+- TOP: must-book transcript-grounding predicates are DUPLICATED across call_context_resolver.py (panel surfacing) and services/sop_deterministic_gates.py (LLM-alert gating); both decide must-book qualification and must agree but have DRIFTED ('still running' in gates' false-context not resolver's; 'ac is out'/'air conditioner is out' in resolver positives not gates). Panel and alert can disagree on same call. HIGH.
+- pipeline_applicator._apply_classification writes trade/job_type at flat 0.9, discarding sop_fact_checker's downgraded confidence+verified, so unverified low-conf Stage-2 matches still clear the 0.7 gate and surface pricing/scheduling. MEDIUM.
+- Stage-2 lock only breaks on equipment change; cached call_type/routing goes stale after a call pivots (cancel/reschedule) so booking probing keeps surfacing. LOW(accuracy).
+- must_book_eligible/is_emergency set write-only-true (latching) with no agent-confirmed guard, unlike trade/job_type. LOW(accuracy/surfacing).
+- apply_streaming_signals has no DRAINING gate (unlike run_pipeline_and_apply); late DeepGram on_final can write a new LOW-conf value onto an empty/low-conf field AFTER Phase-3 final review. MEDIUM.
+LATENCY/COST (#2): Stage-3 matcher+filter and the SOP analyzer omit prompt-cache keys that Stages 1/2 set (hottest LLM paths); FilesystemSopSource.get_text re-globs+reads+parses SOP file every 1s poll (uncached); SOP poll rebuilds CallContext+SHA1 even when changed=False (safe fix = fold assist-state version into poll version, NOT naive skip — context changes without version bump); probing-filter LLM cost never recorded (hardcoded empty session_id); per-stage model assignment plumbed but both default gpt-5.5.
+ROBUSTNESS: python-backend.js _respawnAttempts never reset on deliberate restart (engine won't recover from a later crash) + deliberate restart during respawn backoff double-spawns on port 8742 (fix both via shared _resetRespawnState); OAuth exchange/refresh + token-push axios calls have NO timeout (hang the no-work-loss auth path); inline onclick 'Show more' is dead under CSP (long SOP chat answers never expand); dev-only POST /assist/reset mounted unconditionally; OpenAIJsonRunner/VisionRunner ignore finish_reason=='length' (truncated-but-valid JSON silently drops notes/gap_fills).
+SECURITY: settings_service re-persists portal-served master AI keys to settings.json plaintext on EVERY engine settings change (and overlay shadows rotated env keys at boot); no backend mask-placeholder guard; boot overlay bypasses key validation.
+TEST/MAINT: 3 integration tests papered with @pytest.mark.flaky reruns instead of using the existing _ImmediateTimer seam; Playwright E2E is PRP-only (no contract-drift/blank-panel coverage); two unrelated modules both named streaming_merge.py; dead branch in _should_surface_after_hours (all paths return True); HttpSopSource fully built+tested but never wired (+ 'future' doc drift); ADR 0006/0007 say CallContext population deferred but it shipped in call_context_resolver.py.
