@@ -34,6 +34,8 @@ export { WikiCompiler, slugify } from './compile.js';
 export { IngestionService, initWikiSchema } from './ingest.js';
 export { WikiLinter } from './lint.js';
 export { startWikiViewer, escapeHtml, sanitizeHtml, resetViewerCache, renderMarkdown } from './viewer.js';
+export { WikiEditReconciler, parseClaimBlocks, parseFrontmatter } from './reconcile.js';
+export type { ReconcileInput, ReconcileResult, ReconcileChange } from './reconcile.js';
 
 // Query functions
 export {
@@ -74,6 +76,8 @@ export {
   renderPatternsPage,
   renderRecentChanges,
   renderProjectGraph,
+  claimAnchor,
+  CLAIM_ANCHOR_RE,
 } from './renderers.js';
 
 // MCP tools

@@ -1,5 +1,7 @@
 // packages/wiki/src/types.ts
 
+import type { Driver } from 'neo4j-driver';
+
 // ─── Compilation ─────────────────────────────────────────────────────────────
 
 export interface CompileInput {
@@ -112,8 +114,10 @@ export interface EntityInfo {
 // ─── Ingestion ───────────────────────────────────────────────────────────────
 
 export interface IngestInput {
-  /** Path to the source document */
-  source_path: string;
+  /** Path to the source document. Optional when `content` is supplied inline. */
+  source_path?: string;
+  /** Inline source text (brain dumps). Alternative to reading from `source_path`. */
+  content?: string;
   /** Type of source material */
   source_type: 'article' | 'paper' | 'repo' | 'dataset' | 'note' | 'reference';
   /** Project tag to scope this ingestion */
@@ -131,6 +135,14 @@ export interface IngestInput {
   }>;
   /** Tags to apply to all extracted claims */
   tags?: string[];
+  /** Default confidence for claims that don't specify one (default 0.3). */
+  base_confidence?: number;
+  /** Decay class for created semantics (default 'volatile'). Human dumps use 'stable'. */
+  decay_class?: 'volatile' | 'stable' | 'permanent';
+  /** Authorship — 'human' marks content human-authored (durable, higher trust). */
+  author?: 'human' | 'agent';
+  /** Create the project Entity if it doesn't exist (lets fresh user scopes spring up). */
+  ensure_project?: boolean;
 }
 
 export interface IngestResult {
@@ -208,6 +220,12 @@ export interface ViewerConfig {
   wiki_dir: string;
   /** Project tag for graph queries */
   project_tag: string;
+  /**
+   * Neo4j driver. When provided, the viewer enables the editable round-trip:
+   * an Edit button on entity articles + POST /api/edit reconcile back into the
+   * graph. Omit it to keep the viewer strictly read-only.
+   */
+  driver?: Driver;
 }
 
 // ─── Episodic rendering ──────────────────────────────────────────────────────

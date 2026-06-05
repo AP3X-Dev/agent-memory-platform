@@ -7,11 +7,40 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { Marked } from 'marked';
+import type { Driver } from 'neo4j-driver';
 import type { ViewerConfig } from './types.js';
+import { renderSettingsBody, applyHooksTuning, runHooksInstall, getSettingsData, type InstallRequest, type TuningPatch } from './settings.js';
+import { WikiEditReconciler } from './reconcile.js';
+import { WikiCompiler } from './compile.js';
 
 // ─── Markdown rendering with [[wikilink]] support ───────────────────────────
 
 const marked = new Marked();
+
+// Hidden round-trip claim anchors emitted by the compiler. Stripped before render
+// and before search indexing so they never surface to the reader. Stateless (no
+// shared lastIndex) — safe to reuse with String.replace.
+const ANCHOR_STRIP_RE = /<!--\s*amp:sem-[A-Za-z0-9_-]+\s*-->/g;
+
+// Driver for the editable round-trip. Null = strictly read-only viewer.
+let editDriver: Driver | null = null;
+
+/** Read and JSON-parse a request body (≤256KB). Returns {} on empty/invalid. */
+function readJsonBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve) => {
+    let data = '';
+    let tooBig = false;
+    req.on('data', (chunk) => {
+      data += chunk;
+      if (data.length > 256 * 1024) { tooBig = true; req.destroy(); }
+    });
+    req.on('end', () => {
+      if (tooBig || data.trim() === '') { resolve({}); return; }
+      try { resolve(JSON.parse(data)); } catch { resolve({}); }
+    });
+    req.on('error', () => resolve({}));
+  });
+}
 
 /** Convert [[path/slug|display]] wikilinks to clickable HTML links.
  * Runs BEFORE markdown parsing so the `|` inside [[a|b]] never collides with
@@ -110,6 +139,7 @@ const NAV_ITEMS: Array<[id: string, label: string, href: string]> = [
   ['topics', 'TOPICS', '/wiki/topics/_index'],
   ['library', 'LIBRARY', '/wiki/library/_index'],
   ['search', 'SEARCH', '/search'],
+  ['settings', 'SETTINGS', '/settings'],
 ];
 
 function topBar(active: string): string {
@@ -1096,7 +1126,7 @@ async function buildCache(wikiDir: string): Promise<WikiCache> {
   const searchIndex = new Map<string, SearchEntry>();
   for (const file of files) {
     try {
-      const content = await readFile(file.absPath, 'utf-8');
+      const content = (await readFile(file.absPath, 'utf-8')).replace(ANCHOR_STRIP_RE, '');
       const wikiPath = file.relPath.replace(/\.md$/, '');
       const titleMatch = content.match(/^# (.+)$/m);
       const title = titleMatch ? titleMatch[1] : wikiPath.split('/').pop() ?? wikiPath;
@@ -1412,8 +1442,8 @@ async function handleWikiPage(wikiDir: string, slugPath: string, res: ServerResp
   const pageSidebar = buildPageSidebar(content);
   const fullSidebar = globalNav + (pageSidebar ? '\n<hr style="border-color: var(--border); margin: 0.75rem 0;">\n' + pageSidebar : '');
 
-  // Strip frontmatter for rendering
-  const bodyContent = content.replace(/^---\n[\s\S]*?\n---\n*/, '');
+  // Strip frontmatter + hidden claim anchors for rendering
+  const bodyContent = content.replace(/^---\n[\s\S]*?\n---\n*/, '').replace(ANCHOR_STRIP_RE, '');
   const html = await renderMarkdown(bodyContent);
 
   // Extract title from first h1
@@ -1436,8 +1466,134 @@ async function handleWikiPage(wikiDir: string, slugPath: string, res: ServerResp
     }
   }
 
+  // Editable round-trip: entity articles get an Edit panel when a driver is wired.
+  const editor = (editDriver && isEntityArticle(slugPath))
+    ? buildEditor(slugPath, content)
+    : '';
+
   res.writeHead(200, { 'Content-Type': 'text/html' });
-  res.end(htmlPage(title, projectContext + fmBar + html, fullSidebar, { activeNav }));
+  res.end(htmlPage(title, projectContext + fmBar + html + editor, fullSidebar, { activeNav }));
+}
+
+/** True for a per-entity article page (not a project index, graph, or portal page). */
+function isEntityArticle(slugPath: string): boolean {
+  const m = slugPath.match(/^projects\/[^/]+\/([^/]+)$/);
+  return !!m && m[1] !== '_index' && m[1] !== '_graph';
+}
+
+/** Inline Edit panel: a textarea prefilled with the raw markdown, saving via /api/edit. */
+function buildEditor(slugPath: string, rawContent: string): string {
+  const slugJson = JSON.stringify(slugPath);
+  return `
+  <style>
+    .amp-edit { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem; }
+    .amp-edit-btn { background: #1a1a1a; color: var(--fg, #eee); border: 1px solid var(--border, #2a2a2a);
+      padding: 0.4rem 0.8rem; cursor: pointer; font-family: inherit; font-size: 0.8rem; letter-spacing: 0.05em; }
+    .amp-edit-btn.primary { background: #ffd400; color: #0a0a0a; border-color: #ffd400; font-weight: 600; }
+    .amp-edit-btn:hover { filter: brightness(1.15); }
+    .amp-edit-hint { color: var(--fg-faint, #888); font-size: 0.8rem; margin: 0.5rem 0; }
+    #amp-edit-text { width: 100%; min-height: 420px; background: #0d0d0d; color: #ddd; border: 1px solid var(--border, #2a2a2a);
+      font-family: ui-monospace, monospace; font-size: 0.82rem; line-height: 1.5; padding: 0.75rem; box-sizing: border-box; }
+    .amp-edit-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; }
+    #amp-edit-status { color: var(--fg-faint, #888); font-size: 0.8rem; }
+  </style>
+  <div class="amp-edit">
+    <button id="amp-edit-toggle" class="amp-edit-btn">EDIT THIS PAGE</button>
+    <div id="amp-edit-panel" hidden>
+      <p class="amp-edit-hint">Edit the markdown below. Changed claims become corrections, new lines become new memories, and removed claims are de-emphasised (never deleted). Saving updates the knowledge graph.</p>
+      <textarea id="amp-edit-text" spellcheck="false">${escapeHtml(rawContent)}</textarea>
+      <div class="amp-edit-actions">
+        <button id="amp-edit-save" class="amp-edit-btn primary">SAVE TO GRAPH</button>
+        <button id="amp-edit-cancel" class="amp-edit-btn">CANCEL</button>
+        <span id="amp-edit-status"></span>
+      </div>
+    </div>
+  </div>
+  <script>
+  (function(){
+    var slug = ${slugJson};
+    var toggle = document.getElementById('amp-edit-toggle');
+    var panel = document.getElementById('amp-edit-panel');
+    var save = document.getElementById('amp-edit-save');
+    var cancel = document.getElementById('amp-edit-cancel');
+    var text = document.getElementById('amp-edit-text');
+    var status = document.getElementById('amp-edit-status');
+    toggle.addEventListener('click', function(){ panel.hidden = !panel.hidden; toggle.hidden = !panel.hidden; });
+    cancel.addEventListener('click', function(){ panel.hidden = true; toggle.hidden = false; status.textContent=''; });
+    save.addEventListener('click', async function(){
+      save.disabled = true; status.textContent = 'saving…';
+      try {
+        var r = await fetch('/api/edit', { method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ slug: slug, edited_md: text.value }) });
+        var j = await r.json();
+        if (j.ok) {
+          status.textContent = 'saved — ' + j.corrected + ' corrected, ' + j.added + ' added, ' + j.removed + ' removed. reloading…';
+          setTimeout(function(){ location.reload(); }, 1000);
+        } else {
+          status.textContent = 'error: ' + (j.error || 'failed'); save.disabled = false;
+        }
+      } catch (e) { status.textContent = 'error: ' + e; save.disabled = false; }
+    });
+  })();
+  </script>`;
+}
+
+async function handleEdit(
+  wikiDir: string,
+  body: { slug?: string; edited_md?: string },
+  res: ServerResponse,
+): Promise<void> {
+  const respond = (code: number, payload: unknown) => {
+    res.writeHead(code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(payload));
+  };
+
+  if (!editDriver) {
+    respond(403, { ok: false, error: 'edit disabled (read-only viewer)' });
+    return;
+  }
+  const slug = (body.slug ?? '').replace(/\/$/, '');
+  const editedMd = body.edited_md ?? '';
+  if (!slug || !editedMd.trim()) {
+    respond(400, { ok: false, error: 'slug and edited_md are required' });
+    return;
+  }
+
+  const filePath = await resolveFile(wikiDir, slug);
+  if (!filePath) {
+    respond(404, { ok: false, error: `page not found: ${slug}` });
+    return;
+  }
+
+  try {
+    const originalMd = await readFile(filePath, 'utf-8');
+    const projectSlug = extractProjectSlug(slug);
+    const projectTag = projectSlug ? `project:${projectSlug}` : 'project:unscoped';
+
+    const reconciler = new WikiEditReconciler(editDriver);
+    const result = await reconciler.reconcile({
+      project_tag: projectTag,
+      edited_md: editedMd,
+      original_md: originalMd,
+      driver: editDriver,
+    });
+
+    // Regenerate this project's files from the (now updated) graph so the wiki and
+    // its anchors stay consistent with the source of truth — no fragile in-place edits.
+    if (projectSlug) {
+      try {
+        await new WikiCompiler(editDriver).compile(wikiDir, projectTag);
+      } catch (err) {
+        console.error('[wiki-viewer] Post-edit recompile failed (non-fatal):', err instanceof Error ? err.message : err);
+      }
+    }
+    wikiCache = await buildCache(wikiDir);
+
+    respond(200, { ok: true, ...result });
+  } catch (err) {
+    console.error('[wiki-viewer] Edit failed:', err instanceof Error ? err.message : err);
+    respond(500, { ok: false, error: err instanceof Error ? err.message : 'edit failed' });
+  }
 }
 
 async function handleSearch(wikiDir: string, query: string, projectFilter: string | null, res: ServerResponse): Promise<void> {
@@ -1535,6 +1691,12 @@ async function handleSearch(wikiDir: string, query: string, projectFilter: strin
 export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof createServer>> {
   const { port, wiki_dir } = config;
 
+  // When a driver is supplied, enable the editable round-trip (Edit UI + /api/edit).
+  editDriver = config.driver ?? null;
+  if (editDriver) {
+    console.error('[wiki-viewer] Edit round-trip enabled (driver wired)');
+  }
+
   // Pre-build the cache eagerly on startup (non-blocking — handlers will
   // await getCache() which returns instantly once this resolves)
   buildCache(wiki_dir)
@@ -1565,6 +1727,31 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
           console.error('[wiki-viewer] Manual refresh failed:', err instanceof Error ? err.message : err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ ok: false, error: err instanceof Error ? err.message : 'unknown' }));
+        }
+      } else if (path === '/api/edit' && req.method === 'POST') {
+        const body = (await readJsonBody(req)) as { slug?: string; edited_md?: string };
+        await handleEdit(wiki_dir, body, res);
+      } else if (path === '/settings') {
+        const body = renderSettingsBody(process.cwd());
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(htmlPage('Settings', body, '', { activeNav: 'settings' }));
+      } else if (path === '/api/settings' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(getSettingsData(process.cwd())));
+      } else if (path === '/api/settings/hooks-tuning' && req.method === 'POST') {
+        const patch = (await readJsonBody(req)) as TuningPatch;
+        const config = applyHooksTuning(patch);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, config }));
+      } else if (path === '/api/settings/hooks-install' && req.method === 'POST') {
+        const reqBody = (await readJsonBody(req)) as InstallRequest;
+        try {
+          const result = await runHooksInstall(process.cwd(), reqBody);
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(result));
+        } catch (err) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ ok: false, output: err instanceof Error ? err.message : 'bad request' }));
         }
       } else if (path.startsWith('/wiki/')) {
         // Extract everything after /wiki/ as the slug path

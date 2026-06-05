@@ -39,33 +39,52 @@ export class IngestionService {
   async ingest(input: IngestInput): Promise<IngestResult> {
     const {
       source_path,
+      content: inlineContent,
       source_type,
       project_tag,
       title: inputTitle,
       entities: preEntities,
       claims: preClaims,
       tags: globalTags,
+      base_confidence,
+      decay_class,
+      author,
+      ensure_project,
     } = input;
 
     const projectName = project_tag.replace(/^project:/, '');
+    const isHuman = author === 'human';
+    const decayClass = decay_class ?? (isHuman ? 'stable' : 'volatile');
+    const baseConfidence = base_confidence ?? (isHuman ? 0.7 : 0.3);
+    // Provenance tags applied to the Source and every created Semantic.
+    const provenanceTags = isHuman ? ['human-authored', 'source:brain-dump'] : [];
 
-    // 1. Read source content
+    // 1. Obtain source content (inline text wins over a file path).
     let content: string;
-    try {
-      content = await readFile(source_path, 'utf-8');
-    } catch (err: unknown) {
-      console.error("[ingest] Suppressed error:", err);
-      throw new Error(`Failed to read source file: ${source_path}`);
+    if (typeof inlineContent === 'string') {
+      content = inlineContent;
+    } else if (source_path) {
+      try {
+        content = await readFile(source_path, 'utf-8');
+      } catch (err: unknown) {
+        console.error("[ingest] Suppressed error:", err);
+        throw new Error(`Failed to read source file: ${source_path}`);
+      }
+    } else {
+      throw new Error('ingest requires either `content` or `source_path`');
     }
 
     // 2. Determine title
-    const title = inputTitle ?? extractTitle(content, source_path);
+    const title = inputTitle ?? extractTitle(content, source_path ?? 'brain-dump');
 
     // 3. Create Source node
     const sourceId = `src-${nanoid(12)}`;
-    await this.createSourceNode(sourceId, title, source_type, source_path, project_tag);
+    await this.createSourceNode(sourceId, title, source_type, source_path ?? 'inline', project_tag);
 
     // 4. Ensure project entity exists, link source
+    if (ensure_project) {
+      await this.ensureProjectEntity(projectName);
+    }
     await this.linkSourceToProject(sourceId, projectName);
 
     // 4b. Auto-extract claims and entities if none provided
@@ -104,17 +123,31 @@ export class IngestionService {
     // 6. Process claims → semantic nodes (pre-extracted or auto-extracted)
     let claimsStored = 0;
     let citationsCreated = 0;
-    const claims = preClaims ?? autoExtractedClaims ?? [];
+    let claims = preClaims ?? autoExtractedClaims ?? [];
+
+    // Fallback for human brain dumps with no extractor and no pre-structured claims:
+    // store the verbatim text as a single durable claim so the dump is never lost and
+    // stays queryable. Richer multi-claim extraction kicks in when an ExtractionProvider
+    // is configured. Split into paragraphs so distinct thoughts become distinct claims.
+    if (claims.length === 0 && isHuman && content.trim()) {
+      const paragraphs = content
+        .split(/\n\s*\n/)
+        .map((p) => p.replace(/^#+\s*/, '').trim())
+        .filter((p) => p.length > 0);
+      const bodies = paragraphs.length > 0 ? paragraphs : [content.trim()];
+      claims = bodies.map((body) => ({ content: body.slice(0, 1500), about: [title] }));
+    }
 
     for (const claim of claims) {
       const semanticId = `sem-${nanoid(12)}`;
       const tags = [
         ...(claim.tags ?? []),
         ...(globalTags ?? []),
+        ...provenanceTags,
         project_tag,
       ];
 
-      await this.createSemanticNode(semanticId, claim.content, claim.confidence ?? 0.3, tags);
+      await this.createSemanticNode(semanticId, claim.content, claim.confidence ?? baseConfidence, tags, decayClass);
       claimsStored++;
 
       // Link CITES → Source
@@ -134,6 +167,14 @@ export class IngestionService {
         if (entityId) {
           await this.createRelation(semanticId, 'Semantic', entityId, 'Entity', 'ABOUT');
         }
+      }
+    }
+
+    // For brain dumps, link the dump's entities under the project so they become
+    // navigable wiki articles (the compiler reaches entities via project CONTAINS).
+    if (ensure_project) {
+      for (const entityName of allEntities) {
+        await this.linkEntityToProject(projectName, entityName);
       }
     }
 
@@ -235,6 +276,7 @@ export class IngestionService {
     content: string,
     confidence: number,
     tags: string[],
+    decayClass: 'volatile' | 'stable' | 'permanent' = 'volatile',
   ): Promise<void> {
     const session = this.driver.session();
     try {
@@ -246,7 +288,7 @@ export class IngestionService {
           signal_count: 0,
           created_at: $now,
           updated_at: $now,
-          decay_class: 'volatile',
+          decay_class: $decayClass,
           tags: $tags
         })`,
         {
@@ -254,8 +296,39 @@ export class IngestionService {
           content,
           confidence,
           tags,
+          decayClass,
           now: new Date().toISOString(),
         },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  /** Link an entity under the project via CONTAINS (skips self-linking the project). */
+  private async linkEntityToProject(projectName: string, entityName: string): Promise<void> {
+    if (entityName === projectName) return;
+    const session = this.driver.session();
+    try {
+      await session.run(
+        `MATCH (p:Entity {type: 'project'}) WHERE p.name CONTAINS $projectName
+         MATCH (e:Entity {name: $entityName})
+         MERGE (p)-[:CONTAINS]->(e)`,
+        { projectName, entityName },
+      );
+    } finally {
+      await session.close();
+    }
+  }
+
+  /** Create the project Entity if missing (used by brain-dump ingestion). */
+  private async ensureProjectEntity(projectName: string): Promise<void> {
+    const session = this.driver.session();
+    try {
+      await session.run(
+        `MERGE (e:Entity {name: $name})
+         ON CREATE SET e.id = $id, e.type = 'project', e.created_at = $now`,
+        { name: projectName, id: `ent-${nanoid(12)}`, now: new Date().toISOString() },
       );
     } finally {
       await session.close();

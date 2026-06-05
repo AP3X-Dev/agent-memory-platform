@@ -3,11 +3,13 @@
 // Wiki CLI -- compile, serve, lint commands.
 // Usage: npx tsx packages/wiki/src/cli.ts <command> [options]
 
+import { readFile } from 'node:fs/promises';
 import { createNeo4jDriver } from '@amp/neo4j';
 import { WikiCompiler } from './compile.js';
 import { initWikiSchema } from './ingest.js';
 import { WikiLinter } from './lint.js';
 import { startWikiViewer } from './viewer.js';
+import { WikiEditReconciler, parseFrontmatter } from './reconcile.js';
 
 // ─── Arg parsing ──────────────────────────────────────────────────────────────
 
@@ -51,14 +53,16 @@ async function main(): Promise<void> {
 
 Commands:
   compile   Compile the knowledge graph into wiki markdown
-  serve     Start the wiki viewer HTTP server
+  serve     Start the wiki viewer HTTP server (editable round-trip enabled)
   lint      Run health checks on the knowledge graph
   build     Compile + start viewer (combined)
+  sync      Reconcile a human-edited wiki file back into the graph
 
 Options:
   --output    Output directory (default: /home/cerebro/projects/amp/wiki)
   --port      Viewer port (default: 3200)
-  --project   Project tag for compile/lint (default compile: all)
+  --project   Project tag for compile/lint/sync (default compile: all)
+  --file      Edited markdown file to reconcile (sync)
 `);
     process.exit(0);
   }
@@ -98,10 +102,30 @@ Options:
           port,
           wiki_dir: outputDir,
           project_tag: 'all',
+          driver,
         });
         console.error(`[wiki-cli] Viewer running at http://0.0.0.0:${port}`);
         // Keep process alive
         await new Promise(() => {});
+        break;
+      }
+
+      case 'sync': {
+        // Reconcile a human-edited wiki file back into the graph.
+        const file = (flags['file'] as string) ?? (flags['_'] as string);
+        if (!file) {
+          console.error('[wiki-cli] --file <path> required for sync');
+          process.exit(1);
+        }
+        const editedMd = await readFile(file, 'utf-8');
+        const fm = parseFrontmatter(editedMd);
+        const tag = (flags['project'] as string)
+          ?? fm.tags.find((t) => t.startsWith('project:'))
+          ?? 'project:unscoped';
+        const reconciler = new WikiEditReconciler(driver);
+        const result = await reconciler.reconcile({ project_tag: tag, edited_md: editedMd, driver });
+        console.error(`[wiki-cli] Synced ${file}: ${result.corrected} corrected, ${result.added} added (no removals without original).`);
+        console.log(JSON.stringify(result, null, 2));
         break;
       }
 
@@ -139,6 +163,7 @@ Options:
           port,
           wiki_dir: outputDir,
           project_tag: 'all',
+          driver,
         });
         console.error(`[wiki-cli] Viewer running at http://0.0.0.0:${port}`);
         await new Promise(() => {});

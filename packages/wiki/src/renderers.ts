@@ -21,6 +21,20 @@ function truncate(text: string, max: number): string {
   return text.slice(0, max - 3).trimEnd() + '...';
 }
 
+// ─── Round-trip claim anchors ──────────────────────────────────────────────────
+// Each canonical claim is tagged with a hidden HTML comment carrying its Semantic
+// node id. HTML comments are invisible in rendered markdown (and in Obsidian), but
+// let the edit reconciler map an edited claim block back to the exact graph node.
+// See reconcile.ts (parseClaimBlocks) and viewer.ts (anchors stripped before render).
+
+/** Matches a claim anchor and captures the semantic id. Global+multiline for scanning. */
+export const CLAIM_ANCHOR_RE = /<!--\s*amp:(sem-[A-Za-z0-9_-]+)\s*-->/g;
+
+/** Render a hidden anchor that ties a rendered claim to its Semantic node id. */
+export function claimAnchor(id: string): string {
+  return `<!-- amp:${id} -->`;
+}
+
 function formatDate(iso: string): string {
   if (!iso) return 'unknown';
   return iso.slice(0, 10);
@@ -159,7 +173,9 @@ export function renderEntityArticle(
     lines.push('');
   }
 
-  // Domain sections (grouped claims)
+  // Domain sections (grouped claims). These are the *canonical* rendering of each
+  // claim — anchor them so human edits round-trip back to the graph. (The Key
+  // Decisions block above is a derived duplicate and is deliberately NOT anchored.)
   for (const section of sections) {
     lines.push(`## ${section.heading}`);
     lines.push('');
@@ -167,6 +183,9 @@ export function renderEntityArticle(
       lines.push(claim.content);
       if (claim.confidence < 1.0) {
         lines.push(`*(confidence: ${claim.confidence.toFixed(2)})*`);
+      }
+      if (claim.amp_id) {
+        lines.push(claimAnchor(claim.amp_id));
       }
       lines.push('');
     }

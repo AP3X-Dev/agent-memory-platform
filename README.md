@@ -54,7 +54,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 35 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 7 tools by default. The other 37 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
@@ -124,13 +124,39 @@ npm run dev
 
 **Works with any MCP-compatible agent:** Claude Code, Cursor, Windsurf, Cline, Codex, or custom agents.
 
+### Hooks — a deterministic context floor (optional)
+
+MCP + skills are **model-driven**: the agent decides whether to call `amp_load`. Hooks make context-loading **harness-driven** instead — AMP memory is injected at the start of every session (and every turn, on Claude Code) regardless of whether the model remembers to ask. Hooks complement skills; they don't replace them. The split is deliberate:
+
+- **Load → hooks** (deterministic context-IN). Mechanical; the retrieval ranker decides relevance.
+- **Store → MCP/skills** (model-judged knowledge-OUT). Only mechanical stores (session summary, pre-compact snapshot) fire from hooks.
+
+Enable per agent:
+
+```bash
+# Claude Code — live hooks (SessionStart + per-turn UserPromptSubmit injection)
+npx tsx packages/core/src/cli.ts hooks install --agent claude --scope project
+
+# Codex / Hermes — materialize a managed block into AGENTS.md / .hermes.md,
+# refreshed at launch via the wrapper:
+npx tsx packages/core/src/cli.ts hooks install --agent codex
+amp run --agent codex -- codex            # re-materializes, then launches codex
+
+npx tsx packages/core/src/cli.ts hooks status      # what's wired where
+npx tsx packages/core/src/cli.ts hooks uninstall --agent claude
+```
+
+Only **Claude Code** gets live per-turn injection; **Codex** and **Hermes** read a static file at startup, so they get a refreshed start-of-session block (the wrapper keeps it from going stale). Every load hook is **fail-open** with an 800ms timeout — a slow or down AMP never blocks a turn.
+
+Prefer a UI? The wiki has a **Settings** page (`/settings`, port 3200) to enable/disable hooks per agent and tune timeouts/token budgets — tuning is written to `~/.config/amp/settings.json` and read live by hook processes (no restart). The same page shows the rest of AMP's effective config (cache TTLs, consolidation, decay half-lives, project-tag enforcement, embedding mode).
+
 ### Bootstrap Your Project
 
 Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your project and run `/amp-setup`. The agent analyzes your codebase, discovers entities, and scaffolds the knowledge graph. From that point on, every session loads and stores automatically.
 
 ---
 
-## The 38 Tools
+## The 44 Tools
 
 ### Core Memory (7 always visible + 8 on demand)
 | Tool | What it does for you |
@@ -172,12 +198,16 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 | `amp_research_context` | Build context for the next experiment based on what worked and what didn't |
 | `amp_research_contradictions` | Find where your experiments disagree — resolve conflicts before they compound |
 
-### Knowledge Wiki (3 tools)
+### Knowledge Wiki (5 tools)
 | Tool | What it does for you |
 |------|---------------------|
 | `amp_compile` | Turn the knowledge graph into a browsable interlinked wiki |
 | `amp_ingest` | Feed in docs, papers, or notes — entities and claims auto-extracted |
 | `amp_lint` | 10 health checks: orphan pages, contradictions, low confidence, coverage gaps |
+| `amp_braindump` | "Remember this about me" — freeform text becomes durable, human-authored memory under your own scope |
+| `amp_wiki_sync` | Push human edits of a compiled wiki file back into the graph (changed claims → corrections, new lines → new memories) |
+
+The wiki round-trips: edit a compiled article in the viewer (Edit button) or sync an edited file, and your changes flow back into the graph as claim-level signals.
 
 ---
 
@@ -186,7 +216,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│          42 tools · 6 domains · progressive       │
+│          44 tools · 6 domains · progressive       │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│

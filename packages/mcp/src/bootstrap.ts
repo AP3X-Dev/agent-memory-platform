@@ -1,11 +1,9 @@
 // packages/mcp/src/bootstrap.ts
 // Wires up Redis, Neo4j, embedding, and core services from environment variables.
 
-import { createRedisClient } from '@amp/redis';
-import { ContextCache, EmbeddingCache, DedupChecker, SignalStream, ConsolidationQueue, DistributedLock, SessionStore, ProposalStore, BlockStore as RedisBlockStore } from '@amp/redis';
-import { createNeo4jDriver, initSchema, EpisodicStore, SemanticStore, ScopedQuery, GDSAlgorithms, BlockStore as Neo4jBlockStore, FactStore, ProvenanceTraversal } from '@amp/neo4j';
-import { AMPService, ConsolidationEngine, OpenAIEmbedding, BootstrapGraphService, MemoryBlockService, EMBEDDING_DIM } from '@amp/core';
-import type { AMPConfig } from '@amp/core';
+import { DistributedLock, ProposalStore } from '@amp/redis';
+import { initSchema, SemanticStore, ProvenanceTraversal } from '@amp/neo4j';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices } from '@amp/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -45,6 +43,7 @@ import {
   WikiCompiler,
   IngestionService,
   WikiLinter,
+  WikiEditReconciler,
   setWikiServiceInstances,
 } from '@amp/wiki';
 import type { CompileInput, CompileV2Result } from '@amp/wiki';
@@ -62,35 +61,37 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const openaiKey = process.env['OPENAI_API_KEY'] ?? '';
   const exportPath = process.env['AMP_EXPORT_PATH'] ?? './.amp';
 
-  // Connect Redis
-  const redis = createRedisClient(redisUrl);
+  // Build the shared core load/store kit through the single construction path
+  // used by both the MCP server and the CLI hook commands (@amp/core
+  // services-factory). The factory builds clients lazily and does not own the
+  // schema lifecycle — the server connects-and-verifies below.
+  const core = createCoreServices({ neo4jUri, neo4jUser, neo4jPassword, redisUrl, openaiKey, exportPath });
+  const {
+    driver,
+    redis,
+    cache,
+    signals,
+    queue,
+    scopedQuery,
+    factStore: factStoreInstance,
+    embedding,
+    config,
+    ampService,
+    memoryBlocks: memoryBlockServiceInstance,
+  } = core;
+
+  // Connect-and-verify + initialise schema (idempotent).
   await redis.ping();
   console.error('[amp-mcp] Redis connected');
-
-  // Connect Neo4j
-  const driver = createNeo4jDriver(neo4jUri, neo4jUser, neo4jPassword);
   await driver.getServerInfo();
   console.error('[amp-mcp] Neo4j connected');
-
-  // Initialize schema (idempotent)
   await initSchema(driver);
   console.error('[amp-mcp] Neo4j schema verified');
 
-  // Build Redis layer
-  const cache = new ContextCache(redis);
-  const embeddings = new EmbeddingCache(redis);
-  const dedup = new DedupChecker(redis);
-  const signals = new SignalStream(redis);
-  const queue = new ConsolidationQueue(redis);
+  // Services the MCP server needs beyond the core load/store kit.
+  const semantic = new SemanticStore(driver);
   const lock = new DistributedLock(redis);
   const proposals = new ProposalStore(redis);
-
-  // Build Neo4j layer
-  const episodic = new EpisodicStore(driver);
-  const semantic = new SemanticStore(driver);
-  const scopedQuery = new ScopedQuery(driver);
-  const gds = new GDSAlgorithms(driver);
-  const factStoreInstance = new FactStore(driver);
   const provenanceTraversal = new ProvenanceTraversal(driver);
 
   // ─── Operational status tracking ────────────────────────────────────────────
@@ -101,44 +102,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     degraded: [] as string[],
   };
 
-  // Build embedding provider
-  const embedding = openaiKey
-    ? new OpenAIEmbedding(openaiKey)
-    : ({ embed: async () => new Array(EMBEDDING_DIM).fill(0), embedBatch: async (t: string[]) => t.map(() => new Array(EMBEDDING_DIM).fill(0)) });
-
   if (!openaiKey) {
     status.degraded.push('embeddings: zero vectors (no OPENAI_API_KEY)');
     console.error('[amp-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings. Vector search will return random results.');
   }
-
-  // Config
-  const config: AMPConfig = {
-    redis: { url: redisUrl },
-    neo4j: { uri: neo4jUri, user: neo4jUser, password: neo4jPassword },
-    embedding: { provider: 'openai', apiKey: openaiKey },
-    cache: { defaultTTL: 300, contextTTL: 300, embeddingTTL: 86400 },
-    consolidation: { autoApply: false, signalThreshold: 3 },
-    exportPath,
-  };
-
-  // Build memory block stores with cache invalidation hook
-  const redisBlockStore = new RedisBlockStore(redis);
-  const neo4jBlockStore = new Neo4jBlockStore(driver);
-  const cacheInvalidator = {
-    invalidateByScope: async (scope: string): Promise<void> => {
-      await cache.invalidateByScope(scope);
-    },
-  };
-  const memoryBlockServiceInstance = new MemoryBlockService(redisBlockStore, neo4jBlockStore, cacheInvalidator);
-
-  // Build services
-  const ampService = new AMPService(
-    { cache, embeddings, dedup, signals, queue },
-    { episodic, query: scopedQuery, fact: factStoreInstance },
-    embedding,
-    config,
-    memoryBlockServiceInstance,
-  );
 
   const consolidationEngine = new ConsolidationEngine(
     { lock, signals, queue, cache, proposals },
@@ -314,11 +281,13 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   };
   const ingestionServiceInstance = new IngestionService(driver);
   const wikiLinterInstance = new WikiLinter(driver);
+  const editReconcilerInstance = new WikiEditReconciler(driver);
 
   setWikiServiceInstances({
     wikiCompiler: wikiCompilerAdapter,
     ingestionService: ingestionServiceInstance,
     wikiLinter: wikiLinterInstance,
+    editReconciler: editReconcilerInstance,
   });
 
   console.error('[amp-mcp] Wiki services initialized');

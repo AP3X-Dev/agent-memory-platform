@@ -1104,6 +1104,12 @@ const ANN_READONLY: ToolAnnotations = { readOnlyHint: true };
 const ANN_READONLY_IDEMPOTENT: ToolAnnotations = { readOnlyHint: true, idempotentHint: true };
 const ANN_IDEMPOTENT: ToolAnnotations = { idempotentHint: true };
 const ANN_DESTRUCTIVE: ToolAnnotations = { destructiveHint: true };
+// Mutating, non-destructive tools. MUST be a non-empty object: the MCP SDK's
+// server.tool() overload parser treats an empty `{}` as a zero-param Zod raw
+// shape (isZodRawShapeCompat returns true for `{}`), which shifts the real
+// handler out of the callback slot and makes the tool throw
+// "typedHandler is not a function" on every call. Never pass `{}` as annotations.
+const ANN_WRITE: ToolAnnotations = { readOnlyHint: false };
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
@@ -1149,7 +1155,7 @@ export function registerTools(
     'amp_store',
     'Store an episodic memory. Returns the new episode ID.',
     AmpStoreSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_store,
   ));
 
@@ -1165,7 +1171,7 @@ export function registerTools(
     'amp_memory_insert',
     'Append text to a memory block. Creates the block if it does not exist.',
     AmpMemoryInsertSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_memory_insert,
   ));
 
@@ -1183,7 +1189,7 @@ export function registerTools(
     'amp_memory_replace',
     'Find and replace text within a memory block. Throws if old_text is not found.',
     AmpMemoryReplaceSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_memory_replace,
   ));
 
@@ -1191,7 +1197,7 @@ export function registerTools(
     'amp_memory_rewrite',
     'Overwrite the entire content of a memory block. Creates the block if it does not exist.',
     AmpMemoryRewriteSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_memory_rewrite,
   ));
 
@@ -1199,7 +1205,7 @@ export function registerTools(
     'amp_memory_promote',
     'Change the tier of a memory block (e.g. working → core). Promoting to core persists to Neo4j.',
     AmpMemoryPromoteSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_memory_promote,
   ));
 
@@ -1243,7 +1249,7 @@ export function registerTools(
     'amp_consolidate',
     'Manage memory consolidation: run a consolidation pass, check status, or review a proposal.',
     AmpConsolidateSchema,
-    {},
+    ANN_WRITE,
     handlers.amp_consolidate,
   ));
 
@@ -1394,7 +1400,7 @@ export const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
   research: ['amp_research_init', 'amp_research_log', 'amp_research_context', 'amp_research_tree', 'amp_research_contradictions', 'amp_research_consolidate'],
   code: ['amp_code_index', 'amp_code_search', 'amp_code_ast_grep', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context', 'amp_code_watch'],
   arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
-  wiki: ['amp_compile', 'amp_ingest', 'amp_lint'],
+  wiki: ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'],
   retrieval: ['amp_feedback'],
 };
 

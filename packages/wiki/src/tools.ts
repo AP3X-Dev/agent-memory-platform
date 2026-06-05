@@ -1,9 +1,12 @@
 // packages/wiki/src/tools.ts
 import { z } from 'zod';
 import path from 'node:path';
+import { readFile } from 'node:fs/promises';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { CompileInput, CompileResult, CompileV2Result, IngestInput, IngestResult, LintInput, LintResult, LintCheck } from './types.js';
+import type { ReconcileInput, ReconcileResult } from './reconcile.js';
+import { parseFrontmatter } from './reconcile.js';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
 
@@ -19,25 +22,32 @@ export interface IWikiLinter {
   lint(input: LintInput): Promise<LintResult>;
 }
 
+export interface IEditReconciler {
+  reconcile(input: ReconcileInput): Promise<ReconcileResult>;
+}
+
 // ─── Injected instances ───────────────────────────────────────────────────────
 
 let wikiCompiler: IWikiCompiler | null = null;
 let ingestionService: IIngestionService | null = null;
 let wikiLinter: IWikiLinter | null = null;
+let editReconciler: IEditReconciler | null = null;
 
 export function setWikiServiceInstances(services: {
   wikiCompiler: IWikiCompiler;
   ingestionService: IIngestionService;
   wikiLinter: IWikiLinter;
+  editReconciler?: IEditReconciler;
 }): void {
   wikiCompiler = services.wikiCompiler;
   ingestionService = services.ingestionService;
   wikiLinter = services.wikiLinter;
+  editReconciler = services.editReconciler ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
-export const WIKI_TOOL_NAMES = ['amp_compile', 'amp_ingest', 'amp_lint'] as const;
+export const WIKI_TOOL_NAMES = ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -62,6 +72,28 @@ const AmpIngestSchema = {
     tags: z.array(z.string()).optional().describe('Domain tags for this claim'),
   })).optional().describe('Pre-extracted claims to store as semantic nodes'),
   tags: z.array(z.string()).optional().describe('Tags to apply to all extracted claims'),
+};
+
+const AmpBraindumpSchema = {
+  content: z.string().max(50000).optional().describe('Inline freeform text to remember (the brain dump). Either this or source_path is required.'),
+  source_path: z.string().max(2000).optional().describe('Path to a file to ingest instead of inline content'),
+  scope: z.string().max(500).describe('Project tag to file this under, e.g. "project:user-personal". Created if new.'),
+  title: z.string().max(500).optional().describe('Title for the dump (auto-detected if omitted)'),
+  tags: z.array(z.string()).optional().describe('Extra domain tags to apply (e.g. "preferences", "role")'),
+  confidence: z.number().min(0).max(1).optional().describe('Base confidence for extracted claims (default 0.7 for human input)'),
+  entities: z.array(z.string()).optional().describe('Pre-named entities to link (else auto-extracted)'),
+  claims: z.array(z.object({
+    content: z.string().max(2000),
+    about: z.array(z.string()),
+    confidence: z.number().min(0).max(1).optional(),
+    tags: z.array(z.string()).optional(),
+  })).optional().describe('Pre-structured claims (skip LLM extraction)'),
+  compile: z.boolean().optional().default(false).describe('Recompile this scope into its wiki after ingesting'),
+};
+
+const AmpWikiSyncSchema = {
+  path: z.string().max(2000).describe('Path to a human-edited wiki markdown file to reconcile back into the graph'),
+  project_tag: z.string().max(500).optional().describe('Project tag to scope new claims (defaults to the file frontmatter / project: tag)'),
 };
 
 const AmpLintSchema = {
@@ -137,6 +169,21 @@ export type WikiToolHandlers = {
       hub_min_links?: number;
     };
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  amp_braindump: (args: {
+    content?: string;
+    source_path?: string;
+    scope: string;
+    title?: string;
+    tags?: string[];
+    confidence?: number;
+    entities?: string[];
+    claims?: Array<{ content: string; about: string[]; confidence?: number; tags?: string[] }>;
+    compile?: boolean;
+  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
+  amp_wiki_sync: (args: {
+    path: string;
+    project_tag?: string;
+  }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 };
 
 export function buildWikiToolHandlers(): WikiToolHandlers {
@@ -174,6 +221,53 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
         tags: args.tags,
       };
       const result = await ingestionService.ingest(input);
+      return textContent(JSON.stringify(result, null, 2));
+    },
+
+    async amp_braindump(args) {
+      if (!ingestionService) throw new Error('IngestionService not initialised');
+      if (!args.content && !args.source_path) {
+        throw new Error('amp_braindump requires either `content` or `source_path`');
+      }
+      if (args.source_path) validatePath(args.source_path);
+
+      const scope = args.scope.startsWith('project:') ? args.scope : `project:${args.scope}`;
+      const result = await ingestionService.ingest({
+        content: args.content,
+        source_path: args.source_path,
+        source_type: 'note',
+        project_tag: scope,
+        title: args.title,
+        entities: args.entities,
+        claims: args.claims,
+        tags: args.tags,
+        author: 'human',
+        ensure_project: true,
+        base_confidence: args.confidence,
+      });
+
+      let compiled: string | undefined;
+      if (args.compile && wikiCompiler) {
+        try {
+          await wikiCompiler.compile({ project_tag: scope, output_dir: '/home/cerebro/projects/amp/wiki', format: 'obsidian', emit_graph: true });
+          compiled = scope;
+        } catch (err) {
+          compiled = `compile failed: ${err instanceof Error ? err.message : 'unknown'}`;
+        }
+      }
+
+      return textContent(JSON.stringify({ ...result, scope, compiled }, null, 2));
+    },
+
+    async amp_wiki_sync(args) {
+      if (!editReconciler) throw new Error('WikiEditReconciler not initialised');
+      validatePath(args.path);
+      const editedMd = await readFile(args.path, 'utf-8');
+      const fm = parseFrontmatter(editedMd);
+      const projectTag = args.project_tag
+        ?? fm.tags.find((t) => t.startsWith('project:'))
+        ?? 'project:unscoped';
+      const result = await editReconciler.reconcile({ project_tag: projectTag, edited_md: editedMd });
       return textContent(JSON.stringify(result, null, 2));
     },
 
@@ -227,7 +321,9 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
     'amp_compile',
     'Compile the AMP knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
     AmpCompileSchema,
-    {} satisfies ToolAnnotations,
+    // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
+    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    { readOnlyHint: false } satisfies ToolAnnotations,
     handlers.amp_compile,
   ));
 
@@ -245,6 +341,22 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
     AmpLintSchema,
     { readOnlyHint: true } satisfies ToolAnnotations,
     handlers.amp_lint,
+  ));
+
+  handles.push(server.tool(
+    'amp_braindump',
+    'Capture a human brain dump into AMP as durable, human-authored memory. Turns freeform text (your role, preferences, tech stack, how you like AI to respond) into graph knowledge under a custom scope (e.g. project:user-personal) while keeping the verbatim text as a Source. Auto-extracts entities and claims, creates the scope if new, and optionally compiles that scope into its own wiki. Use when the user says "remember this about me".',
+    AmpBraindumpSchema,
+    { openWorldHint: true } satisfies ToolAnnotations,
+    handlers.amp_braindump,
+  ));
+
+  handles.push(server.tool(
+    'amp_wiki_sync',
+    'Reconcile a human-edited wiki markdown file back into the graph. Changed claims become corrections (supersede), newly added lines become new human-authored memories, using the hidden per-claim anchors emitted by amp_compile. The complement to the wiki viewer Edit button for agent/CLI-driven edits.',
+    AmpWikiSyncSchema,
+    { openWorldHint: true } satisfies ToolAnnotations,
+    handlers.amp_wiki_sync,
   ));
 
   return handles;
