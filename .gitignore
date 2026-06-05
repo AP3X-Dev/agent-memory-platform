@@ -22,6 +22,13 @@ docs/messaging-sheet.md
 amp-three-tier-architecture.md
 .superpowers/
 docs/prompts/
+# Handoff / design / planning notes (internal, not for publication)
+*handoff*.md
+*-handoff-*.md
+*.plan.md
+docs/plans/
+docs/planning/
+docs/shared-memory-layer/
 
 # Temp and data files
 *.csv
