@@ -8,16 +8,22 @@ import { createNeo4jDriver } from '@amp/neo4j';
 import { createRedisClient } from '@amp/redis';
 import { exportAll, exportFiltered } from './export.js';
 import { importFromPath, type ImportStrategy } from './import.js';
+import { runHookCommand } from './cli/hook.js';
+import { runContextCommand } from './cli/context.js';
+import { runHooksCommand } from './cli/install.js';
+import { runRunCommand } from './cli/run.js';
 
 // ─── Arg parsing ──────────────────────────────────────────────────────────────
 
 function parseArgs(argv: string[]): {
   command: string;
+  positionals: string[];
   flags: Record<string, string | boolean>;
 } {
-  // argv = ['node', 'cli.ts', 'command', ...flags]
+  // argv = ['node', 'cli.ts', 'command', ...rest]
   const [, , command = '', ...rest] = argv;
   const flags: Record<string, string | boolean> = {};
+  const positionals: string[] = [];
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -30,10 +36,12 @@ function parseArgs(argv: string[]): {
       } else {
         flags[key] = true;
       }
+    } else {
+      positionals.push(arg);
     }
   }
 
-  return { command, flags };
+  return { command, positionals, flags };
 }
 
 // ─── Environment ──────────────────────────────────────────────────────────────
@@ -147,7 +155,14 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
-  const { command, flags } = parseArgs(process.argv);
+  // `run` passes its tail (including `--`) through untouched, so handle it before
+  // the shared flag parser swallows the wrapped command's own flags.
+  if (process.argv[2] === 'run') {
+    await runRunCommand(process.argv.slice(3));
+    return;
+  }
+
+  const { command, positionals, flags } = parseArgs(process.argv);
 
   switch (command) {
     case 'export':
@@ -162,14 +177,37 @@ async function main(): Promise<void> {
       await runSnapshot(flags);
       break;
 
+    case 'hook':
+      // `amp hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
+      await runHookCommand(positionals);
+      break;
+
+    case 'context':
+      // `amp context materialize ...`
+      await runContextCommand(positionals[0] ?? '', flags);
+      break;
+
+    case 'hooks':
+      // `amp hooks <install|uninstall|status> ...`
+      await runHooksCommand(positionals[0] ?? '', flags);
+      break;
+
     default:
       console.error(`Unknown command: "${command}"`);
-      console.error('Usage: amp <export|import|snapshot> [options]');
+      console.error('Usage: amp <command> [options]');
       console.error('');
-      console.error('Commands:');
+      console.error('Memory snapshot commands:');
       console.error('  export    [--path ./.amp] [--entity Name] [--tag tag]');
       console.error('  import    [--path ./.amp] [--strategy confidence-weighted|overwrite] [--dry-run]');
       console.error('  snapshot  [--path ./.amp] [--commit] [--message "..."]');
+      console.error('');
+      console.error('Agent hook commands:');
+      console.error('  hooks install --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp]');
+      console.error('  hooks uninstall --agent claude|codex|hermes [--scope project|global]');
+      console.error('  hooks status');
+      console.error('  context materialize --agent codex|hermes [--file PATH] [--scope project:x] [--task "..."] [--max-tokens N]');
+      console.error('  run --agent codex|hermes -- <command> [args...]');
+      console.error('  hook <agent> <event>   (invoked by the harness, not by hand)');
       process.exit(1);
   }
 }

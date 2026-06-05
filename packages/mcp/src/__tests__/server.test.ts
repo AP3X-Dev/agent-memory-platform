@@ -144,6 +144,78 @@ describe('createAMPServer', () => {
     });
   });
 
+  it('serves Codex-compatible Streamable HTTP sessions on /mcp', async () => {
+    await withSseServer(async (baseUrl) => {
+      const baseHeaders = {
+        authorization: 'Bearer test-health-token',
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+      };
+
+      const initialize = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: baseHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'initialize',
+          params: {
+            protocolVersion: '2025-03-26',
+            capabilities: {},
+            clientInfo: { name: 'codex-test', version: '0.0.0' },
+          },
+        }),
+      });
+
+      expect(initialize.status).toBe(200);
+      expect(initialize.headers.get('content-type')).toContain('application/json');
+
+      const sessionId = initialize.headers.get('mcp-session-id');
+      expect(sessionId).toEqual(expect.any(String));
+
+      const initializeBody = await initialize.json() as {
+        jsonrpc?: string;
+        id?: number;
+        result?: { protocolVersion?: string; serverInfo?: { name?: string } };
+      };
+      expect(initializeBody).toMatchObject({
+        jsonrpc: '2.0',
+        id: 1,
+        result: { serverInfo: { name: 'amp-mcp' } },
+      });
+
+      const sessionHeaders = {
+        ...baseHeaders,
+        'mcp-session-id': sessionId ?? '',
+        'mcp-protocol-version': initializeBody.result?.protocolVersion ?? '2025-03-26',
+      };
+
+      const initialized = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: sessionHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'notifications/initialized',
+        }),
+      });
+      expect(initialized.status).toBe(202);
+
+      const tools = await fetch(`${baseUrl}/mcp`, {
+        method: 'POST',
+        headers: sessionHeaders,
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 2,
+          method: 'tools/list',
+        }),
+      });
+
+      expect(tools.status).toBe(200);
+      const toolsBody = await tools.json() as { result?: { tools?: Array<{ name?: string }> } };
+      expect(toolsBody.result?.tools?.some((tool) => tool.name === 'amp_load')).toBe(true);
+    });
+  });
+
   it('closes active SSE sessions before waiting for the HTTP server to drain', async () => {
     const previousToken = process.env.AMP_API_TOKEN;
     process.env.AMP_API_TOKEN = 'test-shutdown-token';

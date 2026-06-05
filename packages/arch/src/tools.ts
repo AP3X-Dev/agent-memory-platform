@@ -139,7 +139,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
         .describe('Optional properties (e.g., {consumes: "charge,refund"}, {event: "order.created"}, {failure: "retry 3x"})'),
       project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
-    {} satisfies ToolAnnotations,
+    // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
+    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!relationStore) throw new Error('Arch services not initialised');
       const created = await relationStore.create(
@@ -167,7 +169,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       entity_name: z.string().max(2000).optional().describe('Entity to apply/remove aspect to/from'),
       project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
-    {} satisfies ToolAnnotations,
+    // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
+    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!aspectStore) throw new Error('Arch services not initialised');
       switch (args.action) {

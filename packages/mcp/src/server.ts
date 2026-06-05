@@ -2,6 +2,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
+import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
@@ -21,6 +23,10 @@ export interface SSEHandle {
   transports: Map<string, SSEServerTransport>;
   /** Per-session MCP servers keyed by session ID. */
   servers: Map<string, McpServer>;
+  /** Active Streamable HTTP transports keyed by MCP session ID. */
+  streamableTransports: Map<string, StreamableHTTPServerTransport>;
+  /** Per-session Streamable HTTP MCP servers keyed by MCP session ID. */
+  streamableServers: Map<string, McpServer>;
 }
 
 export interface AMPMCPServer {
@@ -40,7 +46,10 @@ export async function closeSSEHandle(
   handle: SSEHandle,
   timeoutMs: number = DEFAULT_SHUTDOWN_TIMEOUT_MS,
 ): Promise<void> {
-  const transports = Array.from(handle.transports.values());
+  const transports = [
+    ...Array.from(handle.transports.values()),
+    ...Array.from(handle.streamableTransports.values()),
+  ];
 
   await settleWithin(
     Promise.all(transports.map(async (transport) => {
@@ -56,6 +65,8 @@ export async function closeSSEHandle(
 
   handle.transports.clear();
   handle.servers.clear();
+  handle.streamableTransports.clear();
+  handle.streamableServers.clear();
 
   if (!handle.httpServer.listening) return;
 
@@ -148,6 +159,8 @@ export function createAMPServer(): AMPMCPServer {
   async function startSSE(port = 3101): Promise<SSEHandle> {
     const transports = new Map<string, SSEServerTransport>();
     const servers = new Map<string, McpServer>();
+    const streamableTransports = new Map<string, StreamableHTTPServerTransport>();
+    const streamableServers = new Map<string, McpServer>();
 
     // ── Security helpers ───────────────────────────────────────────────────
     const ALLOWED_ORIGINS = new Set([
@@ -216,8 +229,8 @@ export function createAMPServer(): AMPMCPServer {
         status,
         service: 'amp-mcp',
         transport: 'sse',
-        active_sessions: transports.size,
-        registered_sessions: servers.size,
+        active_sessions: transports.size + streamableTransports.size,
+        registered_sessions: servers.size + streamableServers.size,
         auth_required: effectiveToken !== null,
         uptime_ms: Date.now() - startedAt,
       };
@@ -226,6 +239,38 @@ export function createAMPServer(): AMPMCPServer {
     function sendJson(res: ServerResponse, statusCode: number, body: Record<string, unknown>): void {
       res.writeHead(statusCode, { 'Content-Type': 'application/json; charset=utf-8' });
       res.end(JSON.stringify(body));
+    }
+
+    function sendMcpJsonError(
+      res: ServerResponse,
+      statusCode: number,
+      message: string,
+      code = -32000,
+    ): void {
+      sendJson(res, statusCode, {
+        jsonrpc: '2.0',
+        error: { code, message },
+        id: null,
+      });
+    }
+
+    function getSingleHeader(value: string | string[] | undefined): string | undefined {
+      return Array.isArray(value) ? value[0] : value;
+    }
+
+    function isInitializeBody(body: unknown): boolean {
+      return Array.isArray(body) ? body.some(isInitializeRequest) : isInitializeRequest(body);
+    }
+
+    async function readJsonBody(req: IncomingMessage): Promise<unknown> {
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw.trim()) return undefined;
+      return JSON.parse(raw);
     }
 
     const httpServer = createServer(
@@ -281,6 +326,66 @@ export function createAMPServer(): AMPMCPServer {
             return;
           }
 
+          if (pathname === '/mcp') {
+            const sessionId = getSingleHeader(req.headers['mcp-session-id']);
+            let parsedBody: unknown;
+
+            if (req.method === 'POST') {
+              try {
+                parsedBody = await readJsonBody(req);
+              } catch {
+                sendMcpJsonError(res, 400, 'Parse error: Invalid JSON', -32700);
+                return;
+              }
+            }
+
+            let streamableTransport = sessionId ? streamableTransports.get(sessionId) : undefined;
+
+            if (sessionId && !streamableTransport) {
+              if (transports.has(sessionId)) {
+                sendMcpJsonError(res, 400, 'Bad Request: Session exists but uses a different transport protocol');
+                return;
+              }
+
+              sendMcpJsonError(res, 404, 'Session not found');
+              return;
+            }
+
+            if (!streamableTransport) {
+              if (req.method !== 'POST' || !isInitializeBody(parsedBody)) {
+                sendMcpJsonError(res, 400, 'Bad Request: No valid session ID provided');
+                return;
+              }
+
+              const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+              registerAllTools(perSessionServer);
+
+              let nextTransport: StreamableHTTPServerTransport | undefined;
+              nextTransport = new StreamableHTTPServerTransport({
+                sessionIdGenerator: () => randomUUID(),
+                enableJsonResponse: true,
+                onsessioninitialized: (newSessionId) => {
+                  if (!nextTransport) return;
+                  streamableTransports.set(newSessionId, nextTransport);
+                  streamableServers.set(newSessionId, perSessionServer);
+                },
+              });
+
+              nextTransport.onclose = () => {
+                const sid = nextTransport?.sessionId;
+                if (!sid) return;
+                streamableTransports.delete(sid);
+                streamableServers.delete(sid);
+              };
+
+              await perSessionServer.connect(nextTransport);
+              streamableTransport = nextTransport;
+            }
+
+            await streamableTransport.handleRequest(req, res, parsedBody);
+            return;
+          }
+
           if (req.method === 'GET' && pathname === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
             const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
@@ -333,7 +438,7 @@ export function createAMPServer(): AMPMCPServer {
 
     console.error(`[amp-mcp] SSE server listening on http://localhost:${port}/sse`);
 
-    return { httpServer, transports, servers };
+    return { httpServer, transports, servers, streamableTransports, streamableServers };
   }
 
   // ─── Stdio transport ──────────────────────────────────────────────────────
