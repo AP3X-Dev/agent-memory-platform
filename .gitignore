@@ -17,21 +17,20 @@ amp-graph-out/
 # But keep the distributable skills tracked
 !.claude/skills/
 
-# Planning and design docs (internal)
-docs/superpowers/
-docs/competitive-positioning.md
-docs/market-positioning.md
-docs/messaging-sheet.md
-amp-three-tier-architecture.md
-.superpowers/
-docs/prompts/
-# Handoff / design / planning notes (internal, not for publication)
+# === Planning / design / PRP docs (internal — never published) ===
+# All planning, design, and build-prep material lives in docs/ and must not ship.
+# Agent instructions and skills are NOT under docs/ — they live in skills/,
+# .claude/skills/, .codex/, .augment/, *.example, .cursorrules — and stay tracked.
+docs/
+# PRPs and planning/handoff notes, wherever they live
+PRPs/
+*.prp.md
+prp-*.md
 *handoff*.md
 *-handoff-*.md
 *.plan.md
-docs/plans/
-docs/planning/
-docs/shared-memory-layer/
+amp-three-tier-architecture.md
+.superpowers/
 
 # Temp and data files
 *.csv
