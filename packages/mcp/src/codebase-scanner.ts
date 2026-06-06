@@ -7,7 +7,15 @@ import { resolve, extname, join, relative, basename } from 'path';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type SupportedLanguage = 'typescript' | 'javascript' | 'python' | 'go' | 'rust';
+export type SupportedLanguage =
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'sql'
+  | 'terraform'
+  | 'mcp-config';
 
 export interface DiscoveredModule {
   name: string;
@@ -43,6 +51,10 @@ const LANGUAGE_EXTENSIONS: Record<string, SupportedLanguage> = {
   '.py': 'python',
   '.go': 'go',
   '.rs': 'rust',
+  '.sql': 'sql',
+  '.tf': 'terraform',
+  '.tfvars': 'terraform',
+  '.hcl': 'terraform',
 };
 
 const DEFAULT_EXCLUDE_DIRS = new Set([

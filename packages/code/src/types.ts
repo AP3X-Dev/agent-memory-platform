@@ -3,7 +3,15 @@
 
 // === Supported languages ===
 
-export type SupportedLanguage = 'typescript' | 'javascript' | 'python' | 'go' | 'rust';
+export type SupportedLanguage =
+  | 'typescript'
+  | 'javascript'
+  | 'python'
+  | 'go'
+  | 'rust'
+  | 'sql'
+  | 'terraform'
+  | 'mcp-config';
 
 export const LANGUAGE_EXTENSIONS: Record<string, SupportedLanguage> = {
   '.ts': 'typescript',
@@ -15,7 +23,36 @@ export const LANGUAGE_EXTENSIONS: Record<string, SupportedLanguage> = {
   '.py': 'python',
   '.go': 'go',
   '.rs': 'rust',
+  '.sql': 'sql',
+  '.tf': 'terraform',
+  '.tfvars': 'terraform',
+  '.hcl': 'terraform',
 };
+
+/** Config files detected by basename (extname-based routing fails — `.mcp.json` → `.json`). */
+const MCP_CONFIG_BASENAMES = new Set<string>([
+  'mcp.json',
+  '.mcp.json',
+  'claude_desktop_config.json',
+  '.cursor-mcp.json',
+]);
+
+export function isMcpConfigBasename(name: string): boolean {
+  return MCP_CONFIG_BASENAMES.has(name.toLowerCase());
+}
+
+/**
+ * Resolve a file's language by BASENAME first (for config files whose extname is
+ * unhelpful, e.g. `.mcp.json`), then by extension. Returns undefined for files
+ * AMP does not index. Use this everywhere instead of `LANGUAGE_EXTENSIONS[ext]`.
+ */
+export function detectLanguage(filePath: string): SupportedLanguage | undefined {
+  const base = (filePath.split(/[\\/]/).pop() ?? '').toLowerCase();
+  if (isMcpConfigBasename(base)) return 'mcp-config';
+  const dot = base.lastIndexOf('.');
+  const ext = dot >= 0 ? base.slice(dot) : '';
+  return LANGUAGE_EXTENSIONS[ext];
+}
 
 // === Symbol kinds ===
 
@@ -28,7 +65,12 @@ export type SymbolKind =
   | 'variable'
   | 'enum'
   | 'module'
-  | 'constant';
+  | 'constant'
+  // Structural (non-code) kinds from SQL / Terraform / MCP-config extractors.
+  | 'table'
+  | 'view'
+  | 'resource'
+  | 'config';
 
 // === Sparse vector ===
 

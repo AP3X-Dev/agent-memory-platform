@@ -9,7 +9,7 @@ import { ImportResolver } from './resolver.js';
 import { SymbolStore } from './symbol-store.js';
 import { generateLexicalVector, generateMiniVector, generateSparseVector } from './vectors.js';
 import type { SupportedLanguage, SymbolKind, SymbolNode, IndexResult } from './types.js';
-import { LANGUAGE_EXTENSIONS } from './types.js';
+import { detectLanguage, isMcpConfigBasename } from './types.js';
 
 interface RelationSymbolFallback {
   name?: string;
@@ -80,8 +80,7 @@ export class CodeIndexer {
     const parseCache = new Map<string, Awaited<ReturnType<typeof parseFile>>>();
 
     for (const filePath of filtered) {
-      const ext = extname(filePath);
-      const language = LANGUAGE_EXTENSIONS[ext];
+      const language = detectLanguage(filePath);
       if (!language) {
         result.files_skipped++;
         continue;
@@ -230,7 +229,7 @@ export class CodeIndexer {
          ON CREATE SET e.id = randomUUID(), e.name = last(split(path, '/')),
                        e.type = 'component', e.domain = 'source',
                        e.created_at = $now`,
-        { paths: filePaths.filter((f) => LANGUAGE_EXTENSIONS[extname(f)]), now: new Date().toISOString() },
+        { paths: filePaths.filter((f) => detectLanguage(f)), now: new Date().toISOString() },
       );
     } finally {
       await session.close();
@@ -321,15 +320,17 @@ export class CodeIndexer {
       const entries = await readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         const name = entry.name;
-        if (EXCLUDE_DIRS.has(name) || extraExcludes.has(name) || name.startsWith('.')) continue;
+        // Skip excluded dirs and dotfiles — but let through known config files
+        // whose basename starts with '.' (e.g. `.mcp.json`).
+        if (EXCLUDE_DIRS.has(name) || extraExcludes.has(name) || (name.startsWith('.') && !isMcpConfigBasename(name)))
+          continue;
 
         const fullPath = resolve(dir, name);
         if (entry.isDirectory()) {
           await walk(fullPath);
         } else if (entry.isFile()) {
           if (EXCLUDE_FILES.has(name)) continue;
-          const ext = extname(name);
-          if (LANGUAGE_EXTENSIONS[ext]) {
+          if (detectLanguage(name)) {
             files.push(fullPath);
           }
         }

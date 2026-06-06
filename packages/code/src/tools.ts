@@ -80,7 +80,7 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
   // ─── amp_code_index ─────────────────────────────────────────────────────
   handles.push(server.tool(
     'amp_code_index',
-    'Index a project or file using tree-sitter AST parsing. Creates Symbol nodes (functions, classes, methods, interfaces, types) and relationship edges (SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, SYMBOL_CONTAINS) in the graph. Incremental: unchanged symbols are skipped via content hash. Supports: TypeScript, JavaScript, Python, Go, Rust.',
+    'Index a project or file using tree-sitter AST parsing. Creates Symbol nodes (functions, classes, methods, interfaces, types) and relationship edges (SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, SYMBOL_CONTAINS) in the graph. Incremental: unchanged symbols are skipped via content hash. Supports: TypeScript, JavaScript, Python, Go, Rust, plus structural extraction for SQL (tables/views/functions), Terraform/HCL (resources/modules/variables), and MCP config files (servers, env-safe).',
     {
       path: z.string().max(2000).describe('Absolute path to project directory or single file'),
       mode: z.enum(['project', 'file']).optional().default('project').describe('Index entire project or a single file'),

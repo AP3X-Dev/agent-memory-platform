@@ -13,6 +13,7 @@ import type {
   ImportInfo,
   SymbolKind,
 } from './types.js';
+import { isExtractorLanguage, extractStructured } from './extractors/registry.js';
 
 // ─── Tree-sitter lazy loading ─────────────────────────────────────────────────
 // Grammars loaded on first use per language to avoid loading all at startup.
@@ -95,6 +96,13 @@ export async function parseFile(
   language: SupportedLanguage,
 ): Promise<ParsedFile> {
   const source = await readFile(filePath, 'utf-8');
+
+  // Non-tree-sitter formats (SQL, Terraform/HCL, MCP config) use conservative
+  // structural extractors instead of an AST grammar.
+  if (isExtractorLanguage(language)) {
+    return extractStructured(filePath, language, source, new Date().toISOString());
+  }
+
   const TSParser = await getParser();
   const grammar = await getGrammar(language);
 
