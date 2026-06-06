@@ -83,11 +83,12 @@ export function renderGraphReport(s: GraphReportSections): string {
   }
   lines.push('');
 
-  // 8. Import / Dependency Cycles
-  lines.push('## Import / Dependency Cycles');
+  // 8. Dependency Cycles (general — works for code imports and any USES graph,
+  //    e.g. circular org-chart or process dependencies).
+  lines.push('## Dependency Cycles');
   lines.push('');
   if (s.cycles.length === 0) {
-    lines.push('No import or dependency cycles detected.');
+    lines.push('No dependency cycles detected.');
   } else {
     for (const cycle of s.cycles) {
       lines.push(`- ${[...cycle, cycle[0]].join(' → ')}`);
@@ -121,10 +122,11 @@ export function renderGraphReport(s: GraphReportSections): string {
   lines.push('## Knowledge Gaps');
   lines.push('');
   const g = s.gaps;
+  // Code-only gaps (empty components) are surfaced only when the graph has code,
+  // so non-coding memory graphs aren't cluttered with empty coding sections.
+  const showEmptyComponents = s.has_code && g.empty_components.length > 0;
   const noGaps =
-    g.orphan_entities.length === 0 &&
-    g.empty_components.length === 0 &&
-    g.uncited_sources.length === 0;
+    g.orphan_entities.length === 0 && !showEmptyComponents && g.uncited_sources.length === 0;
   if (noGaps) {
     lines.push('No knowledge gaps detected.');
   } else {
@@ -133,7 +135,7 @@ export function renderGraphReport(s: GraphReportSections): string {
       for (const e of g.orphan_entities) lines.push(`- ${e.label}`);
       lines.push('');
     }
-    if (g.empty_components.length > 0) {
+    if (showEmptyComponents) {
       lines.push('**Components with no symbols:**');
       for (const e of g.empty_components) lines.push(`- ${e.label}`);
       lines.push('');

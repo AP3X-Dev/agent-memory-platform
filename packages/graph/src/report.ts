@@ -72,6 +72,8 @@ export interface GraphReportSections {
   cycles: string[][];
   low_confidence: LowConfidenceKnowledge;
   gaps: KnowledgeGaps;
+  /** True when the graph contains code (symbol/component) nodes; gates code-only sections. */
+  has_code: boolean;
   max_items: number;
 }
 
@@ -218,6 +220,7 @@ export class GraphReportService {
       cycles: findImportCycles(graph, { maxCycles: maxItems }),
       low_confidence: lowConfidenceKnowledge(graph, maxItems),
       gaps: knowledgeGaps(graph, maxItems),
+      has_code: graph.nodes.some((nd) => nd.type === 'symbol' || nd.type === 'component'),
       max_items: maxItems,
     };
 

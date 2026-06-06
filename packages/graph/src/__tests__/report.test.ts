@@ -107,7 +107,7 @@ describe('GraphReportService.generate', () => {
     expect(markdown).toContain('## Graph Summary');
     expect(markdown).toContain('## Memory Confidence Summary');
     expect(markdown).toContain('## Core Abstractions');
-    expect(markdown).toContain('## Import / Dependency Cycles');
+    expect(markdown).toContain('## Dependency Cycles');
     expect(markdown).toContain('## Low-Confidence Knowledge');
     expect(markdown).toContain('## Knowledge Gaps');
     expect(markdown).toContain('## Recommended Actions');
@@ -133,6 +133,33 @@ describe('GraphReportService.generate', () => {
     expect(markdown).toContain('Design Doc');
   });
 
+  it('is general-purpose: a non-coding graph shows no code-only sections', async () => {
+    // A personal/business memory graph: people + an org-chart reporting cycle,
+    // a low-confidence preference, no code whatsoever.
+    const personal: AmpGraphSnapshot = {
+      project_name: 'me',
+      generated_at: '2026-06-06T00:00:00.000Z',
+      truncated: false,
+      total_available: 4,
+      nodes: [
+        n('alice', 'entity', 'Alice', { name: 'Alice', type: 'person' }),
+        n('bob', 'entity', 'Bob', { name: 'Bob', type: 'person' }),
+        n('pref', 'semantic', 'prefers async standups', { confidence: 0.3, tags: ['project:me'] }),
+        n('fact-x', 'fact', 'Alice manages Bob', { status: 'active' }),
+      ],
+      edges: [
+        e('alice', 'bob', 'USES', 3),
+        e('bob', 'alice', 'USES', 3), // circular reporting — a real, non-code dependency cycle
+        e('pref', 'alice', 'ABOUT', 1),
+      ],
+    };
+    const { markdown } = await new GraphReportService(fakeSnapshotService(personal)).generate({});
+    expect(markdown).not.toContain('Components with no symbols');
+    expect(markdown).toContain('## Dependency Cycles');
+    expect(markdown).toContain('alice → bob → alice');
+    expect(markdown).toContain('prefers async standups'); // low-confidence preference surfaced
+  });
+
   it('handles an empty graph gracefully', async () => {
     const empty: AmpGraphSnapshot = {
       generated_at: '2026-06-06T00:00:00.000Z',
@@ -144,7 +171,7 @@ describe('GraphReportService.generate', () => {
     const { markdown, stats } = await new GraphReportService(fakeSnapshotService(empty)).generate({});
     expect(stats.nodes).toBe(0);
     expect(markdown).toContain('_No nodes in scope._');
-    expect(markdown).toContain('No import or dependency cycles detected.');
+    expect(markdown).toContain('No dependency cycles detected.');
     expect(markdown).toContain('No knowledge gaps detected.');
     expect(markdown).toContain('(all projects)');
   });
