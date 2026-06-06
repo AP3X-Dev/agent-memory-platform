@@ -18,7 +18,12 @@ export { MemoryBlockService, MAX_BLOCK_SIZE } from './blocks.js';
 export type { RedisBlockLayer, Neo4jBlockLayer, CacheInvalidator } from './blocks.js';
 export type { BootstrapInput, BootstrapResult, BootstrapEntity, BootstrapSemantic, BootstrapAgent } from './bootstrap-graph.js';
 export { extractFacts, isTransientError } from './extract.js';
-export { createCoreServices } from './services-factory.js';
+export { OpenAiLlmClient, NullLlmClient, DEFAULT_MODELS } from './llm.js';
+export type { LlmClient, LlmTask, ChatMessage, ChatOptions } from './llm.js';
+export { KeyedSerialQueue } from './serial-queue.js';
+export { DreamEngine } from './dream.js';
+export type { DreamFactLayer, DreamGraphLayer, DreamResult, DreamEngineDeps } from './dream.js';
+export { createCoreServices, buildDreamEngine } from './services-factory.js';
 export type { CoreServices, CoreServicesEnv } from './services-factory.js';
 export {
   loadSettings,

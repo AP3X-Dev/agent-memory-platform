@@ -79,6 +79,7 @@ Respond with JSON only:
 export async function extractFacts(
   content: string,
   apiKey: string,
+  model = 'gpt-4o-mini',
 ): Promise<FactInput[]> {
   if (!apiKey || !content.trim()) {
     return [];
@@ -87,7 +88,7 @@ export async function extractFacts(
   try {
     const client = new OpenAI({ apiKey });
     const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model,
       messages: [
         { role: 'system', content: FACT_EXTRACTION_PROMPT },
         { role: 'user', content: content.slice(0, 4000) },
