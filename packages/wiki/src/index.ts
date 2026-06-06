@@ -32,6 +32,14 @@ export type {
 // Services
 export { WikiCompiler, slugify } from './compile.js';
 export { IngestionService, initWikiSchema } from './ingest.js';
+export {
+  DefaultDocumentConverter,
+  needsConversion,
+  stripHtml,
+  stripRtf,
+} from './document-converter.js';
+export type { DocumentConverter, ConvertResult } from './document-converter.js';
+export { CachingDocumentConverter } from './document-cache.js';
 export { WikiLinter } from './lint.js';
 export { startWikiViewer, escapeHtml, sanitizeHtml, resetViewerCache, renderMarkdown } from './viewer.js';
 export { WikiEditReconciler, parseClaimBlocks, parseFrontmatter } from './reconcile.js';

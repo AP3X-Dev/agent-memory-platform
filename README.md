@@ -202,7 +202,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 | Tool | What it does for you |
 |------|---------------------|
 | `amp_compile` | Turn the knowledge graph into a browsable interlinked wiki |
-| `amp_ingest` | Feed in docs, papers, or notes — entities and claims auto-extracted |
+| `amp_ingest` | Feed in docs, papers, notes — or PDF / Word / Excel / HTML files (converted to text when system tools are present) — entities and claims auto-extracted |
 | `amp_lint` | 10 health checks: orphan pages, contradictions, low confidence, coverage gaps |
 | `amp_braindump` | "Remember this about me" — freeform text becomes durable, human-authored memory under your own scope |
 | `amp_wiki_sync` | Push human edits of a compiled wiki file back into the graph (changed claims → corrections, new lines → new memories) |

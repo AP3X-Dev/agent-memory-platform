@@ -44,6 +44,8 @@ import {
   IngestionService,
   WikiLinter,
   WikiEditReconciler,
+  DefaultDocumentConverter,
+  CachingDocumentConverter,
   setWikiServiceInstances,
 } from '@amp/wiki';
 import type { CompileInput, CompileV2Result } from '@amp/wiki';
@@ -286,7 +288,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     compile: async (input: CompileInput): Promise<CompileV2Result> =>
       rawWikiCompiler.compile(input.output_dir, input.project_tag),
   };
-  const ingestionServiceInstance = new IngestionService(driver);
+  // Document conversion (PDF/Office/HTML/RTF → text) via optional system tools,
+  // with a SHA-256 manifest cache under .amp/converted. No npm dependencies.
+  const documentConverter = new CachingDocumentConverter(new DefaultDocumentConverter());
+  const ingestionServiceInstance = new IngestionService(driver, undefined, documentConverter);
   const wikiLinterInstance = new WikiLinter(driver);
   const editReconcilerInstance = new WikiEditReconciler(driver);
 

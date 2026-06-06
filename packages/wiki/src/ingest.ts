@@ -8,6 +8,7 @@ import { basename, extname } from 'node:path';
 import { nanoid } from 'nanoid';
 import type { ExtractionProvider } from '@amp/core';
 import type { IngestInput, IngestResult } from './types.js';
+import { needsConversion, type DocumentConverter } from './document-converter.js';
 
 // ─── Schema for Source nodes ─────────────────────────────────────────────────
 
@@ -34,6 +35,7 @@ export class IngestionService {
   constructor(
     private driver: Driver,
     private extractor?: ExtractionProvider,
+    private converter?: DocumentConverter,
   ) {}
 
   async ingest(input: IngestInput): Promise<IngestResult> {
@@ -65,7 +67,13 @@ export class IngestionService {
       content = inlineContent;
     } else if (source_path) {
       try {
-        content = await readFile(source_path, 'utf-8');
+        // Documents (PDF/Office/HTML/RTF) go through the converter when one is
+        // injected; plain-text files are read directly as before.
+        if (this.converter && needsConversion(source_path)) {
+          content = (await this.converter.convert(source_path)).text;
+        } else {
+          content = await readFile(source_path, 'utf-8');
+        }
       } catch (err: unknown) {
         console.error("[ingest] Suppressed error:", err);
         throw new Error(`Failed to read source file: ${source_path}`);

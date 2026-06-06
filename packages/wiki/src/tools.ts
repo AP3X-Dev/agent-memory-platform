@@ -329,7 +329,7 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
 
   handles.push(server.tool(
     'amp_ingest',
-    'Ingest a raw source document into the AMP graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Use this to feed research material (articles, papers, notes) into the knowledge base.',
+    'Ingest a raw source document into the AMP graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Handles text/markdown directly and converts documents (PDF, Word/.docx, Excel/.xlsx, HTML, RTF) to text first when the needed system tools are installed. Use this to feed research material, articles, notes, contracts, reports, or org docs into the knowledge base.',
     AmpIngestSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
     handlers.amp_ingest,
