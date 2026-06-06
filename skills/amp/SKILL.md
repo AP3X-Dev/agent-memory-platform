@@ -1,6 +1,6 @@
 ---
 name: amp
-description: "Agent Memory Platform — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 7 always-visible tools + 9 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
+description: "Agent Memory Platform — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 8 always-visible tools + 9 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
 ---
 
 # AMP — Agent Memory Platform
@@ -9,7 +9,7 @@ Persistent memory system for AI agents. Knowledge compounds across sessions — 
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to avoid overwhelming agents with 48 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **9 on-demand domains** that must be enabled before use.
+AMP uses progressive disclosure to avoid overwhelming agents with 49 tools at once. **8 tools are always visible** (Tier 1). All other tools are grouped into **9 on-demand domains** that must be enabled before use.
 
 ### Always-Visible Tools (Tier 1)
 
@@ -21,9 +21,10 @@ AMP uses progressive disclosure to avoid overwhelming agents with 48 tools at on
 | `amp_memory_insert` | Insert or append to a memory block |
 | `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: blends architecture + code + memory |
+| `amp_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable reasoning_level) |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 
-These 7 tools cover session start, storing decisions, searching memory, and reading/writing blocks — the most common operations.
+These 8 tools cover session start, asking questions, storing decisions, searching memory, and reading/writing blocks — the most common operations.
 
 ### On-Demand Domains
 

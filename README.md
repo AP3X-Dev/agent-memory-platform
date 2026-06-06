@@ -30,7 +30,7 @@ It's not RAG. RAG retrieves documents and forgets. AMP **learns** — episodic m
 
 ## How It Works
 
-AMP is a Neo4j knowledge graph exposed as 48 MCP tools. Your agent calls them autonomously — no workflow changes needed. The example below is a coding session; the same load → store → consolidate loop works for any domain.
+AMP is a Neo4j knowledge graph exposed as 49 MCP tools. Your agent calls them autonomously — no workflow changes needed. The example below is a coding session; the same load → store → consolidate loop works for any domain.
 
 ```
 Session 1: Agent stores "auth module uses JWT, team prefers stateless for horizontal scaling"
@@ -59,7 +59,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 Your agent sees 7 tools by default. The other 41 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
-Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
+Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_ask · amp_grep · amp_tools
 On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki, retrieval, graph)
 ```
 
@@ -158,14 +158,15 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 ---
 
-## The 48 Tools
+## The 49 Tools
 
-### Core Memory (7 always visible + memory management on demand)
+### Core Memory (8 always visible + memory management on demand)
 | Tool | What it does for you |
 |------|---------------------|
 | `amp_load` | Start every session with full project context — conventions, decisions, gotchas |
 | `amp_store` | Capture decisions and learnings so the next session starts smarter |
 | `amp_context` | One-call context assembly — architecture + code + memory blended |
+| `amp_ask` | Ask memory a question, get a synthesized cited answer (not raw chunks) — tunable reasoning depth |
 | `amp_memory_read/insert` | Structured memory blocks: persona, user preferences, project state |
 | `amp_grep` | Search across all memory by pattern |
 | `amp_memory_promote/archive` | Graduate working notes to permanent knowledge, or archive completed work |
@@ -226,7 +227,7 @@ The wiki round-trips: edit a compiled article in the viewer (Edit button) or syn
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│         48 tools · 9 domains · progressive        │
+│         49 tools · 9 domains · progressive        │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│
