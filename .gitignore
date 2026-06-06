@@ -9,6 +9,9 @@ dist/
 # Compiled wiki output (generated, not source)
 /wiki/
 
+# Graph analysis/export artifacts (generated, not source)
+amp-graph-out/
+
 # Claude Code runtime state (logs, trackers, etc.)
 .claude/
 # But keep the distributable skills tracked

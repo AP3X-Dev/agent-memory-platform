@@ -8,6 +8,7 @@
     { "path": "packages/arch" },
     { "path": "packages/code" },
     { "path": "packages/retrieval" },
+    { "path": "packages/graph" },
     { "path": "packages/mcp" }
   ]
 }
