@@ -177,6 +177,17 @@ Read-only, project-scoped, secret-safe. General-purpose (works for any memory gr
 - Check for: conventions, past decisions, known gotchas
 - Apply silently. Only mention when it changes your approach.
 
+### Recall — pull the right context, precisely
+
+Recalling the **right** memory at the **right** moment — without flooding the context window — is the whole point. Recall is as automatic as storing.
+
+- **Recall continuously, not just at session start.** Pull scoped memory the moment you're about to answer about an entity, make a decision, modify a module, assume a default/limit/preference, or re-ask the user. If you might already know it, check first.
+- **Recall precisely.** Scope every load with `entities` + `tags` (`project:<tag>`) and set `max_tokens` to the smallest that fits — the goal is the *right* context, not *all* of it. Start specific; widen only if the scoped recall is empty.
+- **Pick the smallest tool that fits:** `amp_grep(pattern, scope)` for a specific fact/name/preference · `amp_memory_read(block)` for a known block · `amp_load(task, entities, tags, max_tokens, temporal?)` for token-budgeted task memory · `amp_context` for genuinely cross-cutting tasks · `amp_timeline`/`amp_fact_diff` (temporal domain) for how knowledge changed · `amp_code_search`/`amp_code_context` (code domain) for symbols/usages.
+- **Prefer current facts.** `amp_load` returns current facts by default; pass `temporal` only when you need historical or changed state.
+- **Close the loop.** Enable `retrieval` and use `amp_feedback` when recalled memory helped (or didn't) — AMP learns to rank better.
+- **Apply silently.** Surface recalled memory only when it changes your recommendation.
+
 ### During Work
 
 - Update `working_state` as context evolves via `amp_memory_insert` (always available).

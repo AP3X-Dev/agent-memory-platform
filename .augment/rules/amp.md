@@ -35,6 +35,13 @@ Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always
 - Be silent — don't narrate AMP usage
 - Enable domains before using domain-specific tools
 
+## Recall — pull the right context, precisely
+Recalling the right memory at the right moment without flooding the context window is the whole point — recall is as automatic as storing.
+- Recall continuously, not just at session start: before answering about an entity, deciding, modifying a module, assuming a default/limit/preference, or re-asking the user. If you might already know it, check first.
+- Recall precisely: scope every load with `entities` + `tags` (`project:<tag>`) and set `max_tokens` to the smallest that fits — the right context, not all of it. Start specific; widen only if empty.
+- Smallest tool that fits: `amp_grep` (specific fact/preference) · `amp_memory_read(block)` (known block) · `amp_load(task, entities, tags, max_tokens)` (scoped task memory) · `amp_context` (cross-cutting) · `amp_timeline`/`amp_fact_diff` (how knowledge changed) · `amp_code_search` (code).
+- Close the loop: enable `retrieval`, use `amp_feedback` when recalled memory helped (or didn't).
+
 ## Autonomous Triggers
 - Session start → read core memory (`amp_memory_read`), then load context. Tier 1 tools only — no domain enablement needed.
 - Before modifying code → `amp_tools(action: "enable", domain: "code")` or `"arch"`, then load module context

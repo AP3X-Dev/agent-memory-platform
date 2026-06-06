@@ -178,6 +178,42 @@ When changing code in a module you haven't touched this session:
 - Check changes against established patterns.
 - Flag violations with context.
 
+### Recall — pull the right context, precisely
+
+Storing is half the job. The payoff is recalling the **right** memory at the **right** moment **without flooding the context window**. Recall is as automatic as storing — and the goal is always the *right* context, not *all* of it.
+
+**Recall continuously, not just at session start.** Pull memory the moment you're about to act on something you might already know — before you answer, decide, modify, assume a default, or re-ask the user:
+
+| The moment you're about to… | Recall |
+|------|------|
+| answer a question about an entity/topic | `amp_grep(pattern, scope)` or `amp_load(task, entities)` scoped to it |
+| make a decision in some area | prior decisions + conventions: `amp_load(task, entities, tags)` |
+| modify a module | `amp_arch_context` / `amp_code_context` for that module |
+| assume a default, config, limit, or preference | check first — `amp_grep` or `amp_memory_read(block: "user")` |
+| rely on a fact that may have changed | time-aware: `amp_load(..., temporal: {time_mode: "current"})`, or `amp_timeline` / `amp_fact_diff` |
+| re-derive something non-trivial | check whether it's already stored before redoing the work |
+
+**Recall precisely — protect the context window:**
+- **Scope every recall.** Pass `entities` and `tags` (`project:<tag>`) so the ranker returns the relevant subgraph, not the whole graph.
+- **Budget tokens.** Set `max_tokens` to the smallest amount that answers the need (session-start ~4–8k; a targeted lookup far less). A bigger budget is not a better recall.
+- **Use the smallest tool that fits.** A targeted `amp_grep` or `amp_memory_read(block)` beats a broad `amp_load`; reserve a broad `amp_context` for genuinely cross-cutting tasks.
+- **Start specific, widen only if empty.** If a scoped recall returns nothing, broaden the scope — don't lead with a firehose.
+
+**Pick the right recall tool:**
+
+| Need | Tool |
+|------|------|
+| Whole-task context (memory + code + arch, blended) | `amp_context(task, project_name, max_tokens)` |
+| Token-budgeted memory for a task, scoped | `amp_load(task, entities, tags, max_tokens, temporal?)` |
+| A specific fact / name / decision / preference | `amp_grep(pattern, scope)` |
+| A specific known block (user prefs, project_state) | `amp_memory_read(block, scope)` |
+| How knowledge about an entity evolved / what changed | `amp_timeline` / `amp_fact_diff` (enable `temporal`) |
+| Code symbols, callers, usages | `amp_code_search` / `amp_code_context` (enable `code`) |
+
+**Close the loop.** When recalled memory proves useful (or misleading), record it with `amp_feedback` (enable `retrieval`) — AMP learns which strategies and entities produce useful recall and ranks them higher next time.
+
+**Apply silently.** Let recalled memory inform your work; surface it only when it changes your recommendation ("the project decided X last month because Y").
+
 ### Automatic Storing
 
 Store to AMP whenever any of these happen — don't ask, just store:
@@ -922,3 +958,8 @@ MATCH (e:Entity {name: 'auth-module'})-[r]->(dep:Entity) RETURN type(r), dep.nam
 14. **Promote, don't lose.** At session end, enable `memory` domain, promote valuable working memory to core before archiving.
 15. **Invalidate, don't overwrite.** When facts are contradicted, they get invalidated with timestamps — preserving history.
 16. **Use `amp_timeline` for fact archaeology.** Enable `temporal` domain when you need to understand how knowledge about an entity evolved over time.
+17. **Recall before you assume.** Check memory before re-deriving, re-asking the user, or assuming a default, config, or limit — the answer may already be stored.
+18. **Recall narrowly.** Scope every load by `entities` + `tags` and set `max_tokens` to the smallest that fits. The goal is the *right* context, not *all* of it — a bigger budget is not a better recall. A targeted `amp_grep` beats a broad load.
+19. **Recall reactively, not just at session start.** Pull scoped context the moment you touch a new entity, decision area, or module mid-task — recall is continuous, not a one-time boot step.
+20. **Prefer current facts; reach for history deliberately.** `amp_load` returns current facts by default; pass `temporal` (or use `amp_fact_diff`) only when you specifically need what changed or what *was* true.
+21. **Close the retrieval loop.** Enable `retrieval` and use `amp_feedback` when recalled memory helped (or didn't) — AMP learns to rank better over time.

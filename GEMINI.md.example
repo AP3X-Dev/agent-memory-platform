@@ -73,6 +73,15 @@ All other tools are organized into **9 on-demand domains**. Call `amp_tools(acti
 - Load architecture context. Check for prior decisions and conventions.
 - Cite memory when relevant.
 
+### Recall — pull the right context, precisely
+
+Recalling the **right** memory at the **right** moment without flooding the context window is the whole point — recall is as automatic as storing.
+
+- **Recall continuously, not just at session start** — before you answer about an entity, decide, modify a module, assume a default/limit/preference, or re-ask the user. If you might already know it, check first.
+- **Recall precisely.** Scope every load with `entities` + `tags` (`project:<tag>`) and set `max_tokens` to the smallest that fits — the goal is the *right* context, not *all* of it. Start specific; widen only if empty.
+- **Smallest tool that fits:** `amp_grep` for a specific fact/preference · `amp_memory_read(block)` for a known block · `amp_load(task, entities, tags, max_tokens)` for scoped task memory · `amp_context` for cross-cutting tasks · `amp_timeline`/`amp_fact_diff` (temporal) for how knowledge changed · `amp_code_search` (code) for code.
+- **Close the loop:** enable `retrieval`, use `amp_feedback` when recalled memory helped (or didn't).
+
 ### Automatic Storing
 
 Store to AMP when:
