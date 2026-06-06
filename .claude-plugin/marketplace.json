@@ -2,7 +2,7 @@
   "name": "amp-memory",
   "owner": { "name": "AP3X-Dev" },
   "metadata": {
-    "description": "Agent Memory Protocol — persistent memory, architecture, code intelligence, research, and graph analytics via Neo4j knowledge graph",
+    "description": "Agent Memory Platform — persistent memory, architecture, code intelligence, research, and graph analytics via Neo4j knowledge graph",
     "version": "1.0.0"
   },
   "plugins": [

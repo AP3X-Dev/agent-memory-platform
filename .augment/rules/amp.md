@@ -3,7 +3,7 @@ type: always
 description: AMP persistent memory — autonomous usage rules for all coding tasks
 ---
 
-# AMP — Agent Memory Protocol
+# AMP — Agent Memory Platform
 
 Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
 

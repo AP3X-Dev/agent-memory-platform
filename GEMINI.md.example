@@ -1,4 +1,4 @@
-# AMP — Agent Memory Protocol
+# AMP — Agent Memory Platform
 
 You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions using a Neo4j knowledge graph. Use it autonomously during all coding work.
 

@@ -1,34 +1,36 @@
-# AMP — Agent Memory Protocol
+# AMP — Agent Memory Platform
 
-**Every AI coding session starts from zero.** Your agent doesn't remember the architecture decisions from last week. It doesn't know that you tried approach X and it failed. It doesn't know your team prefers Zod over Joi, or that the auth module was rewritten last month. Every session, you re-explain. Every session, it makes the same mistakes you already corrected.
+**Every AI agent starts from zero.** A coding agent forgets last week's architecture decisions. A personal assistant re-asks your preferences. A business agent re-learns your org chart every conversation. Every session, you re-explain. Every session, the same mistakes you already corrected.
 
 **AMP fixes that.**
 
-With AMP, your AI agent accumulates knowledge across every session. Decisions get stored. Corrections stick. Conventions compound. The agent working on your codebase on day 30 has everything it learned on days 1–29 — the architecture, the tradeoffs, the "we tried that and here's why it didn't work."
+AMP is persistent, cross-session memory for *any* agent — a knowledge graph your agent reads and writes through MCP tools. Decisions get stored. Corrections stick. Knowledge compounds. The agent on day 30 starts with everything it learned on days 1–29 — the decisions, the tradeoffs, the "we tried that and here's why it didn't work."
 
-It's not RAG. RAG retrieves documents and forgets. AMP **learns** — episodic memories get consolidated into high-confidence principles through signal-driven evolution, the same way a senior engineer builds intuition over time.
+It fits any domain. A **coding** agent that remembers your architecture, conventions, and why approach X failed. A **personal** agent that knows your preferences, the people in your life, and your ongoing projects. A **business** agent that holds your org chart, customers, and processes. Coding is the deepest-supported example — AMP ships AST code intelligence, architecture mapping, and PR-impact analysis — but the memory model is general-purpose.
+
+It's not RAG. RAG retrieves documents and forgets. AMP **learns** — episodic memories consolidate into high-confidence principles through signal-driven evolution, the same way a person builds intuition over time. When knowledge changes, old facts are invalidated and superseded, with a full audit trail. And you can **see** all of it: AMP renders your memory as an interactive graph map and audits it for gaps, contradictions, and themes.
 
 ---
 
 ## What Changes For You
 
 **Before AMP:**
-- "We already fixed this bug last week" — agent doesn't know
+- "We already fixed this bug last week" — the agent doesn't know
 - "Use the factory pattern here, not direct instantiation" — explained for the third time
-- "The rate limit is 50/s, not 100" — agent uses stale knowledge from training data
-- Context window fills up re-explaining your project to a blank-slate agent
+- A personal agent re-asks your preferences; a business agent re-learns who owns which account
+- The context window fills up re-explaining your project — or yourself — to a blank-slate agent
 
 **After AMP:**
-- Agent loads project context in one call — architecture, conventions, past decisions, known gotchas
+- One call loads everything the agent knows — about the project, about you, about your org: decisions, conventions, people, preferences, gotchas
 - Corrections from session 3 automatically inform session 30
-- When knowledge changes (rate limit dropped from 100 to 50), old facts get invalidated and new facts supersede them — with full audit trail
-- Multiple agents working on the same project share the same evolving knowledge base
+- When knowledge changes, old facts are invalidated and new ones supersede them — with a full audit trail
+- Multiple agents share one evolving knowledge base — and you can browse it as an interactive graph
 
 ---
 
 ## How It Works
 
-AMP is a Neo4j knowledge graph exposed as 38 MCP tools. Your agent calls them autonomously — no workflow changes needed.
+AMP is a Neo4j knowledge graph exposed as 48 MCP tools. Your agent calls them autonomously — no workflow changes needed. The example below is a coding session; the same load → store → consolidate loop works for any domain.
 
 ```
 Session 1: Agent stores "auth module uses JWT, team prefers stateless for horizontal scaling"
@@ -73,8 +75,8 @@ On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki,
 ### Setup
 
 ```bash
-git clone https://github.com/AP3X-Dev/agent-memory-protocol.git
-cd agent-memory-protocol
+git clone https://github.com/AP3X-Dev/agent-memory-platform.git
+cd agent-memory-platform
 
 # Start the knowledge graph
 docker compose up -d
@@ -110,7 +112,7 @@ npm run dev
       "type": "stdio",
       "command": "npx",
       "args": ["tsx", "packages/mcp/src/server.ts", "--stdio"],
-      "cwd": "/path/to/agent-memory-protocol",
+      "cwd": "/path/to/agent-memory-platform",
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_USER": "neo4j",
@@ -158,7 +160,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 ## The 48 Tools
 
-### Core Memory (7 always visible + 8 on demand)
+### Core Memory (7 always visible + memory management on demand)
 | Tool | What it does for you |
 |------|---------------------|
 | `amp_load` | Start every session with full project context — conventions, decisions, gotchas |
@@ -243,7 +245,8 @@ The wiki round-trips: edit a compiled article in the viewer (Edit button) or syn
 | `@amp/arch` | Entity graph, typed relations, aspects, impact analysis, drift detection |
 | `@amp/code` | AST parsing, symbol graph, multi-vector hybrid search |
 | `@amp/retrieval` | Unified context assembly, intent classification, learned retrieval weights |
-| `@amp/wiki` | Graph-to-wiki compiler, source ingestion, health linting |
+| `@amp/wiki` | Graph-to-wiki compiler, document ingestion (PDF/Office/HTML), health linting |
+| `@amp/graph` | Graph snapshot, audit report, interactive export, knowledge clustering, PR impact |
 | `@amp/neo4j` | Graph stores, queries, GDS algorithms, temporal edges |
 | `@amp/redis` | Caching, streams, locks, memory block storage |
 | `@amp/mcp` | MCP server, bootstrap wiring, tool registration |
@@ -278,7 +281,7 @@ curl -H "Authorization: Bearer $AMP_API_TOKEN" http://localhost:3101/readyz
 
 ```bash
 npm run build          # Build all packages
-npm test               # Run tests (600+)
+npm test               # Run tests (1,300+)
 npm run dev            # MCP server with hot reload
 ```
 

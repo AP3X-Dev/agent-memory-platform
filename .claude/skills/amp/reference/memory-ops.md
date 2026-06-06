@@ -191,4 +191,4 @@ amp_load(task: "...", temporal: { time_mode: "evolution", include_invalidated: t
 
 ### Entity resolution
 
-Facts use canonical entity resolution. "AMP", "amp", and "Agent Memory Protocol" all resolve to the same entity if aliases exist. The system resolves via: exact name → case-insensitive → alias match. New name variants are automatically added as aliases.
+Facts use canonical entity resolution. "AMP", "amp", and "Agent Memory Platform" all resolve to the same entity if aliases exist. The system resolves via: exact name → case-insensitive → alias match. New name variants are automatically added as aliases.

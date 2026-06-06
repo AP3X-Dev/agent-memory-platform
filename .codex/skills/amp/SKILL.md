@@ -1,9 +1,9 @@
 ---
 name: amp
-description: "Agent Memory Protocol — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via MCP tools."
+description: "Agent Memory Platform — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via MCP tools."
 ---
 
-# AMP — Agent Memory Protocol
+# AMP — Agent Memory Platform
 
 Persistent memory for AI agents. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
 
