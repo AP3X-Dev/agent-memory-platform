@@ -12,6 +12,7 @@ import { runHookCommand } from './cli/hook.js';
 import { runContextCommand } from './cli/context.js';
 import { runHooksCommand } from './cli/install.js';
 import { runRunCommand } from './cli/run.js';
+import { createCoreServices, buildDreamEngine } from './services-factory.js';
 
 // ─── Arg parsing ──────────────────────────────────────────────────────────────
 
@@ -152,6 +153,28 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
   }
 }
 
+async function runDream(flags: Record<string, string | boolean>): Promise<void> {
+  const scope = String(flags['scope'] ?? 'project:global');
+  const maxEntities = flags['max-entities'] ? Number(flags['max-entities']) : undefined;
+  const noCards = flags['no-cards'] === true;
+
+  const core = createCoreServices();
+  try {
+    if (!core.llm.available) {
+      console.error('[dream] no OPENAI_API_KEY configured — nothing to do.');
+      return; // nothing to do without an LLM; avoid building the engine + a duplicate log
+    }
+    const engine = buildDreamEngine(core);
+    const result = await engine.run(scope, {
+      ...(maxEntities && Number.isFinite(maxEntities) ? { maxEntities } : {}),
+      ...(noCards ? { cards: false } : {}),
+    });
+    console.log(JSON.stringify(result, null, 2));
+  } finally {
+    await core.close();
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -177,6 +200,11 @@ async function main(): Promise<void> {
       await runSnapshot(flags);
       break;
 
+    case 'dream':
+      // `amp dream --scope project:x` — background gap-filling + abductive hypotheses.
+      await runDream(flags);
+      break;
+
     case 'hook':
       // `amp hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
       await runHookCommand(positionals);
@@ -200,6 +228,9 @@ async function main(): Promise<void> {
       console.error('  export    [--path ./.amp] [--entity Name] [--tag tag]');
       console.error('  import    [--path ./.amp] [--strategy confidence-weighted|overwrite] [--dry-run]');
       console.error('  snapshot  [--path ./.amp] [--commit] [--message "..."]');
+      console.error('');
+      console.error('Background memory commands:');
+      console.error('  dream     [--scope project:x] [--max-entities N] [--no-cards]');
       console.error('');
       console.error('Agent hook commands:');
       console.error('  hooks install --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp]');

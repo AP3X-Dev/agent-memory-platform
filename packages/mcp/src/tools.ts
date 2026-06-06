@@ -20,6 +20,8 @@ export interface IConsolidationEngine {
   status(): Promise<unknown>;
   review(proposalId: string): Promise<unknown>;
   apply(proposalId: string, decision: 'approve' | 'reject'): Promise<{ applied: boolean }>;
+  /** Background generative pass: fill gaps + mint abductive hypotheses for a scope. */
+  dream?(scope: string): Promise<unknown>;
 }
 
 export interface IScopedQuery {
@@ -214,8 +216,8 @@ const AmpQuerySchema = {
 };
 
 const AmpConsolidateSchema = {
-  action: z.enum(['run', 'status', 'review']).describe('Consolidation action to perform'),
-  scope: z.string().max(2000).optional().describe('Entity or tag scope for "run" action'),
+  action: z.enum(['run', 'status', 'review', 'dream']).describe('Consolidation action: run/status/review, or "dream" (background gap-filling + abductive hypotheses for a scope)'),
+  scope: z.string().max(2000).optional().describe('Entity or tag scope for "run"/"dream" actions (e.g. project:amp)'),
   proposal_id: z.string().max(2000).optional().describe('Proposal ID for "review" action'),
   decision: z
     .enum(['approve', 'reject'])
@@ -374,7 +376,7 @@ export type ToolHandlers = {
   amp_query: (args: { query: string; limit?: number }) => ToolResult;
   amp_provenance: (args: { semantic_id: string }) => ToolResult;
   amp_consolidate: (args: {
-    action: 'run' | 'status' | 'review';
+    action: 'run' | 'status' | 'review' | 'dream';
     scope?: string;
     proposal_id?: string;
     decision?: 'approve' | 'reject';
@@ -802,6 +804,14 @@ export function buildToolHandlers(): ToolHandlers {
           // Just review / fetch the proposal
           const proposal = await consolidationEngine.review(args.proposal_id);
           return textContent(JSON.stringify(proposal, null, 2));
+        }
+        case 'dream': {
+          if (!consolidationEngine.dream) {
+            throw new Error('Dream pass not available (no LLM configured — set OPENAI_API_KEY)');
+          }
+          const effectiveScope = args.scope ?? 'global';
+          const result = await consolidationEngine.dream(effectiveScope);
+          return textContent(JSON.stringify(result, null, 2));
         }
         default: {
           const exhaustiveCheck: never = args.action;
@@ -1391,7 +1401,7 @@ export function registerTools(
  */
 export const ALWAYS_ON_TOOL_NAMES = [
   'amp_load', 'amp_store', 'amp_grep', 'amp_memory_read', 'amp_memory_insert',
-  'amp_tools', 'amp_context',
+  'amp_tools', 'amp_context', 'amp_ask',
 ] as const;
 
 /** Map of domain → tool names, for listing in amp_tools. */
