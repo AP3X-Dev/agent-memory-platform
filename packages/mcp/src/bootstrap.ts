@@ -51,6 +51,7 @@ import {
   initGraphSchema,
   GraphSnapshotService,
   GraphReportService,
+  GraphExportService,
   setGraphServiceInstances,
 } from '@amp/graph';
 
@@ -304,10 +305,12 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   const graphSnapshotService = new GraphSnapshotService(driver);
   const graphReportService = new GraphReportService(graphSnapshotService);
+  const graphExportService = new GraphExportService(graphSnapshotService);
 
   setGraphServiceInstances({
     snapshotService: graphSnapshotService,
     reportService: graphReportService,
+    exportService: graphExportService,
   });
 
   console.error('[amp-mcp] Graph services initialized');

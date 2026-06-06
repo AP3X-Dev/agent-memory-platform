@@ -94,3 +94,36 @@ export interface GraphReportResult {
   markdown: string;
   stats: GraphReportStats;
 }
+
+export type GraphExportFormat = 'json' | 'html';
+
+export interface GraphExportInput {
+  project_tag?: string;
+  project_name?: string;
+  /** 'json' (default) or 'html' (self-contained interactive viewer). */
+  format?: GraphExportFormat;
+  /** Optional relative path under the allowed output dir; if set, writes a file. */
+  output_path?: string;
+  include_symbols?: boolean;
+  include_semantics?: boolean;
+  include_facts?: boolean;
+  include_episodes?: boolean;
+  include_sources?: boolean;
+  /** HTML render cap; very large graphs render only the top-degree nodes. */
+  max_render_nodes?: number;
+}
+
+export interface GraphExportResult {
+  format: GraphExportFormat;
+  /** Inline payload when no output_path was given. */
+  content?: string;
+  /** Absolute path written when output_path was given. */
+  output_path?: string;
+  bytes: number;
+  node_count: number;
+  edge_count: number;
+  /** Snapshot hit the node bound. */
+  truncated: boolean;
+  /** HTML render cap hit (only the top-degree subset is drawn). */
+  render_truncated: boolean;
+}

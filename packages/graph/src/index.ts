@@ -28,6 +28,18 @@ export { findImportCycles } from './import-cycles.js';
 export type { ImportCycleOptions } from './import-cycles.js';
 export { renderGraphReport } from './report-renderer.js';
 
+// Export (portable artifacts)
+export { GraphExportService, resolveSafeOutputPath } from './export.js';
+export { exportJson, buildJsonDocument } from './export-json.js';
+export type { GraphJsonDocument } from './export-json.js';
+export {
+  exportHtml,
+  escapeHtml,
+  escapeJsonForScript,
+  selectRenderNodes,
+  DEFAULT_MAX_RENDER_NODES,
+} from './export-html.js';
+
 // Report service
 export { GraphReportService } from './report.js';
 export type {
@@ -46,4 +58,8 @@ export {
   setGraphServiceInstances,
   graphServicesReady,
 } from './tools.js';
-export type { IGraphSnapshotService, IGraphReportService } from './tools.js';
+export type {
+  IGraphSnapshotService,
+  IGraphReportService,
+  IGraphExportService,
+} from './tools.js';

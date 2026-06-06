@@ -1404,6 +1404,6 @@ export const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
   arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
   wiki: ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'],
   retrieval: ['amp_feedback'],
-  graph: ['amp_graph_report'],
+  graph: ['amp_graph_report', 'amp_graph_export'],
 };
 
