@@ -21,6 +21,33 @@ Load AMP memory relevant to the current context.
    - Episodic records with decisions and outcomes
    - No results? Suggest storing via `/amp remember`
 
+`recall` returns the raw assembled context. If the user instead asked a **question**
+that needs an answer synthesized across several memories, use `ask` (below).
+
+---
+
+## ask <question>
+
+Dialectic retrieval — answer a natural-language question by reasoning over memory,
+instead of returning raw chunks.
+
+### Flow
+
+1. **Pass the question straight to `amp_ask`:**
+   ```
+   amp_ask(question: "<the question>", reasoning_level: "medium",
+           project_name: "<project>", entity_scope: [<relevant>])
+   ```
+2. **Pick a reasoning level:** `minimal` (terse factual lookup, cheapest) → `low` →
+   `medium` (default) → `high` → `max` (report-style). Higher = more retrieval depth,
+   a bigger synthesis budget, and a stronger model.
+3. **Present** the synthesized answer plus the **cited node IDs** it used. The tool
+   also returns the evidence inline so the answer can be verified.
+
+### recall vs ask
+- `recall` → "load the relevant memory" (raw context for *you* to reason over).
+- `ask` → "answer this question" (AMP reasons and replies, with citations).
+
 ---
 
 ## remember <what>
@@ -160,6 +187,8 @@ amp_timeline(entity: "auth-module", include_episodes: true, limit: 20)
 ```
 
 Returns all facts about the entity ordered by valid_at, with status transitions (created, invalidated, disputed, superseded).
+
+Each fact also carries an `inference_type`: **deductive** (explicitly captured — the default), **inductive** (generalized by consolidation across episodes), or **abductive** (a hypothesis minted by the dream pass). Abductive/inductive facts rank below deductive ones and render with `[hypothesis]`/`[inferred]` tags so a guess is never mistaken for a known fact; an explicit episode that repeats an abductive fact's triple promotes it to deductive.
 
 ### fact-diff <entity>
 

@@ -57,8 +57,21 @@ const FACT_STATUS_MULTIPLIER: Record<FactNode['status'], number> = {
 };
 
 /**
- * Rank facts by confidence, recency (using valid_at), and status.
- * Current (active) facts rank above tentative/disputed/superseded ones.
+ * Per-inference-type ranking multiplier. Guesses must rank below knowns so the
+ * dream pass's abductive hypotheses never crowd out explicit facts:
+ *   deductive — explicit/derived, full weight
+ *   inductive — generalized from patterns, slightly demoted
+ *   abductive — a hypothesis, strongly demoted (still surfaced, clearly secondary)
+ */
+const FACT_INFERENCE_MULTIPLIER: Record<NonNullable<FactNode['inference_type']>, number> = {
+  deductive: 1.0,
+  inductive: 0.85,
+  abductive: 0.5,
+};
+
+/**
+ * Rank facts by confidence, recency (using valid_at), status, and inference type.
+ * Current (active, deductive) facts rank above tentative/disputed/abductive ones.
  */
 export function rankFacts(
   facts: FactNode[],
@@ -68,7 +81,8 @@ export function rankFacts(
     const ageDays = ageInDays(fact.valid_at, now);
     const recencyScore = Math.exp(-ageDays / (RECENCY_DECAY_DAYS * FACT_DECAY_MULTIPLIER));
     const statusMultiplier = FACT_STATUS_MULTIPLIER[fact.status] ?? 1.0;
-    const score = fact.confidence * recencyScore * statusMultiplier;
+    const inferenceMultiplier = FACT_INFERENCE_MULTIPLIER[fact.inference_type ?? 'deductive'] ?? 1.0;
+    const score = fact.confidence * recencyScore * statusMultiplier * inferenceMultiplier;
     return { fact, score };
   });
 

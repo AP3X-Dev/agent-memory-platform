@@ -1,8 +1,8 @@
 ---
 name: amp
 description: "AMP admin and explicit queries. Use when the user explicitly asks about AMP: 'amp status', 'amp query', 'show the graph', 'run consolidation', 'review proposals', 'what's in amp', 'provenance', 'compile wiki', 'ingest', 'lint'. NOT needed for normal coding — the agent uses AMP autonomously via CLAUDE.md instructions."
-allowed-tools: Read, Glob, mcp__amp__amp_load, mcp__amp__amp_store, mcp__amp__amp_query, mcp__amp__amp_consolidate, mcp__amp__amp_resolve, mcp__amp__amp_provenance, mcp__amp__amp_compile, mcp__amp__amp_ingest, mcp__amp__amp_lint, mcp__amp__amp_context, mcp__amp__amp_feedback, mcp__amp__amp_bootstrap, mcp__amp__amp_timeline, mcp__amp__amp_fact_diff, mcp__amp__amp_memory_read, mcp__amp__amp_memory_insert, mcp__amp__amp_memory_replace, mcp__amp__amp_memory_rewrite, mcp__amp__amp_memory_promote, mcp__amp__amp_memory_archive, mcp__amp__amp_grep, mcp__amp__amp_tools, mcp__amp__amp_graph_report, mcp__amp__amp_graph_export, mcp__amp__amp_pr_impact, mcp__amp__amp_pr_conflicts
-argument-hint: "status | query <q> | consolidate [run|review] | recall [topic] | remember <what> | provenance <id> | compile | ingest <path> | lint | timeline <entity> | fact-diff <entity> | memory [read|write|promote] <block> | grep <pattern> | graph [report|export] | pr-impact <num> | pr-conflicts"
+allowed-tools: Read, Glob, mcp__amp__amp_load, mcp__amp__amp_store, mcp__amp__amp_ask, mcp__amp__amp_query, mcp__amp__amp_consolidate, mcp__amp__amp_resolve, mcp__amp__amp_provenance, mcp__amp__amp_compile, mcp__amp__amp_ingest, mcp__amp__amp_lint, mcp__amp__amp_context, mcp__amp__amp_feedback, mcp__amp__amp_bootstrap, mcp__amp__amp_timeline, mcp__amp__amp_fact_diff, mcp__amp__amp_memory_read, mcp__amp__amp_memory_insert, mcp__amp__amp_memory_replace, mcp__amp__amp_memory_rewrite, mcp__amp__amp_memory_promote, mcp__amp__amp_memory_archive, mcp__amp__amp_grep, mcp__amp__amp_tools, mcp__amp__amp_graph_report, mcp__amp__amp_graph_export, mcp__amp__amp_pr_impact, mcp__amp__amp_pr_conflicts
+argument-hint: "status | ask <question> | query <q> | consolidate [run|review|dream] | recall [topic] | remember <what> | provenance <id> | compile | ingest <path> | lint | timeline <entity> | fact-diff <entity> | memory [read|write|promote] <block> | grep <pattern> | graph [report|export] | pr-impact <num> | pr-conflicts"
 ---
 
 # AMP — Admin & Explicit Queries
@@ -14,8 +14,9 @@ For the rare times the user explicitly asks to interact with AMP. Normal coding 
 | Subcommand | What it does |
 |------------|-------------|
 | `status` | Health check + graph stats. See [reference/admin.md](reference/admin.md) |
+| `ask <question>` | Dialectic retrieval — ask a question, get a synthesized cited answer (not raw chunks) via `amp_ask`. See [reference/memory-ops.md](reference/memory-ops.md) |
 | `query <q>` | Natural language or Cypher query. See [reference/memory-ops.md](reference/memory-ops.md) |
-| `consolidate [run\|review]` | Manage consolidation. See [reference/admin.md](reference/admin.md) |
+| `consolidate [run\|review\|dream]` | Manage consolidation, or `dream` — the background gap-filling / abductive-hypothesis pass. See [reference/admin.md](reference/admin.md) |
 | `recall [topic]` | Explicit memory load. See [reference/memory-ops.md](reference/memory-ops.md) |
 | `remember <what>` | Explicit memory store. See [reference/memory-ops.md](reference/memory-ops.md) |
 | `provenance <id>` | Trace the full lifecycle of a semantic node. See [reference/provenance.md](reference/provenance.md) |

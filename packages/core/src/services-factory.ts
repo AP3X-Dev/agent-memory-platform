@@ -17,6 +17,7 @@ import {
   DedupChecker,
   SignalStream,
   ConsolidationQueue,
+  DistributedLock,
   BlockStore as RedisBlockStore,
 } from '@amp/redis';
 import {
@@ -29,6 +30,9 @@ import {
 import { AMPService } from './service.js';
 import { MemoryBlockService } from './blocks.js';
 import { OpenAIEmbedding } from './embedding.js';
+import { OpenAiLlmClient, NullLlmClient, type LlmClient } from './llm.js';
+import { KeyedSerialQueue } from './serial-queue.js';
+import { DreamEngine, type DreamGraphLayer, type DreamBlockLayer } from './dream.js';
 import { EMBEDDING_DIM, type EmbeddingProvider, type AMPConfig } from './types.js';
 
 export interface CoreServicesEnv {
@@ -57,6 +61,10 @@ export interface CoreServices {
   scopedQuery: ScopedQuery;
   factStore: FactStore;
   embedding: EmbeddingProvider;
+  /** Shared chat-completion client (NullLlmClient when no API key). */
+  llm: LlmClient;
+  /** Per-entity write serializer shared across passes (dream, extraction). */
+  serialQueue: KeyedSerialQueue;
   config: AMPConfig;
   ampService: AMPService;
   memoryBlocks: MemoryBlockService;
@@ -105,6 +113,12 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
 
   const embedding: EmbeddingProvider = openaiKey ? new OpenAIEmbedding(openaiKey) : zeroEmbedding();
 
+  // Per-task model overrides from env (AMP_MODEL_*); omitted keys fall back to DEFAULT_MODELS.
+  const models: NonNullable<AMPConfig['models']> = {};
+  if (process.env['AMP_MODEL_EXTRACTION']) models.extraction = process.env['AMP_MODEL_EXTRACTION'];
+  if (process.env['AMP_MODEL_SYNTHESIS']) models.synthesis = process.env['AMP_MODEL_SYNTHESIS'];
+  if (process.env['AMP_MODEL_DREAM']) models.dream = process.env['AMP_MODEL_DREAM'];
+
   const config: AMPConfig = {
     redis: { url: redisUrl },
     neo4j: { uri: neo4jUri, user: neo4jUser, password: neo4jPassword },
@@ -112,7 +126,11 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     cache: { defaultTTL: 300, contextTTL: 300, embeddingTTL: 86400 },
     consolidation: { autoApply: false, signalThreshold: 3 },
     exportPath,
+    ...(Object.keys(models).length > 0 ? { models } : {}),
   };
+
+  const llm: LlmClient = openaiKey ? new OpenAiLlmClient(openaiKey, config.models ?? {}) : new NullLlmClient();
+  const serialQueue = new KeyedSerialQueue();
 
   const redisBlockStore = new RedisBlockStore(redis);
   const neo4jBlockStore = new Neo4jBlockStore(driver);
@@ -143,6 +161,8 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     scopedQuery,
     factStore,
     embedding,
+    llm,
+    serialQueue,
     config,
     ampService,
     memoryBlocks,
@@ -151,4 +171,50 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
       try { await driver.close(); } catch { /* already closed */ }
     },
   };
+}
+
+/**
+ * Build the background "dream" engine from constructed core services. The graph
+ * layer scopes entities by the project Entity's CONTAINS tree; facts/blocks/LLM
+ * and the per-entity serializer are taken from the core kit. See dream.ts.
+ */
+export function buildDreamEngine(core: CoreServices): DreamEngine {
+  const graph: DreamGraphLayer = {
+    async entitiesInScope(scopeTag: string, limit: number) {
+      const projectName = scopeTag.replace(/^project:/i, '');
+      const session = core.driver.session();
+      try {
+        const res = await session.run(
+          `MATCH (project:Entity) WHERE toLower(project.name) = toLower($projectName)
+           MATCH (project)-[:CONTAINS*0..3]->(e:Entity)
+           RETURN DISTINCT e.name AS name, e.id AS entity_id
+           LIMIT toInteger($limit)`,
+          { projectName, limit },
+        );
+        return res.records.map((r) => ({
+          name: String(r.get('name')),
+          entity_id: String(r.get('entity_id')),
+        }));
+      } finally {
+        await session.close();
+      }
+    },
+  };
+
+  const blocks: DreamBlockLayer = {
+    read: (scope, name) => core.memoryBlocks.read(scope, name),
+    rewrite: (scope, name, content) => core.memoryBlocks.rewrite(scope, name, content),
+  };
+
+  return new DreamEngine({
+    graph,
+    fact: core.factStore,
+    llm: core.llm,
+    blocks,
+    config: core.config,
+    serialize: (key, fn) => core.serialQueue.run(key, fn),
+    // Cross-process scope lock (same DistributedLock the ConsolidationEngine uses),
+    // so dream (CLI/timer) and consolidation (MCP) can't mutate one scope at once.
+    lock: new DistributedLock(core.redis),
+  });
 }

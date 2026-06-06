@@ -5,7 +5,7 @@ description: AMP persistent memory — autonomous usage rules for all coding tas
 
 # AMP — Agent Memory Platform
 
-Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
+Use AMP MCP tools autonomously during all work. Progressive disclosure: 8 always-visible tools + 9 on-demand domains.
 
 ## Always-Visible Tools (Tier 1)
 - `amp_load` — load memory context
@@ -14,12 +14,13 @@ Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always
 - `amp_memory_insert` — insert or append to a memory block
 - `amp_grep` — search memory by text pattern (exact or regex) across all node types
 - `amp_context` — super-load blending architecture + code + memory
+- `amp_ask` — dialectic retrieval: ask a question, get a synthesized **cited** answer (not raw chunks); `reasoning_level` minimal→max trades latency for depth. Use when the answer needs reasoning across several memories; use `amp_context` for raw context
 - `amp_tools` — enable/disable/list on-demand tool domains
 
 ## On-Demand Domains (call `amp_tools(action: "enable", domain: "<name>")` first)
 - `memory` (4) → `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive`
 - `temporal` (2) → `amp_timeline`, `amp_fact_diff`
-- `admin` (6) → `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_ingest_codebase`, `amp_provenance`
+- `admin` (6) → `amp_query`, `amp_consolidate` (incl. `action:"dream"` — background gap-filling + abductive hypotheses), `amp_resolve`, `amp_bootstrap`, `amp_ingest_codebase`, `amp_provenance`
 - `research` (6) → `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate`
 - `code` (7) → `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` — `amp_code_index` does structural extraction for TypeScript, JavaScript, Python, Go, Rust, SQL (tables/views/functions), Terraform/HCL (resources/modules/variables/outputs), and MCP config files (servers; env-safe)
 - `arch` (6) → `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context`
@@ -52,6 +53,7 @@ Recalling the right memory at the right moment without flooding the context wind
 - After bug fixes → store root cause
 - On user preference → enable `memory` domain, then `amp_memory_replace`
 - On contradicted facts → facts get invalidated, not just overwritten
+- Facts carry an `inference_type`: `deductive` (explicit), `inductive` (consolidation-generalized), `abductive` (a dream-pass guess). Abductive facts rank lower and show as `[hypothesis]` — never treat a guess as a known fact
 - Session end → enable `memory` domain, promote working memory, archive session blocks; enable `admin` domain, check consolidation
 
 Full reference: `skills/amp/SKILL.md`

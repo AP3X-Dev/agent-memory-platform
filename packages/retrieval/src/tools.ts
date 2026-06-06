@@ -21,6 +21,18 @@ export interface IUnifiedAssembler {
     as_of?: string;
   }): Promise<UnifiedContext>;
   renderMarkdown(ctx: UnifiedContext): string;
+  ask(question: string, options?: {
+    level?: 'minimal' | 'low' | 'medium' | 'high' | 'max';
+    entity_scope?: string[];
+    tag_scope?: string[];
+    project_name?: string;
+    as_of?: string;
+  }): Promise<{
+    answer: string;
+    cited_ids: string[];
+    evidence: Array<{ id: string; content: string }>;
+    level: string;
+  }>;
 }
 
 export interface IFeedbackTracker {
@@ -49,7 +61,7 @@ export function setRetrievalServiceInstances(services: {
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
 
-export const RETRIEVAL_TOOL_NAMES = ['amp_context', 'amp_feedback'] as const;
+export const RETRIEVAL_TOOL_NAMES = ['amp_context', 'amp_ask', 'amp_feedback'] as const;
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text' as const, text }] };
@@ -101,6 +113,43 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
       });
       const md = assembler.renderMarkdown(ctx);
       return textContent(md);
+    },
+  ));
+
+  // ─── amp_ask (Tier 1 — dialectic retrieval) ─────────────────────────────
+  tier1.push(server.tool(
+    'amp_ask',
+    'Ask a natural-language question about everything in memory and get a synthesized, CITED answer — not raw chunks. Combines facts via explicit inference, says so when evidence is insufficient, and returns the supporting node IDs. reasoning_level (minimal|low|medium|high|max) trades latency/cost for depth. Use this when the answer requires reasoning over multiple memories; use amp_context when you want the raw assembled context.',
+    {
+      question: z.string().max(2000).describe('A natural-language question about the user/project/codebase memory'),
+      reasoning_level: z.enum(['minimal', 'low', 'medium', 'high', 'max']).optional().default('medium')
+        .describe('Depth/cost knob: minimal=terse lookup, max=report-style synthesis'),
+      entity_scope: z.array(z.string()).optional().describe('Scope to specific entities'),
+      tag_scope: z.array(z.string()).optional().describe('Scope to specific tags'),
+      project_name: z.string().max(2000).optional().describe('Project name for scoping'),
+      as_of: z.string().optional().describe('ISO 8601 timestamp — answer as of a point in time'),
+    },
+    { readOnlyHint: true, idempotentHint: true } satisfies ToolAnnotations,
+    async (args) => {
+      if (!assembler) throw new Error('Retrieval services not initialised');
+      const r = await assembler.ask(args.question, {
+        level: args.reasoning_level,
+        entity_scope: args.entity_scope,
+        tag_scope: args.tag_scope,
+        project_name: args.project_name,
+        as_of: args.as_of,
+      });
+      const lines = [
+        `# Answer`,
+        ``,
+        r.answer,
+        ``,
+        `**Reasoning level:** ${r.level} · **Cited:** ${r.cited_ids.length ? r.cited_ids.join(', ') : 'none'}`,
+        ``,
+        `## Evidence`,
+        ...r.evidence.map((e, i) => `<!-- ${e.id} -->\n[${i + 1}] ${e.content}`),
+      ];
+      return textContent(lines.join('\n'));
     },
   ));
 

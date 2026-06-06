@@ -3,7 +3,7 @@
 
 import { DistributedLock, ProposalStore } from '@amp/redis';
 import { initSchema, SemanticStore, ProvenanceTraversal } from '@amp/neo4j';
-import { ConsolidationEngine, BootstrapGraphService, createCoreServices } from '@amp/core';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine } from '@amp/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -86,6 +86,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     scopedQuery,
     factStore: factStoreInstance,
     embedding,
+    llm,
     config,
     ampService,
     memoryBlocks: memoryBlockServiceInstance,
@@ -127,6 +128,9 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   // Build bootstrap service
   const bootstrapGraphService = new BootstrapGraphService(driver);
 
+  // Background "dream" pass (generative gap-filling + abductive hypotheses).
+  const dreamEngine = buildDreamEngine(core);
+
   // Adapt ConsolidationEngine to the IConsolidationEngine interface expected by tools
   const consolidationAdapter = {
     run: (scope?: string) => consolidationEngine.run(scope ?? 'global'),
@@ -143,6 +147,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
         return { applied: false, error: err instanceof Error ? err.message : String(err) };
       }
     },
+    dream: (scope: string) => dreamEngine.run(scope),
   };
 
   // Inject into MCP tools (codeIndexer injected later after Code services init)
@@ -272,6 +277,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     codeSearchService,
     ampService,
     embedding,
+    llm,
   );
   const feedbackTrackerService = new FeedbackTracker(feedbackRedis);
 

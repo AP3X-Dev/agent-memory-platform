@@ -19,6 +19,7 @@ import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
 import { extractFacts, isTransientError } from './extract.js';
+import { CARD_BLOCK_NAMES } from './types.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
@@ -55,6 +56,8 @@ export interface FactLayer {
   linkCoExtracted?(factId1: string, factId2: string, episodeId: string): Promise<void>;
   /** Update confidence score of a fact (optional — used by staleness detection) */
   updateConfidence?(id: string, confidence: number): Promise<void>;
+  /** Promote a corroborated tentative/abductive fact to active+deductive (optional) */
+  corroborate?(id: string, confidence: number): Promise<void>;
 }
 
 export interface Neo4jLayer {
@@ -236,6 +239,14 @@ export class AMPService {
     if (this.blocks && projectTag) {
       coreBlocks = coreRaw.filter((b) => b.content.length > 0);
       workingBlocks = workingRaw.filter((b) => b.content.length > 0);
+      // Machine-owned cards (project_card/user_card) render AFTER human-authored
+      // blocks and yield budget to them first: truncateBlocksToTokenBudget keeps
+      // from the front, so a verbose card can never evict the human `user` block.
+      const isCard = (name: string): boolean => (CARD_BLOCK_NAMES as readonly string[]).includes(name);
+      coreBlocks = [
+        ...coreBlocks.filter((b) => !isCard(b.name)),
+        ...coreBlocks.filter((b) => isCard(b.name)),
+      ];
       const coreBudget = Math.floor(maxTokens * CORE_BUDGET_RATIO);
       const workingBudget = Math.floor(maxTokens * WORKING_BUDGET_RATIO);
       coreBlocks = truncateBlocksToTokenBudget(coreBlocks, coreBudget);
@@ -472,7 +483,7 @@ export class AMPService {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        const factInputs = await extractFacts(content, apiKey);
+        const factInputs = await extractFacts(content, apiKey, this.config.models?.extraction);
         const now = new Date().toISOString();
         const createdFactIds: string[] = [];
         const changedFactScopes = new Set<string>();
@@ -488,7 +499,18 @@ export class AMPService {
           const reinforcing = existing.find(f => f.object === fi.object);
 
           if (reinforcing) {
-            // Same fact already exists — skip (consolidation can boost confidence later)
+            // Explicit evidence now corroborates a prior dream-minted guess — promote
+            // it from a tentative abductive hypothesis to a confirmed deductive fact.
+            // ONLY abductive facts are promoted: inductive facts (consolidation-
+            // generalized patterns) are also created `tentative`, but an explicit
+            // example must not rewrite their provenance to deductive — they stay
+            // inductive. Anything else is already known: skip (consolidation boosts
+            // confidence later).
+            if (reinforcing.inference_type === 'abductive' && factLayer.corroborate) {
+              const boosted = Math.min(1, Math.max(reinforcing.confidence, 0.5) + 0.1);
+              await factLayer.corroborate(reinforcing.id, boosted);
+              changedFactScopes.add(fi.subject);
+            }
             continue;
           }
 
@@ -509,6 +531,7 @@ export class AMPService {
             invalid_at: null,
             confidence: fi.confidence ?? 0.5,
             status: 'active',
+            inference_type: 'deductive',
             supersedes_fact_id: conflicting?.id ?? null,
             scope: fi.scope ?? 'project',
             tags: fi.tags ?? [],
@@ -688,17 +711,23 @@ function renderFactsMarkdown(facts: FactNode[], temporal?: TemporalOptions): str
     lines.push('');
     for (const f of facts) {
       const status = f.status !== 'active' ? ` [${f.status}]` : '';
+      const inference = f.inference_type === 'abductive' ? ' [hypothesis]'
+        : f.inference_type === 'inductive' ? ' [inferred]'
+        : '';
       const validRange = f.invalid_at
         ? `${f.valid_at} → ${f.invalid_at}`
         : `${f.valid_at} → present`;
-      lines.push(`- **${f.subject}** ${f.predicate} **${f.object}**${status} (${validRange})`);
+      lines.push(`- **${f.subject}** ${f.predicate} **${f.object}**${status}${inference} (${validRange})`);
     }
   } else {
     lines.push('## Current Facts');
     lines.push('');
     for (const f of facts) {
       const since = f.valid_at.split('T')[0];
-      const status = f.status === 'disputed' ? ' [disputed]' : '';
+      const status = f.status === 'disputed' ? ' [disputed]'
+        : f.inference_type === 'abductive' ? ' [hypothesis]'
+        : f.inference_type === 'inductive' ? ' [inferred]'
+        : '';
       lines.push(`- **${f.subject}** ${f.predicate} **${f.object}**${status} (confidence: ${f.confidence.toFixed(2)}, since: ${since})`);
     }
   }

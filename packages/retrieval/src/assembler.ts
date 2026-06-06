@@ -18,7 +18,7 @@ import { expandQuery } from './expand.js';
 import { computeQueryStats, lexicalTextScore, adaptiveWeights, inferSourceTypeBoost } from './scoring.js';
 import { classifyIntent } from './intent.js';
 import type { QueryIntent } from './intent.js';
-import type { EmbeddingProvider } from '@amp/core';
+import type { EmbeddingProvider, LlmClient, ChatMessage } from '@amp/core';
 
 // ─── Dependency interfaces ───────────────────────────────────────────────────
 
@@ -32,6 +32,57 @@ export interface AssemblerMemoryLayer {
   load(scope: { task: string; entities?: string[]; tags?: string[]; max_tokens?: number; temporal?: { time_mode?: string; as_of?: string; from?: string; to?: string; include_invalidated?: boolean } }): Promise<{
     markdown: string; tokens: number; sources: string[];
   }>;
+}
+
+// ─── Dialectic (amp_ask) ─────────────────────────────────────────────────────
+
+export type AskLevel = 'minimal' | 'low' | 'medium' | 'high' | 'max';
+
+export interface AskResult {
+  answer: string;
+  cited_ids: string[];
+  evidence: ContextItem[];
+  level: AskLevel;
+}
+
+/**
+ * Reasoning level → retrieval depth + synthesis budget + model tier. One source
+ * of truth for the cost/depth knob (minimal is a terse factual lookup on the
+ * cheap model; max is a report-style synthesis on the strong model).
+ */
+const ASK_LEVELS: Record<AskLevel, { retrievalTokens: number; synthTokens: number; task: 'extraction' | 'synthesis' }> = {
+  minimal: { retrievalTokens: 1500, synthTokens: 256, task: 'extraction' },
+  low: { retrievalTokens: 3000, synthTokens: 400, task: 'synthesis' },
+  medium: { retrievalTokens: 6000, synthTokens: 700, task: 'synthesis' },
+  high: { retrievalTokens: 10000, synthTokens: 1200, task: 'synthesis' },
+  max: { retrievalTokens: 16000, synthTokens: 2000, task: 'synthesis' },
+};
+
+const ASK_SYSTEM_PROMPT = `You are AMP's memory analyst. Answer the question USING ONLY the numbered evidence.
+- Combine facts when needed and state the inference explicitly.
+- Cite the evidence numbers you used.
+- If the evidence is insufficient or conflicting, say so plainly. Do not invent facts.
+Respond as JSON: {"answer": "...", "cited": [<evidence numbers>]}`;
+
+/** Parse the synthesis JSON; map cited numbers to evidence node IDs. Degrades to raw text. */
+function parseAskResponse(raw: string, evidence: ContextItem[]): { answer: string; cited_ids: string[] } {
+  if (!raw) return { answer: 'The model returned no answer.', cited_ids: [] };
+  try {
+    const parsed = JSON.parse(raw) as { answer?: unknown; cited?: unknown };
+    const answer = typeof parsed.answer === 'string' ? parsed.answer : raw;
+    const cited_ids: string[] = [];
+    if (Array.isArray(parsed.cited)) {
+      for (const n of parsed.cited) {
+        const idx = (typeof n === 'number' ? n : Number(n)) - 1;
+        if (Number.isInteger(idx) && idx >= 0 && idx < evidence.length) {
+          cited_ids.push(evidence[idx]!.id);
+        }
+      }
+    }
+    return { answer, cited_ids: [...new Set(cited_ids)] };
+  } catch {
+    return { answer: raw, cited_ids: [] };
+  }
 }
 
 // ─── Unified assembler ──────────────────────────────────────────────────────
@@ -49,9 +100,58 @@ export class UnifiedAssembler {
     private codeLayer: AssemblerCodeLayer | null,
     private memoryLayer: AssemblerMemoryLayer | null,
     private embedding: EmbeddingProvider,
+    private llm: LlmClient | null = null,
   ) {
     this.deterministic = new DeterministicAssembler(driver);
     this.feedback = new FeedbackTracker(redis);
+  }
+
+  /**
+   * Dialectic retrieval (amp_ask): retrieve ranked evidence, then synthesize a
+   * cited answer instead of returning raw chunks. Reasoning level trades
+   * latency/cost for depth. Throws if no LLM is configured.
+   */
+  async ask(
+    question: string,
+    opts: {
+      level?: AskLevel;
+      entity_scope?: string[];
+      tag_scope?: string[];
+      project_name?: string;
+      as_of?: string;
+    } = {},
+  ): Promise<AskResult> {
+    if (!this.llm || !this.llm.available) {
+      throw new Error('amp_ask requires an LLM client — set OPENAI_API_KEY');
+    }
+    const level: AskLevel = opts.level ?? 'medium';
+    const cfg = ASK_LEVELS[level];
+
+    const ctx = await this.assemble(question, {
+      strategy: 'ranked',
+      max_tokens: cfg.retrievalTokens,
+      entity_scope: opts.entity_scope,
+      tag_scope: opts.tag_scope,
+      project_name: opts.project_name,
+      as_of: opts.as_of,
+    });
+    const evidence = ctx.sections.flatMap((s) => s.items);
+    if (evidence.length === 0) {
+      return { answer: 'No relevant memory found to answer this question.', cited_ids: [], evidence: [], level };
+    }
+
+    const numbered = evidence.map((it, i) => `[${i + 1}] (${it.id}) ${it.content}`).join('\n\n');
+    const messages: ChatMessage[] = [
+      { role: 'system', content: ASK_SYSTEM_PROMPT },
+      { role: 'user', content: `Question: ${question}\n\nEvidence:\n${numbered}` },
+    ];
+    const raw = await this.llm.chat(messages, {
+      model: this.llm.modelFor(cfg.task),
+      maxTokens: cfg.synthTokens,
+      jsonMode: true,
+    });
+
+    return { ...parseAskResponse(raw, evidence), evidence, level };
   }
 
   private async getCollectionSize(): Promise<number | undefined> {

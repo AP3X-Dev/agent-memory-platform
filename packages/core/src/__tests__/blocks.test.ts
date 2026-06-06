@@ -315,11 +315,11 @@ describe('MemoryBlockService.initDefaults', () => {
     const service = new MemoryBlockService(redis, neo4j);
 
     const created = await service.initDefaults('project:test');
-    expect(created.length).toBe(6); // all 6 DEFAULT_BLOCKS
-    expect(redis.set).toHaveBeenCalledTimes(6);
-    // Core blocks should also persist to Neo4j (4 core + 0 working in Neo4j)
+    expect(created.length).toBe(8); // all 8 DEFAULT_BLOCKS
+    expect(redis.set).toHaveBeenCalledTimes(8);
+    // Core blocks should also persist to Neo4j (6 core + 0 working in Neo4j)
     const neo4jCalls = vi.mocked(neo4j.save).mock.calls.length;
-    expect(neo4jCalls).toBe(4); // persona, user, current_objective, project_state
+    expect(neo4jCalls).toBe(6); // persona, user, current_objective, project_state, project_card, user_card
   });
 
   it('skips blocks that already exist', async () => {
@@ -334,7 +334,7 @@ describe('MemoryBlockService.initDefaults', () => {
     const service = new MemoryBlockService(redis, neo4j);
 
     const created = await service.initDefaults('project:test');
-    expect(created.length).toBe(5); // 6 - 1 existing
+    expect(created.length).toBe(7); // 8 - 1 existing
     const names = created.map((b) => b.name);
     expect(names).not.toContain('persona');
   });

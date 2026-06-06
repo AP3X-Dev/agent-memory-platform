@@ -617,6 +617,7 @@ function makeFactLayer(): FactLayer {
     invalidate: vi.fn().mockResolvedValue(undefined),
     linkCoExtracted: vi.fn().mockResolvedValue(undefined),
     updateConfidence: vi.fn().mockResolvedValue(undefined),
+    corroborate: vi.fn().mockResolvedValue(undefined),
   };
 }
 
@@ -676,7 +677,7 @@ describe('AMPService.store — real-time fact extraction', () => {
 
     expect(result.duplicate).toBe(false);
     expect(result.id).toBeTruthy();
-    expect(mockExtractFacts).toHaveBeenCalledWith(input.content, 'test-key');
+    expect(mockExtractFacts).toHaveBeenCalledWith(input.content, 'test-key', undefined); // 3rd arg = config.models?.extraction
     expect(factLayer.findBySubjectPredicate).toHaveBeenCalledWith('auth-module', 'uses');
     expect(factLayer.create).toHaveBeenCalledOnce();
     // Verify the created fact
@@ -685,10 +686,43 @@ describe('AMPService.store — real-time fact extraction', () => {
     expect(createdFact.predicate).toBe('uses');
     expect(createdFact.object).toBe('JWT');
     expect(createdFact.status).toBe('active');
+    expect(createdFact.inference_type).toBe('deductive'); // explicit capture
     expect(createdFact.source_episode_ids).toEqual([result.id]);
     expect(createdFact.confidence).toBe(0.5);
     expect(createdFact.supersedes_fact_id).toBeNull();
     expect(redis.cache.invalidateByScope).toHaveBeenCalledWith('auth-module');
+  });
+
+  it('promotes a corroborated ABDUCTIVE (dream) fact to deductive on reinforcement', async () => {
+    const existing = makeFactNode({ id: 'fact-dream', object: 'JWT', status: 'tentative', inference_type: 'abductive', confidence: 0.3 });
+    const factLayer = makeFactLayer();
+    (factLayer.findBySubjectPredicate as ReturnType<typeof vi.fn>).mockResolvedValue([existing]);
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const service = new AMPService(makeRedis(), makeNeo4j({ fact: factLayer }), makeEmbedding(), makeConfig());
+    await service.store({ session_id: 's', agent_id: 'a', task: 't', content: 'auth uses JWT' });
+    await flushAsync();
+
+    expect(factLayer.corroborate).toHaveBeenCalledWith('fact-dream', expect.any(Number));
+    expect(factLayer.create).not.toHaveBeenCalled(); // reinforcing → no new fact
+  });
+
+  it('does NOT promote an INDUCTIVE (consolidation) fact on reinforcement — provenance stays inductive', async () => {
+    const existing = makeFactNode({ id: 'fact-ind', object: 'JWT', status: 'tentative', inference_type: 'inductive', confidence: 0.5 });
+    const factLayer = makeFactLayer();
+    (factLayer.findBySubjectPredicate as ReturnType<typeof vi.fn>).mockResolvedValue([existing]);
+    mockExtractFacts.mockResolvedValue([
+      { subject: 'auth-module', predicate: 'uses', object: 'JWT', source_episode_ids: [] },
+    ]);
+
+    const service = new AMPService(makeRedis(), makeNeo4j({ fact: factLayer }), makeEmbedding(), makeConfig());
+    await service.store({ session_id: 's', agent_id: 'a', task: 't', content: 'auth uses JWT' });
+    await flushAsync();
+
+    expect(factLayer.corroborate).not.toHaveBeenCalled(); // inductive must not be promoted
+    expect(factLayer.create).not.toHaveBeenCalled();
   });
 
   it('auto-invalidates conflicting fact and creates replacement with supersedes_fact_id', async () => {
