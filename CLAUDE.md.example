@@ -54,7 +54,7 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 
 ---
 
-## The 6 Domains
+## The 7 Domains
 
 ### Core (16 tools) — memory foundation
 
@@ -102,7 +102,7 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 
 | Tool | Purpose |
 |------|---------|
-| `amp_code_index` | Parse project with tree-sitter, create Symbol nodes + call/import/inherit edges |
+| `amp_code_index` | Parse project with tree-sitter, create Symbol nodes + call/import/inherit edges. Languages: TypeScript, JavaScript, Python, Go, Rust, plus structural extraction for SQL (tables/views/functions), Terraform/HCL (resources/modules/variables), and MCP config files (servers; env-safe) |
 | `amp_code_search` | Hybrid search: fulltext + vector + RRF fusion across symbols and semantics |
 | `amp_code_ast_grep` | Structural AST search with ast-grep patterns and meta-variable captures |
 | `amp_code_symbols` | Query symbols by file path or name |
@@ -130,19 +130,34 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 
 **Learned retrieval:** The system tracks which strategies, entities, and source types produce useful results. Over time, it auto-routes queries to the strategy that works best for each intent type, and boosts/penalizes entities based on their historical usefulness.
 
-### Wiki (3 tools) — knowledge externalization
+### Wiki (5 tools) — knowledge externalization & human curation
 
 | Tool | Purpose |
 |------|---------|
 | `amp_compile` | Compile the graph into a navigable wiki. Each entity becomes a markdown article with `[[wikilinks]]`, backlinks, hierarchy, see-also, source citations. Params: `project_tag`, `output_dir`, `format?`, `emit_graph?`, `entities?` |
-| `amp_ingest` | Ingest raw source documents (articles, papers, notes, repos). **Auto-extracts entities and claims** if you don't provide them. Creates Source nodes + Semantic nodes with CITES/ABOUT edges. Params: `source_path`, `source_type`, `project_tag`, `title?`, `entities?`, `claims?`, `tags?` |
+| `amp_ingest` | Ingest raw source documents (articles, papers, notes, repos). Handles text/markdown directly and converts PDF / Word / Excel / HTML / RTF to text first when the needed system tools are installed (no new dependencies). **Auto-extracts entities and claims** if you don't provide them. Params: `source_path`, `source_type`, `project_tag`, `title?`, `entities?`, `claims?`, `tags?` |
 | `amp_lint` | 10 graph health checks: orphan_pages, broken_links, missing_links, redirect_candidates, link_density, hub_detection, contradictions, low_confidence, stale_sources, coverage_gaps. Params: `project_tag`, `checks?`, `thresholds?` |
+| `amp_braindump` | Capture a human brain dump as durable, human-authored memory under a custom scope (e.g. `project:user-personal`). Extracts entities/claims while keeping the verbatim text as a Source. Use when the user says "remember this about me". |
+| `amp_wiki_sync` | Reconcile a human-edited wiki markdown file back into the graph via hidden per-claim anchors: changed claims → corrections, new lines → new human-authored memories. |
 
 **Wiki workflow:**
 1. Ingest raw sources -> `amp_ingest` extracts entities + claims into the graph
 2. Compile the graph -> `amp_compile` generates interlinked markdown wiki
 3. Lint for quality -> `amp_lint` finds issues and suggests fixes
 4. Browse the wiki -> use the built-in viewer or read the markdown directly
+
+### Graph (4 tools) — graph analytics, export & PR impact
+
+Read-only, project-scoped, secret-safe. General-purpose (works for any memory graph — code, people, orgs, topics), not coding-only. Disabled by default.
+
+| Tool | Purpose |
+|------|---------|
+| `amp_graph_report` | Deterministic graph audit: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), "Knowledge Areas" (themes/clustering), dependency cycles, low-confidence knowledge, and knowledge gaps. Params: `project_tag?`, `project_name?`, `max_items?`, `include_*?` |
+| `amp_graph_export` | Export the graph as portable JSON, or a self-contained offline interactive HTML map (pan/zoom/drag, click-to-inspect, color by type or knowledge area). Secret-safe + XSS-escaped. Params: `project_tag?`, `format?` (json/html), `output_path?`, `max_render_nodes?` |
+| `amp_pr_impact` | Blast radius of a GitHub PR over the code graph: changed files → symbols → dependent files, plus knowledge areas and high-centrality nodes touched. Requires the `gh` CLI. Params: `pr`, `project_tag?`, `max_items?` |
+| `amp_pr_conflicts` | Flags PR pairs whose impact overlaps (likely merge/review conflicts), across the given or all open PRs. Requires the `gh` CLI. Params: `prs?`, `project_tag?` |
+
+**Knowledge clustering / map note:** community detection ("Knowledge Areas") is a deterministic, pure-TS, in-memory overlay surfaced by `amp_graph_report` and `amp_graph_export` — it is never persisted, so it can't pollute `amp_load`/retrieval.
 
 ---
 

@@ -37,8 +37,9 @@ Call `amp_tools(action: "enable", domain: "<name>")` to activate a domain's tool
 | `research` | `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate` (6) | Experiment campaigns |
 | `code` | `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` (7) | Code search, structural AST search, symbol lookup, dependency analysis, auto-reindex |
 | `arch` | `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context` (6) | Architecture context, blast radius, drift detection |
-| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint` (3) | Wiki compilation, source ingestion, health checks |
+| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` (5) | Wiki compilation, source/document ingestion, health checks, human brain dumps, editable round-trip |
 | `retrieval` | `amp_feedback` (1) | Recording retrieval usefulness for ranking improvement |
+| `graph` | `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` (4) | Deterministic graph audits, portable/interactive graph export, GitHub PR blast-radius and conflict analysis |
 
 ## Quickstart — 5 Rules
 
@@ -105,10 +106,18 @@ What do you need?
 │  ├─ Find contradictions ───────────────── amp_research_contradictions [enable: research]
 │  └─ Consolidate patterns ──────────────── amp_research_consolidate [enable: research]
 │
-└─ Wiki / knowledge base
-   ├─ Compile graph into wiki ───────────── amp_compile [enable: wiki]
-   ├─ Ingest source documents ──────────── amp_ingest [enable: wiki]
-   └─ Graph health checks ──────────────── amp_lint [enable: wiki]
+├─ Wiki / knowledge base
+│  ├─ Compile graph into wiki ───────────── amp_compile [enable: wiki]
+│  ├─ Ingest source documents ──────────── amp_ingest [enable: wiki]
+│  ├─ Capture a human brain dump ────────── amp_braindump [enable: wiki]
+│  ├─ Reconcile edited wiki page ────────── amp_wiki_sync [enable: wiki]
+│  └─ Graph health checks ──────────────── amp_lint [enable: wiki]
+│
+└─ Graph analytics
+   ├─ Deterministic graph audit ─────────── amp_graph_report [enable: graph]
+   ├─ Export JSON / interactive HTML map ── amp_graph_export [enable: graph]
+   ├─ Blast radius of a GitHub PR ───────── amp_pr_impact [enable: graph]
+   └─ Find PR pairs that conflict ───────── amp_pr_conflicts [enable: graph]
 ```
 
 ---
@@ -250,7 +259,7 @@ Gateway to on-demand tool domains. Enable, disable, or list available domains.
 { "action": "list" }
 ```
 
-Domains: `memory`, `temporal`, `admin`, `research`, `code`, `arch`, `wiki`, `retrieval`.
+Domains: `memory`, `temporal`, `admin`, `research`, `code`, `arch`, `wiki`, `retrieval`, `graph`.
 
 ---
 
@@ -499,7 +508,7 @@ AST-based indexing. Creates Symbol nodes and relationship edges. Run once per pr
 }
 ```
 
-Supports: TypeScript, JavaScript, Python, Go, Rust.
+Supports: TypeScript, JavaScript, Python, Go, Rust. Also does structural extraction for SQL (tables/views/functions), Terraform/HCL (resources/modules/variables/outputs), and MCP config files (servers; env-safe — never persists env/arg values).
 
 ### amp_code_search
 
@@ -716,7 +725,7 @@ Detect patterns across experiments and promote to semantic knowledge.
 
 ---
 
-## Tool Reference — Wiki (3 tools)
+## Tool Reference — Wiki (5 tools)
 
 > **Requires:** `amp_tools(action: "enable", domain: "wiki")`
 
@@ -736,7 +745,7 @@ Compile the knowledge graph into a navigable interlinked markdown wiki. Each ent
 
 ### amp_ingest
 
-Ingest raw source documents (articles, papers, notes, repos). Auto-extracts entities and claims. Creates Source nodes + Semantic nodes with CITES/ABOUT edges.
+Ingest raw source documents (articles, papers, notes, repos). Auto-extracts entities and claims. Creates Source nodes + Semantic nodes with CITES/ABOUT edges. In addition to text/markdown, converts documents (PDF, Word/.docx, Excel/.xlsx, HTML, RTF) to text via optional system tools (no new dependencies required).
 
 ```json
 {
@@ -760,6 +769,71 @@ Source types: `article`, `paper`, `note`, `repo`, `transcript`.
   "checks": ["orphan_pages", "contradictions", "low_confidence"],
   "thresholds": { "low_confidence": 0.3 }
 }
+```
+
+### amp_braindump
+
+Capture a human brain dump as durable, human-authored memory under a custom scope (e.g. `project:user-personal`). Extracts entities/claims into the graph while keeping the verbatim text as a Source; creates the scope if new. Use when the user says "remember this about me".
+
+```json
+{
+  "content": "I prefer concise PRs, hate force-pushes to shared branches, and always squash-merge.",
+  "scope": "project:user-personal",
+  "title": "Working preferences",
+  "tags": ["preferences"],
+  "compile": true
+}
+```
+
+Accepts `content` or `source_path`. Optional: `confidence`, `entities`, `claims`, `compile`.
+
+### amp_wiki_sync
+
+Reconcile a human-edited wiki markdown file back into the graph using the hidden per-claim anchors: changed claims become corrections (supersede), new lines become new human-authored memories, removals are de-emphasised (confidence penalty), never deleted. The agent/CLI complement to the viewer's Edit button.
+
+```json
+{ "path": "./wiki/auth-module.md", "project_tag": "project:my-api" }
+```
+
+---
+
+## Tool Reference — Graph Analytics (4 tools)
+
+> **Requires:** `amp_tools(action: "enable", domain: "graph")`
+>
+> Disabled by default, read-only, project-scoped, secret-safe. General-purpose — works for ANY memory graph (code, people, orgs, topics), not just code.
+
+### amp_graph_report
+
+Deterministic graph audit: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), "Knowledge Areas" (themes/clustering), dependency cycles, low-confidence knowledge, and knowledge gaps.
+
+```json
+{ "project_tag": "project:my-api" }
+```
+
+### amp_graph_export
+
+Export the graph as portable JSON, or as a self-contained offline interactive HTML graph map (pan/zoom/drag, click a node to inspect, color by type or knowledge area). Secret-safe + XSS-escaped. Optionally writes a file under `amp-graph-out/`.
+
+```json
+{ "project_tag": "project:my-api", "format": "html" }
+{ "project_tag": "project:my-api", "format": "json" }
+```
+
+### amp_pr_impact
+
+Blast radius of a GitHub PR over the code graph — changed files → symbols → dependent files, plus the knowledge areas and high-centrality nodes touched. Requires the `gh` CLI.
+
+```json
+{ "project_tag": "project:my-api", "pr": 123 }
+```
+
+### amp_pr_conflicts
+
+Find PR pairs whose impact overlaps (likely merge/review conflicts). Requires the `gh` CLI.
+
+```json
+{ "project_tag": "project:my-api" }
 ```
 
 ---
@@ -832,7 +906,7 @@ MATCH (e:Entity {name: 'auth-module'})-[r]->(dep:Entity) RETURN type(r), dep.nam
 
 ## Best Practices
 
-1. **Enable domains before using their tools.** Call `amp_tools(action: "enable", domain: "<name>")` first. The 6 Tier 1 tools need no enablement.
+1. **Enable domains before using their tools.** Call `amp_tools(action: "enable", domain: "<name>")` first. The 7 Tier 1 tools need no enablement.
 2. **Prefer `amp_context` over `amp_load`** when you need code + architecture + memory blended together.
 3. **Use `amp_arch_context` for planning** — enable `arch` domain, then get the full structural picture.
 4. **Use `amp_code_search` over grep** when you need semantic understanding, not just text matching. Enable `code` domain first.

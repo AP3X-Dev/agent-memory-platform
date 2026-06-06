@@ -49,7 +49,7 @@
 
 | Tool | Purpose |
 |------|---------|
-| `amp_code_index` | AST-based code indexing (TS, JS, Python, Go, Rust) |
+| `amp_code_index` | AST-based code indexing (TS, JS, Python, Go, Rust; plus structural extraction for SQL, Terraform/HCL, MCP config) |
 | `amp_code_search` | Hybrid fulltext + vector code search |
 | `amp_code_ast_grep` | Structural AST search via ast-grep patterns (JS/TS/TSX) |
 | `amp_code_symbols` | Query symbols by file/name/kind |
@@ -79,13 +79,24 @@
 | `amp_research_contradictions` | Find conflicting principles |
 | `amp_research_consolidate` | Research pattern consolidation |
 
-### wiki (3 tools)
+### wiki (5 tools)
 
 | Tool | Purpose |
 |------|---------|
 | `amp_compile` | Compile graph into interlinked markdown wiki |
-| `amp_ingest` | Ingest source documents (auto-extracts entities/claims) |
+| `amp_ingest` | Ingest source documents (auto-extracts entities/claims; also converts PDF, Word/.docx, Excel/.xlsx, HTML, RTF to text via optional system tools) |
 | `amp_lint` | 10 graph health checks |
+| `amp_braindump` | Capture a human brain dump as durable human-authored memory under a custom scope |
+| `amp_wiki_sync` | Reconcile a human-edited wiki markdown file back into the graph via per-claim anchors |
+
+### graph (4 tools)
+
+| Tool | Purpose |
+|------|---------|
+| `amp_graph_report` | Deterministic graph audit: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions", "Knowledge Areas", dependency cycles, low-confidence knowledge, knowledge gaps (general-purpose — any memory graph) |
+| `amp_graph_export` | Portable JSON, or self-contained offline interactive HTML graph map (pan/zoom/drag, inspect nodes, color by type or knowledge area); secret-safe + XSS-escaped |
+| `amp_pr_impact` | Blast radius of a GitHub PR over the code graph (changed files → symbols → dependent files; requires gh CLI) |
+| `amp_pr_conflicts` | PR pairs whose impact overlaps (likely merge/review conflicts; requires gh CLI) |
 
 ### retrieval (1 tool)
 

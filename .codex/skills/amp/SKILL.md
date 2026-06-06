@@ -27,10 +27,11 @@ Call `amp_tools(action: "enable", domain: "<name>")` before using:
 - `temporal` (2) — `amp_timeline`, `amp_fact_diff`
 - `admin` (6) — `amp_query`, `amp_consolidate`, `amp_bootstrap`, `amp_resolve`, `amp_ingest_codebase`, `amp_provenance`
 - `research` (6) — `amp_research_init/log/context/tree/contradictions/consolidate`
-- `code` (7) — `amp_code_index/search/ast_grep/symbols/deps/context/watch`
+- `code` (7) — `amp_code_index/search/ast_grep/symbols/deps/context/watch` (`amp_code_index` extracts structure for TypeScript, JavaScript, Python, Go, Rust, plus SQL tables/views/functions, Terraform/HCL resources/modules/variables/outputs, and MCP config servers — env-safe)
 - `arch` (6) — `amp_arch_register/relate/aspect`, `amp_impact`, `amp_arch_drift/context`
-- `wiki` (3) — `amp_compile`, `amp_ingest`, `amp_lint`
+- `wiki` (5) — `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` (`amp_ingest` also converts PDF, Word/.docx, Excel/.xlsx, HTML, and RTF documents to text via optional system tools, in addition to text/markdown)
 - `retrieval` (1) — `amp_feedback`
+- `graph` (4) — `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` (read-only, project-scoped, secret-safe; disabled by default)
 
 ## Decision Tree
 
@@ -55,8 +56,14 @@ Call `amp_tools(action: "enable", domain: "<name>")` before using:
 - Blast radius → `amp_impact` (enable `arch`)
 - Drift check → `amp_arch_drift` (enable `arch`)
 - Build wiki → `amp_compile` (enable `wiki`)
-- Ingest sources → `amp_ingest` (enable `wiki`)
+- Ingest sources (incl. PDF/Word/Excel/HTML/RTF) → `amp_ingest` (enable `wiki`)
 - Health checks → `amp_lint` (enable `wiki`)
+- Capture human brain dump → `amp_braindump` (enable `wiki`)
+- Sync human-edited wiki back into graph → `amp_wiki_sync` (enable `wiki`)
+- Graph audit / corpus summary / core abstractions → `amp_graph_report` (enable `graph`)
+- Export graph (JSON / offline HTML map) → `amp_graph_export` (enable `graph`)
+- PR blast radius over code graph → `amp_pr_impact` (enable `graph`, needs `gh` CLI)
+- PR pairs likely to conflict → `amp_pr_conflicts` (enable `graph`, needs `gh` CLI)
 
 ## Autonomous Behavior
 

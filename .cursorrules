@@ -16,18 +16,19 @@ AMP uses progressive disclosure to manage its tool surface. **7 tools are always
 | `amp_context` | Super-load: architecture + code + memory blended |
 | `amp_tools` | Enable/disable/list domain-specific tool groups |
 
-All other tools are organized into **8 on-demand domains**. Call `amp_tools(action: "enable", domain: "<name>")` before using domain-specific tools:
+All other tools are organized into **9 on-demand domains**. Call `amp_tools(action: "enable", domain: "<name>")` before using domain-specific tools:
 
 | Domain | Tools | When to enable |
 |--------|-------|----------------|
 | `memory` | `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive` | Session end, memory management |
 | `temporal` | `amp_timeline`, `amp_fact_diff` | Fact history, change tracking |
-| `admin` | `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_provenance` | Graph queries, setup, provenance |
+| `admin` | `amp_query`, `amp_consolidate`, `amp_bootstrap`, `amp_resolve`, `amp_ingest_codebase`, `amp_provenance` | Graph queries, setup, codebase ingestion, provenance |
 | `research` | `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate` | Experiment campaigns |
-| `code` | `amp_code_index`, `amp_code_search`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context` | Code search, symbols, deps |
+| `code` | `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` | Code search, AST search, symbols, deps, file watching |
 | `arch` | `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context` | Architecture context, blast radius |
-| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint` | Wiki compilation, ingestion |
+| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` | Wiki compilation, ingestion, brain dumps, editable round-trip |
 | `retrieval` | `amp_feedback` | Recording retrieval usefulness |
+| `graph` | `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` | Graph audit, export/HTML map, PR blast radius/conflicts (read-only) |
 
 ## 5 Rules
 
@@ -44,10 +45,11 @@ All other tools are organized into **8 on-demand domains**. Call `amp_tools(acti
 - **Trace knowledge history** → `amp_provenance` (enable `admin` domain first)
 - **Temporal facts** → `amp_timeline`, `amp_fact_diff` (enable `temporal` domain first)
 - **Memory tiers** → `amp_memory_read/insert` always visible; `replace/rewrite/promote/archive` require enabling `memory` domain
-- **Code search** → `amp_code_search`, `amp_code_symbols`, `amp_code_deps` (enable `code` domain first)
+- **Code search** → `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_watch` (enable `code` domain first)
 - **Architecture** → `amp_arch_context`, `amp_impact`, `amp_arch_register`, `amp_arch_relate` (enable `arch` domain first)
 - **Research experiments** → `amp_research_init`, `amp_research_log`, `amp_research_context` (enable `research` domain first)
-- **Wiki / knowledge base** → `amp_compile`, `amp_ingest`, `amp_lint` (enable `wiki` domain first)
+- **Wiki / knowledge base** → `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` (enable `wiki` domain first)
+- **Graph audit / export / PR analysis** → `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` (enable `graph` domain first)
 
 ## Autonomous Behavior
 
@@ -110,6 +112,7 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_store` | Store episodic memory |
 | `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
 | `amp_memory_insert` | Insert or append to a memory block |
+| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: architecture + code + memory blended |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 
@@ -125,14 +128,17 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_fact_diff` | temporal | What changed between two timestamps |
 | `amp_query` | admin | Read-only Cypher query |
 | `amp_consolidate` | admin | Run/check/review consolidation |
-| `amp_resolve` | admin | Resolve amp:// URIs |
 | `amp_bootstrap` | admin | One-time project graph setup |
+| `amp_resolve` | admin | Resolve amp:// URIs |
+| `amp_ingest_codebase` | admin | One-shot project setup: scan repo, bootstrap, index code, seed blocks |
 | `amp_provenance` | admin | Trace full lifecycle of a semantic node |
-| `amp_code_index` | code | AST-based code indexing |
+| `amp_code_index` | code | Index code (tree-sitter): TypeScript, JavaScript, Python, Go, Rust, SQL, Terraform/HCL, MCP config |
 | `amp_code_search` | code | Hybrid code + memory search |
+| `amp_code_ast_grep` | code | Structural AST search (ast-grep patterns + captures); JS/TS/TSX |
 | `amp_code_symbols` | code | Query symbols by file/name |
 | `amp_code_deps` | code | Callers, callees, importers |
 | `amp_code_context` | code | Code context for a task |
+| `amp_code_watch` | code | Start/stop/status the background re-indexing watcher |
 | `amp_arch_register` | arch | Enrich entity with architecture |
 | `amp_arch_relate` | arch | Create entity relationships |
 | `amp_arch_aspect` | arch | Cross-cutting concerns |
@@ -146,8 +152,14 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_research_contradictions` | research | Find conflicting principles |
 | `amp_research_consolidate` | research | Research pattern consolidation |
 | `amp_compile` | wiki | Compile graph into interlinked markdown wiki |
-| `amp_ingest` | wiki | Ingest source documents (auto-extracts entities/claims) |
+| `amp_ingest` | wiki | Ingest source documents (text/markdown + PDF/Word/Excel/HTML/RTF via optional system tools); auto-extracts entities/claims |
 | `amp_lint` | wiki | 10 graph health checks |
+| `amp_braindump` | wiki | Capture a human brain dump as durable, human-authored memory |
+| `amp_wiki_sync` | wiki | Reconcile a human-edited wiki markdown file back into the graph |
 | `amp_feedback` | retrieval | Record retrieval usefulness |
+| `amp_graph_report` | graph | Deterministic graph audit: corpus summary, core abstractions, knowledge areas, cycles, gaps |
+| `amp_graph_export` | graph | Portable JSON or self-contained offline interactive HTML graph map (secret-safe) |
+| `amp_pr_impact` | graph | Blast radius of a GitHub PR over the code graph (requires gh CLI) |
+| `amp_pr_conflicts` | graph | PR pairs whose impact overlaps — likely merge/review conflicts (requires gh CLI) |
 
 For full tool documentation with parameters and examples, see `skills/amp/SKILL.md`.

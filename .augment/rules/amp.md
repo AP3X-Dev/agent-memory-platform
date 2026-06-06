@@ -5,7 +5,7 @@ description: AMP persistent memory — autonomous usage rules for all coding tas
 
 # AMP — Agent Memory Protocol
 
-Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always-visible tools + 8 on-demand domains.
+Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
 
 ## Always-Visible Tools (Tier 1)
 - `amp_load` — load memory context
@@ -19,12 +19,13 @@ Use AMP MCP tools autonomously during all work. Progressive disclosure: 7 always
 ## On-Demand Domains (call `amp_tools(action: "enable", domain: "<name>")` first)
 - `memory` (4) → `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive`
 - `temporal` (2) → `amp_timeline`, `amp_fact_diff`
-- `admin` (5) → `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_provenance`
+- `admin` (6) → `amp_query`, `amp_consolidate`, `amp_resolve`, `amp_bootstrap`, `amp_ingest_codebase`, `amp_provenance`
 - `research` (6) → `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate`
-- `code` (5) → `amp_code_index`, `amp_code_search`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`
+- `code` (7) → `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` — `amp_code_index` does structural extraction for TypeScript, JavaScript, Python, Go, Rust, SQL (tables/views/functions), Terraform/HCL (resources/modules/variables/outputs), and MCP config files (servers; env-safe)
 - `arch` (6) → `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context`
-- `wiki` (3) → `amp_compile`, `amp_ingest`, `amp_lint`
+- `wiki` (5) → `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` — `amp_ingest` also converts PDF, Word/.docx, Excel/.xlsx, HTML, RTF to text via optional system tools, in addition to text/markdown
 - `retrieval` (1) → `amp_feedback`
+- `graph` (4) → `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` — disabled by default, read-only, project-scoped, secret-safe. `amp_graph_report` is a deterministic graph audit (corpus summary, node/relation counts, confidence summary, high-centrality Core Abstractions, Knowledge Areas, dependency cycles, low-confidence knowledge, knowledge gaps) that works for ANY memory graph, not just code. `amp_graph_export` emits portable JSON or a self-contained offline interactive HTML graph map. `amp_pr_impact` and `amp_pr_conflicts` analyze GitHub PR blast radius and overlap (require the `gh` CLI)
 
 ## Rules
 - Load memory at session start: `amp_context` or `amp_load`

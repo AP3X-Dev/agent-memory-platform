@@ -2,13 +2,13 @@
   "name": "amp-memory",
   "owner": { "name": "AP3X-Dev" },
   "metadata": {
-    "description": "Agent Memory Protocol — persistent memory, architecture, code intelligence, and research via Neo4j knowledge graph",
+    "description": "Agent Memory Protocol — persistent memory, architecture, code intelligence, research, and graph analytics via Neo4j knowledge graph",
     "version": "1.0.0"
   },
   "plugins": [
     {
       "name": "amp",
-      "description": "Persistent memory with autonomous workflows: load context, store decisions, architectural understanding, code search, and experiment tracking",
+      "description": "Persistent memory with autonomous workflows: load context, store decisions, architectural understanding, code search, experiment tracking, and graph analytics (audit/export, PR impact)",
       "source": "./",
       "strict": false,
       "skills": ["./skills/amp"]
