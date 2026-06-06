@@ -54,7 +54,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 38 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 7 tools by default. The other 39 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
@@ -156,7 +156,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 ---
 
-## The 45 Tools
+## The 46 Tools
 
 ### Core Memory (7 always visible + 8 on demand)
 | Tool | What it does for you |
@@ -209,10 +209,11 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 The wiki round-trips: edit a compiled article in the viewer (Edit button) or sync an edited file, and your changes flow back into the graph as claim-level signals.
 
-### Graph Analytics (1 tool)
+### Graph Analytics (2 tools)
 | Tool | What it does for you |
 |------|---------------------|
-| `amp_graph_report` | Deterministic, project-scoped audit of the knowledge graph — corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), import/dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only and secret-safe. Disabled by default under the `graph` domain. |
+| `amp_graph_report` | Deterministic, project-scoped audit of the knowledge graph — corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only and secret-safe. Works for any memory graph (code, people, orgs, topics). |
+| `amp_graph_export` | Export the graph as portable JSON, or a self-contained, offline, interactive HTML map you open in a browser — pan/zoom/drag, click a node to inspect it. "Show me everything you know about my project / my org / me." Secret-safe and XSS-escaped. |
 
 ---
 
@@ -221,7 +222,7 @@ The wiki round-trips: edit a compiled article in the viewer (Edit button) or syn
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│         45 tools · 9 domains · progressive        │
+│         46 tools · 9 domains · progressive        │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│

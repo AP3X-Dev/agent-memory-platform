@@ -9,7 +9,7 @@ Persistent memory system for AI agents. Knowledge compounds across sessions — 
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to avoid overwhelming agents with 45 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **9 on-demand domains** that must be enabled before use.
+AMP uses progressive disclosure to avoid overwhelming agents with 46 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **9 on-demand domains** that must be enabled before use.
 
 ### Always-Visible Tools (Tier 1)
 
