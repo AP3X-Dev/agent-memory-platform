@@ -47,6 +47,12 @@ import {
   setWikiServiceInstances,
 } from '@amp/wiki';
 import type { CompileInput, CompileV2Result } from '@amp/wiki';
+import {
+  initGraphSchema,
+  GraphSnapshotService,
+  GraphReportService,
+  setGraphServiceInstances,
+} from '@amp/graph';
 
 export interface BootstrapHandles {
   /** Call to disconnect Redis and Neo4j cleanly. */
@@ -291,6 +297,20 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   });
 
   console.error('[amp-mcp] Wiki services initialized');
+
+  // ─── Graph analytics services ──────────────────────────────────────────────
+  await initGraphSchema(driver);
+  console.error('[amp-mcp] Graph schema verified');
+
+  const graphSnapshotService = new GraphSnapshotService(driver);
+  const graphReportService = new GraphReportService(graphSnapshotService);
+
+  setGraphServiceInstances({
+    snapshotService: graphSnapshotService,
+    reportService: graphReportService,
+  });
+
+  console.error('[amp-mcp] Graph services initialized');
 
   if (status.degraded.length > 0) {
     console.error(`[amp-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);

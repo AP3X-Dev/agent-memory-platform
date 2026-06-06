@@ -13,6 +13,7 @@ import { registerArchTools, ARCH_TOOL_NAMES } from '@amp/arch';
 import { registerCodeTools, CODE_TOOL_NAMES } from '@amp/code';
 import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@amp/retrieval';
 import { registerWikiTools, WIKI_TOOL_NAMES } from '@amp/wiki';
+import { registerGraphTools, GRAPH_TOOL_NAMES } from '@amp/graph';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -139,6 +140,9 @@ function registerAllTools(server: McpServer): ToolRegistry {
 
   const wikiHandles = registerWikiTools(server);
   toolRegistry.set('wiki', wikiHandles);
+
+  const graphHandles = registerGraphTools(server);
+  toolRegistry.set('graph', graphHandles);
 
   // Disable all Tier 2 tools by default
   for (const handles of toolRegistry.values()) {
@@ -451,7 +455,7 @@ export function createAMPServer(): AMPMCPServer {
 
   return {
     server,
-    toolNames: [...TOOL_NAMES, ...RESEARCH_TOOL_NAMES, ...ARCH_TOOL_NAMES, ...CODE_TOOL_NAMES, ...RETRIEVAL_TOOL_NAMES, ...WIKI_TOOL_NAMES],
+    toolNames: [...TOOL_NAMES, ...RESEARCH_TOOL_NAMES, ...ARCH_TOOL_NAMES, ...CODE_TOOL_NAMES, ...RETRIEVAL_TOOL_NAMES, ...WIKI_TOOL_NAMES, ...GRAPH_TOOL_NAMES],
     startSSE,
     startStdio,
   };

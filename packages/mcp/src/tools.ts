@@ -125,7 +125,8 @@ export const TOOL_NAMES = [
 /** Domain names for progressive disclosure grouping. */
 export type ToolDomain =
   | 'memory' | 'temporal' | 'admin' | 'research'
-  | 'code' | 'arch' | 'wiki' | 'retrieval';
+  | 'code' | 'arch' | 'wiki' | 'retrieval'
+  | 'graph';
 
 /** The full domain registry: maps domain name → registered tool handles. */
 export type ToolRegistry = Map<ToolDomain, RegisteredTool[]>;
@@ -148,6 +149,7 @@ export const DOMAIN_DESCRIPTIONS: Record<ToolDomain, string> = {
   arch: 'Architecture: register, relate, aspects, impact, drift, context',
   wiki: 'Wiki: compile, ingest, lint',
   retrieval: 'Retrieval feedback (amp_context stays in Tier 1)',
+  graph: 'Graph analytics: deterministic, project-scoped graph audit report',
 };
 
 /** Which core tools go into which Tier 2 domain. */
@@ -1402,5 +1404,6 @@ export const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
   arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
   wiki: ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'],
   retrieval: ['amp_feedback'],
+  graph: ['amp_graph_report'],
 };
 
