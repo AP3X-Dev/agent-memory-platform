@@ -5,7 +5,7 @@ description: "Agent Memory Platform — persistent memory with progressive tool 
 
 # AMP — Agent Memory Platform
 
-Persistent memory for AI agents. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
+Persistent memory for AI agents. Progressive disclosure: 8 always-visible tools + 9 on-demand domains.
 
 ## 5 Rules
 
@@ -17,7 +17,9 @@ Persistent memory for AI agents. Progressive disclosure: 7 always-visible tools 
 
 ## Always-Visible Tools (Tier 1)
 
-`amp_load`, `amp_store`, `amp_memory_read`, `amp_memory_insert`, `amp_grep`, `amp_context`, `amp_tools`
+`amp_load`, `amp_store`, `amp_memory_read`, `amp_memory_insert`, `amp_grep`, `amp_context`, `amp_ask`, `amp_tools`
+
+`amp_ask` is dialectic retrieval: ask a natural-language question and get a synthesized, **cited** answer (not raw chunks); `reasoning_level` minimal→max trades latency for depth. Use it when the answer needs reasoning across several memories; use `amp_context` for raw assembled context.
 
 ## On-Demand Domains (enable via `amp_tools`)
 
@@ -36,6 +38,7 @@ Call `amp_tools(action: "enable", domain: "<name>")` before using:
 ## Decision Tree
 
 - General context → `amp_context` (always visible)
+- Ask a question, get a cited answer → `amp_ask` (always visible)
 - Memory load → `amp_load` (always visible)
 - Memory store → `amp_store` (always visible)
 - Read memory blocks → `amp_memory_read` (always visible)
@@ -82,6 +85,6 @@ Before modifying code: enable `code` or `arch` domain via `amp_tools`, then load
 
 At session end: enable `memory` domain, then promote valuable working memory (`amp_memory_promote`) and archive session blocks (`amp_memory_archive`). Enable `admin` domain to check consolidation. When user states preferences: enable `memory` domain, then `amp_memory_replace`. For temporal fact tracing: enable `temporal` domain, then `amp_timeline`.
 
-When facts are contradicted, they get invalidated (not just overwritten).
+When facts are contradicted, they get invalidated (not just overwritten). Facts also carry an `inference_type` — `deductive` (explicit, default), `inductive` (consolidation-generalized), or `abductive` (a guess from the background "dream" pass); abductive facts rank lower and render as `[hypothesis]`. The dream pass runs via `amp_consolidate(action: "dream", scope: "project:<tag>")` (enable `admin`) or the `amp dream` CLI / nightly timer — it only adds low-confidence hypotheses, never overwrites known facts.
 
 For full documentation: see `skills/amp/SKILL.md` in the AMP repository root.

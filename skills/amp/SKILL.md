@@ -61,6 +61,8 @@ What do you need?
 │
 ├─ Enable a tool domain ────────────────── amp_tools [always visible]
 │
+├─ Ask a question, get a synthesized cited answer  amp_ask [always visible]
+│
 ├─ Memory specifically
 │  ├─ Load relevant memories ────────────── amp_load [always visible]
 │  ├─ Search by text/regex ──────────────── amp_grep [always visible]
@@ -266,6 +268,7 @@ Default blocks: `persona`, `user`, `current_objective`, `working_state`, `projec
 
 Facts are subject-predicate-object triples with `valid_at`/`invalid_at`/`status` fields. Canonical entity resolution prevents fragmentation across name variants.
 
+- Each fact carries an `inference_type`: **deductive** (explicitly captured — the default), **inductive** (generalized by consolidation across episodes), or **abductive** (a hypothesis minted by the dream pass). Abductive facts rank lower and render with a `[hypothesis]` tag (inductive: `[inferred]`), so a guess is never mistaken for a known fact. When an explicit episode repeats an abductive fact's triple, it is promoted to deductive.
 - When existing knowledge is contradicted, facts get **invalidated** (not just overwritten) — the old fact is marked with `invalid_at` and a new fact is created.
 - Enable the `temporal` domain first: `amp_tools(action: "enable", domain: "temporal")`.
 - Use `amp_timeline(entity: "<name>")` to see how facts about an entity evolved chronologically.
@@ -284,7 +287,7 @@ Facts are subject-predicate-object triples with `valid_at`/`invalid_at`/`status`
 
 ---
 
-## Tool Reference — Always Visible (7 tools)
+## Tool Reference — Always Visible (8 tools)
 
 ### amp_tools
 
@@ -350,12 +353,13 @@ Read-only Cypher against Neo4j. Write operations are blocked.
 
 ### amp_consolidate
 
-Manage memory consolidation — promotes recurring patterns to semantic knowledge.
+Manage memory consolidation — promotes recurring patterns to semantic knowledge. The `dream` action runs the background generative pass: it scans entities in the scope, fills knowledge gaps, and mints low-confidence **abductive** hypotheses (also runnable via the `amp dream` CLI / nightly timer). Dream and consolidation share one scope lock, so they never mutate a scope at once.
 
 ```json
 { "action": "status" }
 { "action": "run", "scope": "project:my-api" }
 { "action": "review", "proposal_id": "prop-xyz", "decision": "approve" }
+{ "action": "dream", "scope": "project:my-api" }
 ```
 
 ### amp_resolve
@@ -489,9 +493,22 @@ Archive a memory block. Moves it to the archive tier for future searchability.
 
 ---
 
-## Tool Reference — Unified Retrieval (2 tools)
+## Tool Reference — Unified Retrieval (3 tools)
 
-> **Note:** `amp_context` is always visible. `amp_feedback` requires enabling the `retrieval` domain.
+> **Note:** `amp_context` and `amp_ask` are always visible (Tier 1). `amp_feedback` requires enabling the `retrieval` domain.
+
+### amp_ask
+
+Dialectic retrieval — ask a natural-language **question** and get a synthesized, **cited** answer instead of raw chunks. It retrieves ranked evidence, then an LLM reasons across it (combining facts explicitly) and returns the answer plus the supporting node IDs. `reasoning_level` (`minimal`/`low`/`medium`/`high`/`max`) trades latency for depth. Use `amp_ask` when the answer needs reasoning over several memories; use `amp_context` when you want the raw assembled context to reason over yourself.
+
+```json
+{
+  "question": "Does the user prefer JWT or sessions, and why?",
+  "reasoning_level": "medium",
+  "project_name": "my-api",
+  "entity_scope": ["auth-module"]
+}
+```
 
 ### amp_context
 
@@ -943,7 +960,7 @@ MATCH (e:Entity {name: 'auth-module'})-[r]->(dep:Entity) RETURN type(r), dep.nam
 
 ## Best Practices
 
-1. **Enable domains before using their tools.** Call `amp_tools(action: "enable", domain: "<name>")` first. The 7 Tier 1 tools need no enablement.
+1. **Enable domains before using their tools.** Call `amp_tools(action: "enable", domain: "<name>")` first. The 8 Tier 1 tools need no enablement.
 2. **Prefer `amp_context` over `amp_load`** when you need code + architecture + memory blended together.
 3. **Use `amp_arch_context` for planning** — enable `arch` domain, then get the full structural picture.
 4. **Use `amp_code_search` over grep** when you need semantic understanding, not just text matching. Enable `code` domain first.

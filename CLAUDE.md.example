@@ -64,7 +64,7 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 | `amp_load` | Load token-budgeted context for a task. Params: `task`, `entities?`, `tags?`, `max_tokens?`, `temporal?` |
 | `amp_store` | Store an episodic memory. **Auto-extracts entities** if you don't provide them. Params: `session_id`, `task`, `content`, `outcome?`, `signals?`, `entities?` |
 | `amp_query` | Read-only Cypher query. Params: `query`, `limit?` |
-| `amp_consolidate` | Run/review/status consolidation. Params: `action`, `scope?`, `proposal_id?`, `decision?` |
+| `amp_consolidate` | Run/review/status consolidation, or `action:"dream"` — the background generative pass that fills knowledge gaps and mints low-confidence **abductive** hypotheses for a scope (also runnable via the `amp dream` CLI / nightly timer). Params: `action`, `scope?`, `proposal_id?`, `decision?` |
 | `amp_resolve` | Resolve `amp://` URIs to context. Params: `uri`, `max_tokens?`, `stage_context?` |
 | `amp_bootstrap` | Seed the graph for a project. Idempotent. Params: `project_name`, `project_tag`, `description`, `domain`, `entities`, `semantic_seeds?`, `agents?` |
 | `amp_ingest_codebase` | One-shot project setup: scan repo, bootstrap graph, index code, seed blocks. Params: `path`, `project_name`, `project_tag`, `description?`, `domain?`, `languages?`, `exclude_patterns?` |
@@ -84,7 +84,7 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 - **Signals** = reinforcement, correction, contradiction. Drive confidence up/down.
 - **Auto-extraction** = when `entities` is not provided in `amp_store`, the system uses GPT-4o-mini to extract entity names from your content and link them automatically.
 - **Temporal decay** = confidence decays exponentially based on time since last signal. Half-lives: volatile=14 days, stable=90 days, permanent=365 days.
-- **Temporal facts** = subject/predicate/object triples (Fact nodes) with `valid_at`, `invalid_at`, `status` (active/invalidated/disputed/tentative). Extracted automatically during consolidation promotion. Contradiction signals trigger fact invalidation: old fact becomes invalidated, new fact supersedes it via `supersedes_fact_id`.
+- **Temporal facts** = subject/predicate/object triples (Fact nodes) with `valid_at`, `invalid_at`, `status` (active/invalidated/disputed/tentative), and `inference_type` (`deductive` = explicit capture, default; `inductive` = consolidation-generalized; `abductive` = a dream-minted hypothesis). Abductive facts rank lower and render as `[hypothesis]`. Extracted automatically during consolidation promotion. Contradiction signals trigger fact invalidation: old fact becomes invalidated, new fact supersedes it via `supersedes_fact_id`. When an explicit episode corroborates an abductive guess (same triple), it is promoted to active/deductive.
 - **Memory tiers** = three-tier structured memory. **Core** (always visible, editable, persisted in Neo4j) — persona, user, current_objective, project_state. **Working** (session-scoped, 24h TTL in Redis) — working_state, open_questions. **Archive** (existing episodic/semantic/fact graph). Token budgets in `amp_load`: core 15%, working 10%, facts 15%, archive 60%.
 - **Entity resolution** = EntityResolver matches by exact name, then case-insensitive, then alias. Prevents fragmentation across "AMP", "amp", "Agent Memory Platform". All Fact nodes carry a canonical `entity_id`.
 
@@ -127,6 +127,7 @@ Enable domains as needed for your task. The Tier 1 tools handle most session wor
 | Tool | Purpose |
 |------|---------|
 | `amp_context` | Unified context assembly. Strategies: `auto` (classify intent -> route), `ranked` (hybrid search + RRF + learned weights), `deterministic` (same graph -> same output) |
+| `amp_ask` | **Dialectic retrieval (Tier 1).** Ask a natural-language question; retrieves ranked evidence then LLM-synthesizes a **cited** answer with explicit inference. `reasoning_level` (minimal/low/medium/high/max) trades latency for depth. Returns the answer + supporting node IDs. Use when the answer needs reasoning over multiple memories; use `amp_context` for raw assembled context. |
 | `amp_feedback` | Record whether a retrieval result was useful. Improves future rankings via learned weights. |
 
 **Learned retrieval:** The system tracks which strategies, entities, and source types produce useful results. Over time, it auto-routes queries to the strategy that works best for each intent type, and boosts/penalizes entities based on their historical usefulness.

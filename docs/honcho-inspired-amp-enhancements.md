@@ -699,7 +699,7 @@ Update the two call sites (`service.ts`, `consolidation.ts`) to pass `config.mod
 
 ## 10. Cross-cutting: docs, drift guard, and counts
 
-Adding `amp_ask` changes the **Tier-1 tool set** and total tool count (currently documented as **48 tools / 9 domains** in `CLAUDE.md`). Adding the `dream` action to `amp_consolidate` does **not** add a tool. Before committing:
+Adding `amp_ask` changes the **Tier-1 tool set** and total tool count (**48 → 49 tools / 9 domains**). Adding the `dream` action to `amp_consolidate` does **not** add a tool. Before committing:
 
 1. **`packages/mcp/src/tools.ts`** — if `amp_ask` is registered in the **retrieval** package, ensure the gateway's accounting still lines up: `amp_ask` is Tier-1, so it belongs with `amp_context` (also Tier-1, retrieval-owned). Confirm whether any count/list in `tools.ts` enumerates Tier-1 names and update.
 2. **Drift-guard test** — there is a regression test that asserts documented tool counts/names match the registered surface (added in a prior "agent-facing docs reconciliation" pass). `grep -rn "48\|tool.*count\|ALWAYS_ON_TOOL_NAMES\|drift" packages/mcp/src/__tests__` and update expected values (49 tools, new Tier-1 name `amp_ask`).

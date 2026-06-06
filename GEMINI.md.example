@@ -42,6 +42,7 @@ All other tools are organized into **9 on-demand domains**. Call `amp_tools(acti
 ## When to Use Which Tool
 
 - **General context for a task** → `amp_context` (always visible)
+- **Ask a question, get a synthesized cited answer** → `amp_ask` (always visible; `reasoning_level` minimal→max)
 - **Memory load/store** → `amp_load`, `amp_store` (always visible)
 - **Trace knowledge history** → `amp_provenance` (enable `admin` domain first)
 - **Temporal facts** → `amp_timeline`, `amp_fact_diff` (enable `temporal` domain first)
@@ -55,7 +56,7 @@ All other tools are organized into **9 on-demand domains**. Call `amp_tools(acti
 ## Autonomous Behavior
 
 ### Session Start
-- Read core memory: `amp_memory_read(tier: "core")` — always-visible persona, user preferences, project state.
+- Core blocks (persona, user, project_state) arrive automatically in `amp_load`/`amp_context` output — no separate read needed. To re-read one block, name it: `amp_memory_read(block: "user", scope: "project:<tag>")`.
 - Load memory with the user's first message as context.
 - Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`.
 - Only Tier 1 tools needed at session start (`amp_load`, `amp_store`, `amp_memory_read`, `amp_memory_insert`, `amp_context`). No domain enablement required.
@@ -98,7 +99,9 @@ Format: `amp_store(session_id, task: "[project:<tag>] ...", content: "[project:<
 
 **Memory tiers:** Use `amp_memory_insert` (always visible) to update working memory during a session (e.g., `working_state` block). For `amp_memory_replace`, `amp_memory_promote`, and `amp_memory_archive`, enable the `memory` domain first: `amp_tools(action: "enable", domain: "memory")`.
 
-**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Enable the `temporal` domain first: `amp_tools(action: "enable", domain: "temporal")`, then use `amp_timeline` to see how facts about an entity evolved over time.
+**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Each fact also carries an `inference_type` — `deductive` (explicit, default), `inductive` (consolidation-generalized), or `abductive` (a guess from the background "dream" pass); abductive facts rank lower and render as `[hypothesis]`, so never treat a guess as a known fact. Enable the `temporal` domain first: `amp_tools(action: "enable", domain: "temporal")`, then use `amp_timeline` to see how facts about an entity evolved over time.
+
+**Dream pass:** `amp_consolidate(action: "dream", scope: "project:<tag>")` (enable `admin`) runs a background generative pass that fills knowledge gaps and mints low-confidence abductive hypotheses — it only adds guesses, never overwrites known facts. Also runs headless via the `amp dream` CLI / nightly timer.
 
 Don't store: routine edits, things derivable from code/git, raw code blocks.
 
@@ -126,6 +129,7 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_memory_insert` | Insert or append to a memory block |
 | `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: architecture + code + memory blended |
+| `amp_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable `reasoning_level`) |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 
 ### On-Demand (enable domain first via `amp_tools`)
@@ -139,7 +143,7 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 | `amp_timeline` | temporal | Chronological fact history for an entity |
 | `amp_fact_diff` | temporal | What changed between two timestamps |
 | `amp_query` | admin | Read-only Cypher query |
-| `amp_consolidate` | admin | Run/check/review consolidation |
+| `amp_consolidate` | admin | Run/check/review consolidation, or `action:"dream"` — background gap-filling + abductive hypotheses (also `amp dream` CLI / nightly timer) |
 | `amp_resolve` | admin | Resolve amp:// URIs |
 | `amp_bootstrap` | admin | One-time project graph setup |
 | `amp_ingest_codebase` | admin | One-shot project setup: scan repo, bootstrap graph, index code, seed blocks |

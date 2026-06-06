@@ -2,7 +2,7 @@
 
 ## Progressive Disclosure
 
-7 tools are always visible. All others require enabling their domain first via `amp_tools(action: "enable", domain: "<name>")`.
+8 tools are always visible. All others require enabling their domain first via `amp_tools(action: "enable", domain: "<name>")`.
 
 ## Always Visible (Tier 1)
 
@@ -14,6 +14,7 @@
 | `amp_memory_insert` | Insert or append to a memory block |
 | `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
 | `amp_context` | Super-load: blends architecture + code + memory |
+| `amp_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable `reasoning_level`) |
 | `amp_tools` | Enable/disable/list on-demand tool domains |
 
 ## On-Demand Domains
@@ -39,7 +40,7 @@
 | Tool | Purpose |
 |------|---------|
 | `amp_query` | Read-only Cypher against Neo4j |
-| `amp_consolidate` | Run/check/review consolidation |
+| `amp_consolidate` | Run/check/review consolidation, or `action:"dream"` — background gap-filling + abductive hypotheses for a scope (also `amp dream` CLI / nightly timer) |
 | `amp_bootstrap` | One-time project graph setup |
 | `amp_resolve` | Resolve amp:// URIs to markdown |
 | `amp_ingest_codebase` | One-shot project setup: scan + bootstrap + index + seed |
