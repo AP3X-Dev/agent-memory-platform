@@ -97,6 +97,12 @@ describe('exportHtml XSS safety', () => {
     expect(html).not.toContain('http://');
     expect(html).not.toContain('https://'); // no external resources
   });
+
+  it('embeds knowledge-area membership and a color-by-area toggle', () => {
+    const { html } = exportHtml(SNAP);
+    expect(html).toContain('id="amp-graph-communities"');
+    expect(html).toContain('id="mode"'); // toggle button
+  });
 });
 
 describe('escape helpers', () => {

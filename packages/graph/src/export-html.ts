@@ -14,6 +14,7 @@
  */
 import type { AmpGraphSnapshot } from './types.js';
 import { exportJson } from './export-json.js';
+import { detectCommunities } from './community.js';
 
 export const DEFAULT_MAX_RENDER_NODES = 1500;
 
@@ -105,6 +106,10 @@ html, body { margin: 0; height: 100%; background: #0f1117; color: #d7dce5;
 #info .iv { color: #cdd5e1; flex: 1; word-break: break-word; white-space: pre-wrap; }
 #hint { position: fixed; bottom: 12px; right: 16px; font-size: 11px; color: #5b6473;
   pointer-events: none; }
+#mode { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); z-index: 5;
+  background: rgba(20,24,33,0.9); color: #cdd5e1; border: 1px solid #2a3144;
+  border-radius: 6px; padding: 5px 10px; font-size: 11px; cursor: pointer; }
+#mode:hover { border-color: #3a4458; }
 `;
 
 // Browser viewer. IMPORTANT: no backticks and no ${...} here — this whole string
@@ -115,6 +120,17 @@ const VIEWER_JS = `
   var data = JSON.parse(document.getElementById('amp-graph-data').textContent);
   var nodes = data.nodes || [], edges = data.edges || [];
   var colors = JSON.parse(document.getElementById('amp-graph-colors').textContent);
+  var community = JSON.parse(document.getElementById('amp-graph-communities').textContent);
+  var colorMode = 'type';
+  function communityColor(cid) {
+    if (cid === undefined || cid === null || cid < 0) return '#9aa3b2';
+    var h = (cid * 137.508) % 360;
+    return 'hsl(' + h.toFixed(1) + ',62%,60%)';
+  }
+  function colorFor(node) {
+    if (colorMode === 'area') return communityColor(community[node.id]);
+    return colors[node.type] || colors.unknown;
+  }
   var canvas = document.getElementById('cv'), ctx = canvas.getContext('2d');
   var dpr = window.devicePixelRatio || 1, W = 0, H = 0;
   function resize() { W = canvas.clientWidth; H = canvas.clientHeight;
@@ -159,7 +175,7 @@ const VIEWER_JS = `
       ctx.beginPath(); ctx.moveTo(ps[0], ps[1]); ctx.lineTo(pt[0], pt[1]); ctx.stroke(); }
     for (var i = 0; i < nodes.length; i++) {
       var node = nodes[i], p = w2s(node._x, node._y), r = Math.max(2, radius(node) * Math.sqrt(cam.scale));
-      ctx.beginPath(); ctx.fillStyle = colors[node.type] || colors.unknown;
+      ctx.beginPath(); ctx.fillStyle = colorFor(node);
       ctx.arc(p[0], p[1], r, 0, 2 * Math.PI); ctx.fill();
       if (cam.scale > 1.25 && (deg[node.id] || 0) >= 2) {
         ctx.fillStyle = '#c3cad6'; ctx.font = '10px sans-serif';
@@ -202,6 +218,11 @@ const VIEWER_JS = `
     if (node.source_file) box.appendChild(row('source_file', node.source_file));
     box.className = 'show';
   }
+  var modeBtn = document.getElementById('mode');
+  if (modeBtn) modeBtn.addEventListener('click', function () {
+    colorMode = colorMode === 'type' ? 'area' : 'type';
+    modeBtn.textContent = 'Color: ' + colorMode;
+  });
 })();
 `;
 
@@ -218,9 +239,16 @@ export function exportHtml(
     edges: selection.edges,
   };
 
+  // Knowledge-area membership for the "color by area" toggle (in-memory overlay,
+  // computed on exactly the rendered subset so colours match what is drawn).
+  const communityResult = detectCommunities(renderGraph);
+  const membership: Record<string, number> = {};
+  for (const [nodeId, communityId] of communityResult.membership) membership[nodeId] = communityId;
+
   const title = `AMP Graph — ${graph.project_name ?? graph.project_tag ?? 'all projects'}`;
   const dataJson = escapeJsonForScript(exportJson(renderGraph));
   const colorsJson = escapeJsonForScript(JSON.stringify(NODE_TYPE_COLORS));
+  const communitiesJson = escapeJsonForScript(JSON.stringify(membership));
 
   const legendRows = Object.keys(NODE_TYPE_COLORS)
     .sort()
@@ -247,9 +275,11 @@ export function exportHtml(
     banner +
     `<div id="legend">${legendRows}</div>\n` +
     '<div id="info"></div>\n' +
+    '<button id="mode">Color: type</button>\n' +
     '<div id="hint">drag to pan · scroll to zoom · click a node</div>\n' +
     `<script type="application/json" id="amp-graph-data">${dataJson}</script>\n` +
     `<script type="application/json" id="amp-graph-colors">${colorsJson}</script>\n` +
+    `<script type="application/json" id="amp-graph-communities">${communitiesJson}</script>\n` +
     `<script>${VIEWER_JS}</script>\n` +
     '</body>\n</html>\n';
 

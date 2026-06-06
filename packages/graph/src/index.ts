@@ -24,6 +24,8 @@ export { initGraphSchema } from './schema.js';
 // Report building blocks
 export { rankCoreNodes } from './centrality.js';
 export type { CoreNode } from './centrality.js';
+export { detectCommunities } from './community.js';
+export type { Community, CommunityResult, CommunityOptions } from './community.js';
 export { findImportCycles } from './import-cycles.js';
 export type { ImportCycleOptions } from './import-cycles.js';
 export { renderGraphReport } from './report-renderer.js';

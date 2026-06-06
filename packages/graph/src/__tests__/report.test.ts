@@ -107,6 +107,7 @@ describe('GraphReportService.generate', () => {
     expect(markdown).toContain('## Graph Summary');
     expect(markdown).toContain('## Memory Confidence Summary');
     expect(markdown).toContain('## Core Abstractions');
+    expect(markdown).toContain('## Knowledge Areas');
     expect(markdown).toContain('## Dependency Cycles');
     expect(markdown).toContain('## Low-Confidence Knowledge');
     expect(markdown).toContain('## Knowledge Gaps');
@@ -158,6 +159,35 @@ describe('GraphReportService.generate', () => {
     expect(markdown).toContain('## Dependency Cycles');
     expect(markdown).toContain('alice → bob → alice');
     expect(markdown).toContain('prefers async standups'); // low-confidence preference surfaced
+  });
+
+  it('surfaces distinct knowledge areas (themes) when the graph clusters', async () => {
+    // Two clearly separate topic clusters joined by one weak bridge.
+    const clustered: AmpGraphSnapshot = {
+      project_name: 'me',
+      generated_at: '2026-06-06T00:00:00.000Z',
+      truncated: false,
+      total_available: 6,
+      nodes: [
+        n('budget', 'entity', 'budget', { name: 'budget' }),
+        n('invoice', 'entity', 'invoice', { name: 'invoice' }),
+        n('tax', 'entity', 'tax', { name: 'tax' }),
+        n('gym', 'entity', 'gym', { name: 'gym' }),
+        n('sleep', 'entity', 'sleep', { name: 'sleep' }),
+        n('diet', 'entity', 'diet', { name: 'diet' }),
+      ],
+      edges: [
+        e('budget', 'invoice', 'USES', 3), e('invoice', 'tax', 'USES', 3), e('budget', 'tax', 'USES', 3),
+        e('gym', 'sleep', 'USES', 3), e('sleep', 'diet', 'USES', 3), e('gym', 'diet', 'USES', 3),
+        e('tax', 'gym', 'USES', 1), // weak bridge
+      ],
+    };
+    const { markdown } = await new GraphReportService(fakeSnapshotService(clustered)).generate({});
+    expect(markdown).toContain('## Knowledge Areas');
+    expect(markdown).not.toContain('No distinct knowledge areas detected');
+    // Two areas listed, each with a cohesion figure.
+    const areaLines = markdown.split('\n').filter((l) => l.startsWith('- **') && l.includes('cohesion'));
+    expect(areaLines.length).toBe(2);
   });
 
   it('handles an empty graph gracefully', async () => {

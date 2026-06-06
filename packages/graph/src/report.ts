@@ -11,6 +11,7 @@
  * sections are deferred (they depend on community detection).
  */
 import { rankCoreNodes, type CoreNode } from './centrality.js';
+import { detectCommunities, type CommunityResult } from './community.js';
 import { findImportCycles } from './import-cycles.js';
 import { renderGraphReport } from './report-renderer.js';
 import type { GraphSnapshotService } from './snapshot.js';
@@ -69,6 +70,7 @@ export interface GraphReportSections {
   relation_counts: Array<{ relation: string; count: number }>;
   confidence: ConfidenceSummary;
   core_nodes: CoreNode[];
+  communities: CommunityResult;
   cycles: string[][];
   low_confidence: LowConfidenceKnowledge;
   gaps: KnowledgeGaps;
@@ -217,6 +219,7 @@ export class GraphReportService {
       relation_counts: relationCounts(graph),
       confidence: confidenceSummary(graph),
       core_nodes: rankCoreNodes(graph, maxItems),
+      communities: detectCommunities(graph, { sampleSize: 3 }),
       cycles: findImportCycles(graph, { maxCycles: maxItems }),
       low_confidence: lowConfidenceKnowledge(graph, maxItems),
       gaps: knowledgeGaps(graph, maxItems),

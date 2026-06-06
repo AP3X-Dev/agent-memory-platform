@@ -83,6 +83,22 @@ export function renderGraphReport(s: GraphReportSections): string {
   }
   lines.push('');
 
+  // 6b. Knowledge Areas (themes) — structural clusters, in-memory overlay only.
+  lines.push('## Knowledge Areas');
+  lines.push('');
+  lines.push('_Structural clusters of related knowledge (analytics overlay; not stored)._');
+  lines.push('');
+  const areas = s.communities.communities.filter((c) => c.size >= 2).slice(0, s.max_items);
+  if (areas.length < 2) {
+    lines.push('No distinct knowledge areas detected (graph is sparse or uniformly connected).');
+  } else {
+    for (const a of areas) {
+      const sample = a.sample.length > 0 ? ` — e.g. ${a.sample.join(', ')}` : '';
+      lines.push(`- **${a.label}** (${fmt(a.size)} nodes, cohesion ${a.cohesion.toFixed(2)})${sample}`);
+    }
+  }
+  lines.push('');
+
   // 8. Dependency Cycles (general — works for code imports and any USES graph,
   //    e.g. circular org-chart or process dependencies).
   lines.push('## Dependency Cycles');
