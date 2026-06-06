@@ -20,10 +20,19 @@ import type {
   GraphExportResult,
   GraphReportInput,
   GraphReportResult,
+  PrConflictsInput,
+  PrConflictsResult,
+  PrImpactInput,
+  PrImpactResult,
   SnapshotInput,
 } from './types.js';
 
-export const GRAPH_TOOL_NAMES = ['amp_graph_report', 'amp_graph_export'] as const;
+export const GRAPH_TOOL_NAMES = [
+  'amp_graph_report',
+  'amp_graph_export',
+  'amp_pr_impact',
+  'amp_pr_conflicts',
+] as const;
 
 // ─── Injected service interfaces (no concrete imports) ───────────────────────
 
@@ -39,18 +48,26 @@ export interface IGraphExportService {
   export(input: GraphExportInput): Promise<GraphExportResult>;
 }
 
+export interface IPrImpactService {
+  impact(input: PrImpactInput): Promise<PrImpactResult>;
+  conflicts(input: PrConflictsInput): Promise<PrConflictsResult>;
+}
+
 let snapshotService: IGraphSnapshotService | null = null;
 let reportService: IGraphReportService | null = null;
 let exportService: IGraphExportService | null = null;
+let prImpactService: IPrImpactService | null = null;
 
 export function setGraphServiceInstances(services: {
   snapshotService?: IGraphSnapshotService;
   reportService: IGraphReportService;
   exportService: IGraphExportService;
+  prImpactService?: IPrImpactService;
 }): void {
   snapshotService = services.snapshotService ?? null;
   reportService = services.reportService;
   exportService = services.exportService;
+  prImpactService = services.prImpactService ?? null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -115,6 +132,23 @@ const AmpGraphExportSchema = {
     .describe('HTML render cap; larger graphs draw only the top-degree nodes (default 1500).'),
 };
 
+const AmpPrImpactSchema = {
+  pr: z.string().max(300).describe('PR reference: number, branch, or URL (passed to `gh pr view`).'),
+  project_tag: z.string().max(200).optional().describe('Project scope tag for the graph snapshot.'),
+  project_name: z.string().max(200).optional().describe('Project root entity name for exact-match scoping.'),
+  max_items: z.number().int().positive().max(100).optional().describe('Per-section item cap (default 10).'),
+};
+
+const AmpPrConflictsSchema = {
+  prs: z
+    .array(z.string().max(300))
+    .max(50)
+    .optional()
+    .describe('Specific PR refs to compare. Omit to analyze all open PRs.'),
+  project_tag: z.string().max(200).optional().describe('Project scope tag for the graph snapshot.'),
+  project_name: z.string().max(200).optional().describe('Project root entity name for exact-match scoping.'),
+};
+
 // ─── Registration ────────────────────────────────────────────────────────────
 
 export function registerGraphTools(server: McpServer): RegisteredTool[] {
@@ -176,6 +210,43 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
           );
         }
         return textContent(result.content ?? '');
+      },
+    ),
+  );
+
+  handles.push(
+    server.tool(
+      'amp_pr_impact',
+      'Analyze the blast radius of a GitHub pull request over the code graph: changed files → their symbols → files that import/call them (dependents), plus the knowledge areas and high-centrality nodes touched. Requires the `gh` CLI to be installed and authenticated. Read-only.',
+      AmpPrImpactSchema,
+      { readOnlyHint: true } satisfies ToolAnnotations,
+      async (args) => {
+        if (!prImpactService) throw new Error('PrImpactService not initialised');
+        const result = await prImpactService.impact({
+          pr: args.pr,
+          project_tag: args.project_tag,
+          project_name: args.project_name,
+          max_items: args.max_items,
+        });
+        return textContent(result.markdown);
+      },
+    ),
+  );
+
+  handles.push(
+    server.tool(
+      'amp_pr_conflicts',
+      'Find pull requests whose impact overlaps — pairs of PRs that touch (or whose dependents touch) the same files, signalling likely merge/review conflicts. Compares the given PR refs, or all open PRs if none are given. Requires the `gh` CLI. Read-only.',
+      AmpPrConflictsSchema,
+      { readOnlyHint: true } satisfies ToolAnnotations,
+      async (args) => {
+        if (!prImpactService) throw new Error('PrImpactService not initialised');
+        const result = await prImpactService.conflicts({
+          prs: args.prs,
+          project_tag: args.project_tag,
+          project_name: args.project_name,
+        });
+        return textContent(result.markdown);
       },
     ),
   );

@@ -54,7 +54,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 39 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 7 tools by default. The other 41 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
@@ -156,7 +156,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 ---
 
-## The 46 Tools
+## The 48 Tools
 
 ### Core Memory (7 always visible + 8 on demand)
 | Tool | What it does for you |
@@ -209,11 +209,13 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 The wiki round-trips: edit a compiled article in the viewer (Edit button) or sync an edited file, and your changes flow back into the graph as claim-level signals.
 
-### Graph Analytics (2 tools)
+### Graph Analytics (4 tools)
 | Tool | What it does for you |
 |------|---------------------|
-| `amp_graph_report` | Deterministic, project-scoped audit of the knowledge graph — corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only and secret-safe. Works for any memory graph (code, people, orgs, topics). |
-| `amp_graph_export` | Export the graph as portable JSON, or a self-contained, offline, interactive HTML map you open in a browser — pan/zoom/drag, click a node to inspect it. "Show me everything you know about my project / my org / me." Secret-safe and XSS-escaped. |
+| `amp_graph_report` | Deterministic, project-scoped audit of the knowledge graph — corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), knowledge areas (themes), dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only and secret-safe. Works for any memory graph (code, people, orgs, topics). |
+| `amp_graph_export` | Export the graph as portable JSON, or a self-contained, offline, interactive HTML map you open in a browser — pan/zoom/drag, click a node to inspect it, color by knowledge area. "Show me everything you know about my project / my org / me." Secret-safe and XSS-escaped. |
+| `amp_pr_impact` | Blast radius of a GitHub PR over the code graph — changed files → their symbols → dependent files, plus knowledge areas and high-centrality nodes touched. Needs the `gh` CLI. |
+| `amp_pr_conflicts` | Flags PR pairs whose impact overlaps (likely merge/review conflicts) across the given or all open PRs. Needs the `gh` CLI. |
 
 ---
 
@@ -222,7 +224,7 @@ The wiki round-trips: edit a compiled article in the viewer (Edit button) or syn
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│         46 tools · 9 domains · progressive        │
+│         48 tools · 9 domains · progressive        │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│

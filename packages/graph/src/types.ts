@@ -127,3 +127,36 @@ export interface GraphExportResult {
   /** HTML render cap hit (only the top-degree subset is drawn). */
   render_truncated: boolean;
 }
+
+export interface PrImpactInput {
+  pr: string;
+  project_tag?: string;
+  project_name?: string;
+  max_items?: number;
+}
+
+export interface PrImpactResult {
+  markdown: string;
+  pr: string;
+  changed_files: string[];
+  impacted_files: string[];
+  areas: string[];
+}
+
+export interface PrConflictsInput {
+  /** Specific PR refs to compare; if omitted, all open PRs are used. */
+  prs?: string[];
+  project_tag?: string;
+  project_name?: string;
+}
+
+export interface PrConflictPair {
+  a: string;
+  b: string;
+  shared_files: string[];
+}
+
+export interface PrConflictsResult {
+  markdown: string;
+  conflicts: PrConflictPair[];
+}

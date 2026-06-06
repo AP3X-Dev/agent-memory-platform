@@ -1,6 +1,6 @@
 # AMP — Agent Memory Protocol
 
-You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **46 tools** across **9 progressive-disclosure domains**, exposed via **progressive disclosure** — only 7 core tools are visible by default; enable additional domains on demand with `amp_tools`.
+You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **48 tools** across **9 progressive-disclosure domains**, exposed via **progressive disclosure** — only 7 core tools are visible by default; enable additional domains on demand with `amp_tools`.
 
 ---
 
@@ -18,7 +18,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 | `amp_grep` | Search memory by text pattern (exact or regex) across all node types. |
 | `amp_tools` | **Gateway** — list, enable, or disable tool domains. |
 
-**39 tools available on demand** (Tier 2 — enable when needed):
+**41 tools available on demand** (Tier 2 — enable when needed):
 
 | Domain | Tools | Enable when... |
 |--------|-------|----------------|
@@ -30,7 +30,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 | `arch` | 6 `amp_arch_*` + `amp_impact` tools | Architecture registration, impact analysis, drift |
 | `wiki` | `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` | Wiki compilation, source ingestion, graph health, human brain dumps, editable round-trip |
 | `retrieval` | `amp_feedback` | Recording retrieval quality feedback |
-| `graph` | `amp_graph_report`, `amp_graph_export` | Deterministic graph audit report + portable JSON/interactive-HTML graph export |
+| `graph` | `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` | Graph audit report, portable JSON/interactive-HTML export, and GitHub PR impact/conflict analysis |
 
 **How to enable a domain:**
 ```

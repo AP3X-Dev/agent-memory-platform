@@ -42,6 +42,11 @@ export {
   DEFAULT_MAX_RENDER_NODES,
 } from './export-html.js';
 
+// PR impact & conflicts
+export { PrImpactService } from './pr-impact.js';
+export { GitHubCliProvider } from './providers/github-cli.js';
+export type { PullRequest, PullRequestProvider } from './providers/pull-request-provider.js';
+
 // Report service
 export { GraphReportService } from './report.js';
 export type {
@@ -64,4 +69,5 @@ export type {
   IGraphSnapshotService,
   IGraphReportService,
   IGraphExportService,
+  IPrImpactService,
 } from './tools.js';

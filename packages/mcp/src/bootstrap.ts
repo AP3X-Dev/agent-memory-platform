@@ -54,6 +54,8 @@ import {
   GraphSnapshotService,
   GraphReportService,
   GraphExportService,
+  PrImpactService,
+  GitHubCliProvider,
   setGraphServiceInstances,
 } from '@amp/graph';
 
@@ -311,11 +313,13 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const graphSnapshotService = new GraphSnapshotService(driver);
   const graphReportService = new GraphReportService(graphSnapshotService);
   const graphExportService = new GraphExportService(graphSnapshotService);
+  const prImpactService = new PrImpactService(graphSnapshotService, new GitHubCliProvider(), driver);
 
   setGraphServiceInstances({
     snapshotService: graphSnapshotService,
     reportService: graphReportService,
     exportService: graphExportService,
+    prImpactService,
   });
 
   console.error('[amp-mcp] Graph services initialized');
