@@ -25,10 +25,12 @@ import type { AMPConfig } from '@amp/core';
 
 // ─── Environment / connection config ─────────────────────────────────────────
 
-const REDIS_URL = process.env.REDIS_URL ?? 'redis://localhost:6379';
-const NEO4J_URI = process.env.NEO4J_URI ?? 'bolt://localhost:7687';
-const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
-const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'password';
+// `||` (not `??`) so an empty-string env var (e.g. NEO4J_URI="" in CI's unit
+// job) falls back to a valid local default instead of an illegal empty host.
+const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
+const NEO4J_URI = process.env.NEO4J_URI || 'bolt://localhost:7687';
+const NEO4J_USER = process.env.NEO4J_USER || 'neo4j';
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD || 'password';
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY ?? '';
 const RUN_LIVE = process.env.RUN_LIVE_TESTS === '1';
 
@@ -72,7 +74,10 @@ async function isNeo4jReachable(uri: string, user: string, password: string): Pr
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
-describe('Integration: LOAD and STORE flow', () => {
+// Gate the whole suite on RUN_LIVE so live clients are never constructed during
+// collection when live tests aren't requested (matches the arch/research
+// integration suites' `describe.runIf(...)` pattern).
+describe.runIf(RUN_LIVE)('Integration: LOAD and STORE flow', () => {
   let redisAvailable = false;
   let neo4jAvailable = false;
   let service: AMPService;
