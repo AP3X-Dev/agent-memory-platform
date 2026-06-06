@@ -64,10 +64,10 @@ export interface SchemaVerification {
 export async function verifySchema(driver: Driver): Promise<SchemaVerification> {
   const session = driver.session();
   try {
-    const [constraintsResult, indexesResult] = await Promise.all([
-      session.run('SHOW CONSTRAINTS'),
-      session.run('SHOW INDEXES'),
-    ]);
+    // Run sequentially: a single Neo4j session permits only one query/transaction
+    // at a time — `Promise.all` on one session throws "open transaction".
+    const constraintsResult = await session.run('SHOW CONSTRAINTS');
+    const indexesResult = await session.run('SHOW INDEXES');
     return {
       constraintCount: constraintsResult.records.length,
       indexCount: indexesResult.records.length,

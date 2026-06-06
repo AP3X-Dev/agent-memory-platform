@@ -392,9 +392,13 @@ export class ScopedQuery {
       const lowerNames = entityNames.map(n => n.toLowerCase());
       const paramsWithLower = { ...params, lowerNames };
 
+      // Run the two neighbor expansions in parallel, but each on its OWN session
+      // — a single Neo4j session permits only one concurrent query (a shared
+      // session throws "Queries cannot be run … with an open transaction").
+      const factSession = this.driver.session();
       const [semResult, factResult] = await Promise.all([
         session.run(semanticNeighborCypher, paramsWithLower),
-        session.run(factNeighborCypher, paramsWithLower),
+        factSession.run(factNeighborCypher, paramsWithLower).finally(() => factSession.close()),
       ]);
 
       const seen = new Set<string>();
