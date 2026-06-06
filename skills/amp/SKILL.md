@@ -1,6 +1,6 @@
 ---
 name: amp
-description: "Agent Memory Protocol — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 6 always-visible tools + 8 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
+description: "Agent Memory Protocol — persistent memory with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 7 always-visible tools + 9 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
 ---
 
 # AMP — Agent Memory Protocol
@@ -9,7 +9,7 @@ Persistent memory system for AI agents. Knowledge compounds across sessions — 
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to avoid overwhelming agents with 42 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **8 on-demand domains** that must be enabled before use.
+AMP uses progressive disclosure to avoid overwhelming agents with 45 tools at once. **7 tools are always visible** (Tier 1). All other tools are grouped into **9 on-demand domains** that must be enabled before use.
 
 ### Always-Visible Tools (Tier 1)
 

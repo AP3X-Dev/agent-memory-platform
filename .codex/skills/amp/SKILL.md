@@ -5,7 +5,7 @@ description: "Agent Memory Protocol — persistent memory with progressive tool 
 
 # AMP — Agent Memory Protocol
 
-Persistent memory for AI agents. Progressive disclosure: 7 always-visible tools + 8 on-demand domains.
+Persistent memory for AI agents. Progressive disclosure: 7 always-visible tools + 9 on-demand domains.
 
 ## 5 Rules
 

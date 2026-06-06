@@ -54,11 +54,11 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 37 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 7 tools by default. The other 38 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  amp_load · amp_store · amp_memory_read · amp_memory_insert · amp_context · amp_grep · amp_tools
-On demand:       6 domains (memory, temporal, admin, research, code, arch, wiki, retrieval)
+On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki, retrieval, graph)
 ```
 
 ---
@@ -156,7 +156,7 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 ---
 
-## The 44 Tools
+## The 45 Tools
 
 ### Core Memory (7 always visible + 8 on demand)
 | Tool | What it does for you |
@@ -209,6 +209,11 @@ Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your projec
 
 The wiki round-trips: edit a compiled article in the viewer (Edit button) or sync an edited file, and your changes flow back into the graph as claim-level signals.
 
+### Graph Analytics (1 tool)
+| Tool | What it does for you |
+|------|---------------------|
+| `amp_graph_report` | Deterministic, project-scoped audit of the knowledge graph — corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), import/dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only and secret-safe. Disabled by default under the `graph` domain. |
+
 ---
 
 ## Architecture
@@ -216,7 +221,7 @@ The wiki round-trips: edit a compiled article in the viewer (Edit button) or syn
 ```
 ┌──────────────────────────────────────────────────┐
 │                  MCP Server                       │
-│          44 tools · 6 domains · progressive       │
+│         45 tools · 9 domains · progressive        │
 ├────────┬────────┬────────┬───────┬───────┬───────┤
 │  Core  │Research│  Arch  │ Code  │Retriev│ Wiki  │
 │ Memory │ Experi │Structur│Symbols│Fusion │Compile│

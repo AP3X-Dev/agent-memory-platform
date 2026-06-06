@@ -1,6 +1,6 @@
 # AMP — Agent Memory Protocol
 
-You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **42 tools** across **6 domains**, exposed via **progressive disclosure** — only 7 core tools are visible by default; enable additional domains on demand with `amp_tools`.
+You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions and agents using a Neo4j knowledge graph with Redis caching. **45 tools** across **9 progressive-disclosure domains**, exposed via **progressive disclosure** — only 7 core tools are visible by default; enable additional domains on demand with `amp_tools`.
 
 ---
 
@@ -18,7 +18,7 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 | `amp_grep` | Search memory by text pattern (exact or regex) across all node types. |
 | `amp_tools` | **Gateway** — list, enable, or disable tool domains. |
 
-**35 tools available on demand** (Tier 2 — enable when needed):
+**38 tools available on demand** (Tier 2 — enable when needed):
 
 | Domain | Tools | Enable when... |
 |--------|-------|----------------|
@@ -28,8 +28,9 @@ You have access to a persistent memory system called AMP via MCP tools. It store
 | `research` | 6 `amp_research_*` tools | Running research campaigns or experiments |
 | `code` | 7 `amp_code_*` tools | Code indexing, symbol/AST search, dependency analysis, file watching |
 | `arch` | 6 `amp_arch_*` + `amp_impact` tools | Architecture registration, impact analysis, drift |
-| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint` | Wiki compilation, source ingestion, graph health |
+| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` | Wiki compilation, source ingestion, graph health, human brain dumps, editable round-trip |
 | `retrieval` | `amp_feedback` | Recording retrieval quality feedback |
+| `graph` | `amp_graph_report` | Deterministic, project-scoped graph audit report (snapshot-backed) |
 
 **How to enable a domain:**
 ```
