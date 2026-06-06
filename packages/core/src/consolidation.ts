@@ -389,7 +389,7 @@ export class ConsolidationEngine {
     if (!factLayer || !apiKey) return;
 
     try {
-      const inputs = await extractFacts(content, apiKey);
+      const inputs = await extractFacts(content, apiKey, this.config.models?.extraction);
       if (inputs.length === 0) return;
 
       const now = new Date().toISOString();
@@ -424,6 +424,7 @@ export class ConsolidationEngine {
             invalid_at: null,
             confidence: input.confidence ?? 0.5,
             status: 'active',
+            inference_type: 'inductive',
             supersedes_fact_id: current.id,
             scope: input.scope ?? 'project',
             tags: input.tags ?? [],
@@ -445,6 +446,7 @@ export class ConsolidationEngine {
             invalid_at: null,
             confidence: input.confidence ?? 0.5,
             status: 'tentative',
+            inference_type: 'inductive',
             supersedes_fact_id: null,
             scope: input.scope ?? 'project',
             tags: input.tags ?? [],
@@ -468,7 +470,7 @@ export class ConsolidationEngine {
 
     try {
       // Extract facts from the old (now-contradicted) content to find what to dispute
-      const oldFacts = await extractFacts(semanticContent, apiKey);
+      const oldFacts = await extractFacts(semanticContent, apiKey, this.config.models?.extraction);
       for (const oldFact of oldFacts) {
         const matching = await factLayer.findBySubjectPredicate(
           oldFact.subject,

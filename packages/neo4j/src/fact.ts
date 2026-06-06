@@ -33,6 +33,7 @@ export class FactStore {
           invalid_at: $invalid_at,
           confidence: $confidence,
           status: $status,
+          inference_type: $inference_type,
           supersedes_fact_id: $supersedes_fact_id,
           scope: $scope,
           tags: $tags,
@@ -50,6 +51,7 @@ export class FactStore {
           invalid_at: fact.invalid_at,
           confidence: fact.confidence,
           status: fact.status,
+          inference_type: fact.inference_type ?? 'deductive',
           supersedes_fact_id: fact.supersedes_fact_id,
           scope: fact.scope,
           tags: fact.tags,
@@ -381,6 +383,25 @@ export class FactStore {
       await session.close();
     }
   }
+
+  /**
+   * Promote a tentative/abductive fact that explicit evidence has now corroborated:
+   * mark it active + deductive and raise its confidence. Used when a real episode
+   * yields the same subject/predicate/object a dream hypothesis had guessed.
+   */
+  async corroborate(id: string, confidence: number): Promise<void> {
+    const session = this.driver.session();
+    try {
+      await session.run(
+        `MATCH (f:Fact {id: $id})
+         SET f.status = 'active', f.inference_type = 'deductive',
+             f.confidence = $confidence, f.updated_at = $now`,
+        { id, confidence, now: new Date().toISOString() },
+      );
+    } finally {
+      await session.close();
+    }
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -398,6 +419,7 @@ function mapFactNode(props: Record<string, unknown>): FactNode {
     invalid_at: typeof props.invalid_at === 'string' ? props.invalid_at : null,
     confidence: typeof props.confidence === 'number' ? props.confidence : 0.5,
     status: typeof props.status === 'string' ? (props.status as FactNode['status']) : 'tentative',
+    inference_type: typeof props.inference_type === 'string' ? (props.inference_type as FactNode['inference_type']) : 'deductive',
     supersedes_fact_id: typeof props.supersedes_fact_id === 'string' ? props.supersedes_fact_id : null,
     scope: typeof props.scope === 'string' ? (props.scope as FactNode['scope']) : 'project',
     tags: Array.isArray(props.tags) ? (props.tags as string[]) : [],
