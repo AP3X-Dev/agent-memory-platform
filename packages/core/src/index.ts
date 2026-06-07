@@ -23,8 +23,10 @@ export type { LlmClient, LlmTask, ChatMessage, ChatOptions } from './llm.js';
 export { KeyedSerialQueue } from './serial-queue.js';
 export { DreamEngine } from './dream.js';
 export type { DreamFactLayer, DreamGraphLayer, DreamResult, DreamEngineDeps } from './dream.js';
-export { createCoreServices, buildDreamEngine } from './services-factory.js';
+export { createCoreServices, buildDreamEngine, buildExtractionConsumer } from './services-factory.js';
 export type { CoreServices, CoreServicesEnv } from './services-factory.js';
+export { ExtractionConsumer } from './extraction-consumer.js';
+export type { ExtractionQueuePort, ExtractionConsumerOptions, QueuedJob } from './extraction-consumer.js';
 export {
   loadSettings,
   saveSettings,

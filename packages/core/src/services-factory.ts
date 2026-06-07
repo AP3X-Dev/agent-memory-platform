@@ -17,6 +17,7 @@ import {
   DedupChecker,
   SignalStream,
   ConsolidationQueue,
+  ExtractionQueue,
   DistributedLock,
   BlockStore as RedisBlockStore,
 } from '@memberry/redis';
@@ -34,6 +35,7 @@ import { OpenAIEmbedding } from './embedding.js';
 import { OpenAiLlmClient, NullLlmClient, type LlmClient } from './llm.js';
 import { KeyedSerialQueue } from './serial-queue.js';
 import { DreamEngine, type DreamGraphLayer, type DreamBlockLayer } from './dream.js';
+import { ExtractionConsumer } from './extraction-consumer.js';
 import { EMBEDDING_DIM, type EmbeddingProvider, type AMPConfig } from './types.js';
 import { readEnv } from './config/settings.js';
 
@@ -59,6 +61,8 @@ export interface CoreServices {
   dedup: DedupChecker;
   signals: SignalStream;
   queue: ConsolidationQueue;
+  /** Durable fact-extraction job queue (drained by the ExtractionConsumer). */
+  extractionQueue: ExtractionQueue;
   episodic: EpisodicStore;
   scopedQuery: ScopedQuery;
   factStore: FactStore;
@@ -119,6 +123,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
   const dedup = new DedupChecker(redis);
   const signals = new SignalStream(redis);
   const queue = new ConsolidationQueue(redis);
+  const extractionQueue = new ExtractionQueue(redis);
 
   const episodic = new EpisodicStore(driver);
   const scopedQuery = new ScopedQuery(driver);
@@ -164,7 +169,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
   const audit = new AuditLogStore(driver);
 
   const ampService = new AMPService(
-    { cache, embeddings, dedup, signals, queue },
+    { cache, embeddings, dedup, signals, queue, extraction: extractionQueue },
     { episodic, query: scopedQuery, fact: factStore },
     embedding,
     config,
@@ -180,6 +185,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     dedup,
     signals,
     queue,
+    extractionQueue,
     episodic,
     scopedQuery,
     factStore,
@@ -241,4 +247,16 @@ export function buildDreamEngine(core: CoreServices): DreamEngine {
     // so dream (CLI/timer) and consolidation (MCP) can't mutate one scope at once.
     lock: new DistributedLock(core.redis),
   });
+}
+
+/**
+ * Build the durable fact-extraction consumer from constructed core services.
+ * Long-lived: the MCP server starts it and stops it on shutdown. It drains the
+ * ExtractionQueue and runs each job through AMPService.processExtraction.
+ */
+export function buildExtractionConsumer(core: CoreServices): ExtractionConsumer {
+  return new ExtractionConsumer(
+    core.extractionQueue,
+    (content, episodeId) => core.ampService.processExtraction(content, episodeId),
+  );
 }

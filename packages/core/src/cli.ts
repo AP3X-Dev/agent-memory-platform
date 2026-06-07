@@ -175,6 +175,27 @@ async function runDream(flags: Record<string, string | boolean>): Promise<void> 
   }
 }
 
+async function runExtraction(positionals: string[], _flags: Record<string, string | boolean>): Promise<void> {
+  const sub = positionals[0] ?? 'status';
+  const core = createCoreServices();
+  try {
+    if (sub === 'replay') {
+      const moved = await core.extractionQueue.replayDeadLetters();
+      console.log(`Replayed ${moved} dead-lettered extraction job(s) back onto the queue.`);
+    } else {
+      // status (default)
+      const s = await core.extractionQueue.stats();
+      console.log(JSON.stringify({
+        pending: s.pending,
+        inflight: s.inflight,
+        dead_lettered: s.deadLettered,
+      }, null, 2));
+    }
+  } finally {
+    await core.close();
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -205,6 +226,11 @@ async function main(): Promise<void> {
       await runDream(flags);
       break;
 
+    case 'extraction':
+      // `memberry extraction status|replay` — durable fact-extraction queue admin.
+      await runExtraction(positionals, flags);
+      break;
+
     case 'hook':
       // `memberry hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
       await runHookCommand(positionals);
@@ -230,7 +256,8 @@ async function main(): Promise<void> {
       console.error('  snapshot  [--path ./.amp] [--commit] [--message "..."]');
       console.error('');
       console.error('Background memory commands:');
-      console.error('  dream     [--scope project:x] [--max-entities N] [--no-cards]');
+      console.error('  dream      [--scope project:x] [--max-entities N] [--no-cards]');
+      console.error('  extraction status|replay   (durable fact-extraction queue: counts / replay dead-letters)');
       console.error('');
       console.error('Agent hook commands:');
       console.error('  hooks install --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp]');

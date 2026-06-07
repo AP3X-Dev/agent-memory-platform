@@ -144,6 +144,25 @@ describe('AMPService no-embedding load (no random context)', () => {
   });
 });
 
+describe('AMPService durable extraction', () => {
+  it('enqueues an extraction job when a durable queue is configured', async () => {
+    const enqueue = vi.fn().mockResolvedValue('m1');
+    const redis = { ...makeRedis(), extraction: { enqueue } };
+    // neo4j with a fact layer so the extraction branch is taken
+    const neo4j = makeNeo4j();
+    (neo4j as any).fact = { getActive: vi.fn().mockResolvedValue([]) };
+    const svc = new AMPService(redis, neo4j, availableEmbedding(), makeConfig());
+
+    await svc.store(baseInput({ content: 'auth uses JWT' }));
+    // enqueue is fire-and-forget; let the microtask flush.
+    await new Promise((r) => setTimeout(r, 5));
+
+    expect(enqueue).toHaveBeenCalledTimes(1);
+    expect(enqueue.mock.calls[0][0]).toMatchObject({ content: 'auth uses JWT' });
+    expect(enqueue.mock.calls[0][0].episodeId).toBeTruthy();
+  });
+});
+
 describe('AMPService project scope isolation', () => {
   it('propagates the project tag to the scoped query', async () => {
     const byScope = vi.fn().mockResolvedValue([]);

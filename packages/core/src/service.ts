@@ -48,6 +48,15 @@ export interface RedisLayer {
   queue: {
     incrementScore(member: string, increment: number): Promise<number>;
   };
+  /**
+   * Durable fact-extraction queue (optional). When present, store() enqueues a
+   * job here instead of running extraction in-process, so the work survives a
+   * process restart. When absent (e.g. unit tests, CLI), store() falls back to
+   * the in-process background path.
+   */
+  extraction?: {
+    enqueue(job: { episodeId: string; content: string }): Promise<string>;
+  };
 }
 
 export interface FactLayer {
@@ -473,15 +482,25 @@ export class AMPService {
 
     // 6. Dedup mark already done atomically in step 1 via checkAndMark
 
-    // 7. Real-time fact extraction — fire-and-forget so store() returns immediately.
-    // The episode is already persisted; fact extraction is a background enhancement.
+    // 7. Fact extraction — runs after the episode is already persisted.
+    // Durable path: enqueue a job so it survives a restart; a separate consumer
+    // drains it. Fallback path (no queue, e.g. tests/CLI): in-process background.
     const factLayer = this.neo4j.fact;
     if (factLayer && this.config.embedding.apiKey) {
       const apiKey = this.config.embedding.apiKey;
       const episodeId = id;
-      // Detach from the request path — caller gets response without waiting for extraction.
-      // _extractFactsBackground handles its own retries and error logging internally.
-      void this._extractFactsBackground(factLayer, apiKey, input.content, episodeId);
+      const contentForExtraction = input.content;
+      if (this.redis.extraction) {
+        // One XADD, persisted before we return. On enqueue failure, fall back
+        // to in-process so a transient Redis hiccup doesn't lose the facts.
+        this.redis.extraction.enqueue({ episodeId, content: contentForExtraction }).catch((err) => {
+          console.error('[amp-store] extraction enqueue failed; running in-process fallback:', err instanceof Error ? err.message : err);
+          void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId);
+        });
+      } else {
+        // Detach from the request path; _extractFactsBackground retries + logs.
+        void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId);
+      }
     }
 
     // 8. Audit trail (best-effort, never blocks the response).
@@ -499,10 +518,22 @@ export class AMPService {
   }
 
   /**
-   * Background fact extraction and auto-invalidation with retry.
-   * Runs after store() has already returned the episode ID to the caller.
-   * Retries up to 2 times with exponential backoff on transient errors
-   * (network, rate limit). Non-transient errors (parse, validation) are not retried.
+   * Public entry point for the durable extraction consumer: runs ONE extraction
+   * attempt and THROWS on failure, so the queue can decide retry vs dead-letter.
+   * No-op if there's no fact layer or API key configured.
+   */
+  async processExtraction(content: string, episodeId: string): Promise<void> {
+    const factLayer = this.neo4j.fact;
+    const apiKey = this.config.embedding.apiKey;
+    if (!factLayer || !apiKey) return;
+    await this._extractFactsOnce(factLayer, apiKey, content, episodeId);
+  }
+
+  /**
+   * In-process background fact extraction with retry — the fallback path used
+   * when no durable extraction queue is configured. Retries up to 2 times with
+   * exponential backoff on transient errors (network, rate limit); non-transient
+   * errors are not retried. Never throws (the episode is already persisted).
    */
   private async _extractFactsBackground(
     factLayer: FactLayer,
@@ -514,6 +545,34 @@ export class AMPService {
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
+        await this._extractFactsOnce(factLayer, apiKey, content, episodeId);
+        return; // Success — exit retry loop
+      } catch (err) {
+        if (attempt < MAX_RETRIES && isTransientError(err)) {
+          const delay = Math.pow(3, attempt) * 1000; // 1s, 3s
+          console.warn(`[amp-store] Fact extraction attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
+          await new Promise(r => setTimeout(r, delay));
+        } else {
+          console.error('[amp-store] Fact extraction failed after retries (non-fatal):', err instanceof Error ? err.message : err);
+          return; // Give up — episode is already persisted
+        }
+      }
+    }
+  }
+
+  /**
+   * A single fact-extraction pass: extract facts, reconcile against existing
+   * facts (corroborate/supersede/invalidate), link co-extracted facts, apply
+   * staleness decay, and invalidate affected context caches. Throws on failure.
+   */
+  private async _extractFactsOnce(
+    factLayer: FactLayer,
+    apiKey: string,
+    content: string,
+    episodeId: string,
+  ): Promise<void> {
+    {
+      {
         const factInputs = await extractFacts(content, apiKey, this.config.models?.extraction);
         const now = new Date().toISOString();
         const createdFactIds: string[] = [];
@@ -618,17 +677,6 @@ export class AMPService {
 
         if (changedFactScopes.size > 0) {
           await this.invalidateContextScopes(changedFactScopes);
-        }
-
-        return; // Success — exit retry loop
-      } catch (err) {
-        if (attempt < MAX_RETRIES && isTransientError(err)) {
-          const delay = Math.pow(3, attempt) * 1000; // 1s, 3s
-          console.warn(`[amp-store] Fact extraction attempt ${attempt + 1} failed, retrying in ${delay}ms:`, err instanceof Error ? err.message : err);
-          await new Promise(r => setTimeout(r, delay));
-        } else {
-          console.error('[amp-store] Fact extraction failed after retries (non-fatal):', err instanceof Error ? err.message : err);
-          return; // Give up — episode is already persisted
         }
       }
     }

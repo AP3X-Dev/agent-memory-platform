@@ -3,7 +3,7 @@
 
 import { DistributedLock, ProposalStore } from '@memberry/redis';
 import { runMigrations, checkVectorIndexDimensions, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
-import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, readEnv } from '@memberry/core';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, buildExtractionConsumer, readEnv } from '@memberry/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -353,6 +353,22 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   console.error('[memberry-mcp] Graph services initialized');
 
+  // ─── Durable fact-extraction consumer ──────────────────────────────────────
+  // store() enqueues extraction jobs to a Redis Stream; this long-lived worker
+  // drains them, so extraction survives a process restart (orphaned jobs are
+  // reclaimed via XAUTOCLAIM) and permanent failures land in a dead-letter queue.
+  const extractionConsumer = buildExtractionConsumer(core);
+  await extractionConsumer.start();
+  try {
+    const xstats = await core.extractionQueue.stats();
+    console.error(
+      `[memberry-mcp] Extraction consumer started ` +
+      `(pending=${xstats.pending}, inflight=${xstats.inflight}, dead-lettered=${xstats.deadLettered})`,
+    );
+  } catch {
+    console.error('[memberry-mcp] Extraction consumer started');
+  }
+
   if (status.degraded.length > 0) {
     console.error(`[memberry-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);
     for (const issue of status.degraded) {
@@ -364,6 +380,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   return {
     async shutdown() {
+      try { await extractionConsumer.stop(); } catch { /* best-effort */ }
       try { codeWatcherService.stopAll(); } catch { /* best-effort */ }
       try { await redis.quit(); } catch { /* already closed */ }
       try { await driver.close(); } catch { /* already closed */ }
