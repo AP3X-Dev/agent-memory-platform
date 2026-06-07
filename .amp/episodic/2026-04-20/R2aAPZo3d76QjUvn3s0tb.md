@@ -1,0 +1,14 @@
+---
+id: R2aAPZo3d76QjUvn3s0tb
+session_id: session-20260419-prp02-autonomous
+agent_id: mcp
+task: [project:ap3x-solana] PRP-02 design spec approved by autonomous advisor
+created_at: "2026-04-20T01:29:32.589Z"
+---
+
+[project:ap3x-solana] PRP-02 Solana runtime design spec approved (advisor APPROVE_WITH_NOTES). 4 packages: solana-signals, solana-strategy, solana-executor, solana-portfolio + examples/spl-watcher. Three locked-in design decisions preserved: (1) class-based Strategy abstract w/ 8 lifecycle hooks (onStart/onSignal/onExecutionResult/onPositionChange/onBalanceChange/onTick/onError/onShutdown), per-instance StrategyContext + StrategyStateStore, all hooks serialized through a single per-instance FIFO queue (broader than PRP requires, eliminates in-strategy races + makes backtest determinism trivial); (2) on-chain cost-basis reconstruction on first observe() w/ per-lot Lot[] storage, FIFO default + LIFO/avg-cost selectable as read-side concern, SwapTracer interface w/ extension-safe `meta?: Record<string, unknown>` on every TraceResult variant for vertical extensibility; (3) both Jito submitters ship together (JitoHttpSubmitter REST + JitoGrpcSubmitter via vendored searcher.proto + bundle.proto from jito-labs/mev-protos at pinned commit), Submitter interface seam routes per intent. Critical architectural decision: portfolio.applyLandedTrade(trade: LandedTrade) where LandedTrade is portfolio-owned; StrategyRuntime owns the ExecutionResult→LandedTrade adapter — breaks the executor↔portfolio cycle, both packages testable in isolation. Boundaries: signals→core/connectivity/events; portfolio→core/connectivity/events/spl(transfer-decoder only); executor→core/connectivity/tx/vault; strategy→core/signals/executor/portfolio/vault. SPL transfer decoders (decodeTransferInstruction, parseTransferLog) added to @ap3x/solana-spl as new exports. Bundle accumulator: 50ms timer or 5-intent flush, non-blocking submit(). intentId = base58(sha256(signalId || strategyName || instanceId || decisionVersion)). PriceSource: single-instance Runtime ctor injection, no registry. New fixture cold-start-tx-history.jsonl.gz captured in Phase A via `pnpm capture:cold-start-tx-history` (Helius free tier supports getSignaturesForAddress + getTransaction — not Business-gated). Backlog: B8 live Geyser, B9 live Jito mainnet, B10 devnet drift, B11 expanded cost-basis coverage. Spec at docs/superpowers/specs/2026-04-19-prp-02-solana-runtime-design.md, advisor log at docs/superpowers/advisor-log-2026-04-19-prp-02.md.</content>
+<entities>["ap3x-solana", "@ap3x/solana-signals", "@ap3x/solana-strategy", "@ap3x/solana-executor", "@ap3x/solana-portfolio", "@ap3x/solana-spl", "@ap3x/solana-events", "@ap3x/solana-tx", "@ap3x/solana-vault", "Jito", "Yellowstone gRPC"]</entities>
+<outcome>approved</outcome>
+</invoke>
+<invoke name="TaskUpdate">
+<parameter name="taskId">6

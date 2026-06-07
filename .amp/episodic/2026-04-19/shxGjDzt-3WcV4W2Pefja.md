@@ -1,0 +1,10 @@
+---
+id: shxGjDzt-3WcV4W2Pefja
+session_id: session-20260419-prp01-autonomous
+agent_id: mcp
+task: [project:ap3x-solana] T13+T14 complete — solana-connectivity RpcPool + Geyser
+outcome: approved
+created_at: "2026-04-19T16:44:38.558Z"
+---
+
+[project:ap3x-solana] Tasks 13 + 14 complete. Commit ee66b33: RpcPool + LatencyTracker (EWMA α=2/51, N=50) + HealthState (5/10 thresholds). 40 tests, 99.18% coverage. KEY DECISION: rpc_method errors record SUCCESS on HealthState (transport worked, caller sent bad request — prevents bad-request-spam from degrading fleet). Pool uses per-endpoint HttpClient with attempts=1; pool orchestrates cross-endpoint retries (prevents attempts² blowup). All-unhealthy case throws rpc.circuit_open. Commit 30f73dc: GeyserClient with real vendored yellowstone.proto + solana-storage.proto from pinned commit 1b0ee39 (AGPL-3.0-or-later attribution in headers). 28 new tests via injectable GrpcAdapter for fake-adapter unit tests + one real gRPC loopback integration test. Backpressure bounded queue default 1000 with drop-oldest, gap detection on slot updates {from, to} semantics + onGap callback, checkpoint every N=100 updates via injectable CheckpointStore. Error discipline: handler/checkpoint/onGap errors surface as 'error' event without tearing stream. close() idempotent via try/catch. createClient/subscribe/write errors surface via queueMicrotask so late-attached listeners still see. Handler ordering: await handler BEFORE emit('update'). tsup onSuccess copies src/proto/*.proto to dist/proto/ so prod runtime finds them; resolveProtoDir handles both dev (src) and prod (dist) layouts. import.meta.url accessed via new Function() indirection to avoid esbuild CJS warning. Added @grpc/grpc-js ^1.11.0 + @grpc/proto-loader ^0.7.13 — NEW ecosystem exceptions justified inline (required for Yellowstone transport, not on existing forbidden list). Advisor backlog B5 added for live-endpoint test gated on credentials. solana-connectivity package now at 68/68 tests, 95.69% coverage; 3 more tasks remain: T15 FileCheckpointStore, T16 RpcHistoricalBackfill, T17 diag CLI.

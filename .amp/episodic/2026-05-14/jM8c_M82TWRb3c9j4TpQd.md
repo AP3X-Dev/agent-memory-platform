@@ -1,0 +1,10 @@
+---
+id: jM8c_M82TWRb3c9j4TpQd
+session_id: session-20260514-workspace10
+agent_id: mcp
+task: [project:oni-grid] workspace optimizer session 10: OniHostRunner interface + local runner skeleton
+outcome: approved
+created_at: "2026-05-14T19:23:43.546Z"
+---
+
+[project:oni-grid] Workspace loop session #10 (commit a817b7d). Item #10: new src/lib/hostRunner.ts — the OniHostRunner interface, the shared host execution contract. Every backend (local Tauri, Cerebro, E2B, future) implements this one interface: createWorkspace/deleteWorkspace/runSetup/runAgent/createTerminal/writeTerminal/resizeTerminal/listPorts/getDiff, plus a readonly hostId. Supporting types CreateWorkspaceInput + DiffSummary. createLocalHostRunnerSkeleton() returns a no-op local skeleton — well-formed placeholder records (a 'creating' Workspace, 'starting' TerminalSession/AgentSession, empty WorkspacePort[], clean DiffSummary) with NO Tauri/PTY/worktree/port-scan/diff calls. The real local implementation is item #12; UI wiring is later. KEY contract refinement (the user's fix folded into this session's commit): CreateWorkspaceInput does NOT carry hostId — a runner already knows its host, so the returned Workspace.hostId is always the runner's own bound hostId. Letting the input override the runner's host would have weakened the contract (a "local" runner could be asked to stamp a workspace as Cerebro-hosted). 8 tests: skeleton record shapes + a fully-vi.fn-mocked OniHostRunner proving the interface is implementable/mockable. Process note: the user co-drives — they run their own fix(opt-workspace) commits between/during sessions (e.g. dd9284a made `failed` workspace status sticky in deriveWorkspaceStatus from session 9; they also refined hostRunner CreateWorkspaceInput + the test, and committed the whole session 10 + docs themselves). Verification at committed state: TS 1810/1810, lint/tsc clean, cargo 163/163 + clippy clean. Block 4 (host runner contract) is underway. Next: item #11 — wrap local worktree dispatch (runTaskInWorktree) as workspace creation, creating/updating a Workspace record on successful dispatch.
