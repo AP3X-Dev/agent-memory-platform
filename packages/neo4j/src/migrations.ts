@@ -68,6 +68,25 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    id: '0003-tenant-indexes',
+    description: 'Tenant isolation: indexes on tenant_id for the tenant-scoped node types.',
+    up: async (driver) => {
+      const session = driver.session();
+      try {
+        for (const stmt of [
+          'CREATE INDEX episodic_tenant IF NOT EXISTS FOR (e:Episodic) ON (e.tenant_id)',
+          'CREATE INDEX semantic_tenant IF NOT EXISTS FOR (s:Semantic) ON (s.tenant_id)',
+          'CREATE INDEX fact_tenant IF NOT EXISTS FOR (f:Fact) ON (f.tenant_id)',
+          'CREATE INDEX memblock_tenant IF NOT EXISTS FOR (b:MemoryBlock) ON (b.tenant_id)',
+        ]) {
+          await session.run(stmt);
+        }
+      } finally {
+        await session.close();
+      }
+    },
+  },
 ];
 
 export interface MigrationResult {

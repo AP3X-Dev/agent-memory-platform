@@ -13,6 +13,8 @@ export interface EpisodicNode {
   ttl?: number;
   scope?: string;
   tags?: string[];
+  /** Tenant this node belongs to (defaults to DEFAULT_TENANT). */
+  tenant_id?: string;
 }
 
 export interface SemanticNode {
@@ -73,6 +75,8 @@ export interface LoadScope {
   max_tokens?: number;
   temporal?: TemporalOptions;
   session_id?: string;
+  /** Tenant to scope retrieval to (defaults to DEFAULT_TENANT). */
+  tenantId?: string;
 }
 
 export interface MemoryContext {
@@ -95,6 +99,8 @@ export interface EpisodeInput {
   model_id?: string;
   scope?: string;
   tags?: string[];
+  /** Tenant to write this episode under (defaults to DEFAULT_TENANT). */
+  tenantId?: string;
 }
 
 // === Consolidation ===
@@ -198,6 +204,14 @@ export const SIGNAL_WEIGHTS: Record<SignalType, number> = {
 };
 
 export const RECENCY_DECAY_DAYS = 7;
+
+/**
+ * Tenant a request/node belongs to. Multi-tenancy is OPT-IN: when no tenants are
+ * configured, everything is this single implicit tenant and behavior is
+ * unchanged. Legacy nodes with no `tenant_id` are treated as the default tenant,
+ * so enabling tenancy requires no data migration. See SECURITY.md / THREAT-MODEL.md.
+ */
+export const DEFAULT_TENANT = 'default';
 
 /** Default embedding dimension (OpenAI text-embedding-3-small). */
 export const DEFAULT_EMBEDDING_DIM = 1536;

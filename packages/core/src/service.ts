@@ -20,7 +20,7 @@ import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
 import { extractFacts, isTransientError } from './extract.js';
-import { CARD_BLOCK_NAMES } from './types.js';
+import { CARD_BLOCK_NAMES, DEFAULT_TENANT } from './types.js';
 import { redactSecrets } from './redact.js';
 import { readEnv } from './config/settings.js';
 
@@ -81,8 +81,8 @@ export interface Neo4jLayer {
     linkSignal(episodicId: string, signal: Signal): Promise<void>;
   };
   query: {
-    byScope(scope: { entities?: string[]; tags?: string[]; limit: number; asOf?: string }): Promise<SemanticNode[]>;
-    byVector(embedding: number[], limit: number): Promise<Array<SemanticNode & { score: number }>>;
+    byScope(scope: { entities?: string[]; tags?: string[]; limit: number; asOf?: string; tenantId?: string }): Promise<SemanticNode[]>;
+    byVector(embedding: number[], limit: number, tenantId?: string): Promise<Array<SemanticNode & { score: number }>>;
     /** Graph-structural retrieval: expand from seed entities via ABOUT and SAME_EPISODE edges (optional) */
     expandByGraph?(entityNames: string[], depth?: number, maxPerHop?: number, asOf?: string): Promise<SemanticNode[]>;
   };
@@ -231,8 +231,9 @@ export class AMPService {
         tags: scope.tags,
         limit: 50,
         asOf,
+        tenantId: scope.tenantId,
       }),
-      this._vectorSearch(scope.task, 20),
+      this._vectorSearch(scope.task, 20, scope.tenantId),
     ]);
 
     const factsPromise: Promise<FactNode[][]> =
@@ -425,6 +426,7 @@ export class AMPService {
       if (input.tags) return input.tags;
       return projectInfo.tag ? [projectInfo.tag] : undefined;
     })();
+    const tenantId = (input.tenantId && input.tenantId.trim()) || DEFAULT_TENANT;
     const node: EpisodicNode = {
       id,
       session_id: input.session_id,
@@ -435,6 +437,7 @@ export class AMPService {
       signals: input.signals,
       embedding,
       created_at: new Date().toISOString(),
+      tenant_id: tenantId,
       ...(scope !== undefined && { scope }),
       ...(tags !== undefined && { tags }),
     };
@@ -687,6 +690,7 @@ export class AMPService {
   private async _vectorSearch(
     text: string,
     limit: number,
+    tenantId?: string,
   ): Promise<Array<SemanticNode & { score: number }>> {
     // Skip vector search when embeddings are unavailable (no API key): querying
     // the index with zero vectors yields uniform cosine scores and arbitrary
@@ -694,7 +698,7 @@ export class AMPService {
     if (this.embedding.available === false) return [];
     try {
       const emb = await this._getEmbedding(text);
-      return await this.neo4j.query.byVector(emb, limit);
+      return await this.neo4j.query.byVector(emb, limit, tenantId);
     } catch (err: unknown) {
       console.error("[service] Suppressed error:", err);
       return [];

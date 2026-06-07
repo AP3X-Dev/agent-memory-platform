@@ -2,6 +2,7 @@
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@memberry/core';
 import { activeRelationshipFilter } from './temporal-edges.js';
+import { tenantWhere, resolveTenant, isDefaultTenant, TENANT_PARAM } from './tenant.js';
 
 export interface QueryScope {
   entities?: string[];
@@ -9,6 +10,8 @@ export interface QueryScope {
   limit: number;
   /** ISO timestamp — when provided, only traverse relationships active at this time */
   asOf?: string;
+  /** Tenant to scope results to (defaults to the single default tenant). */
+  tenantId?: string;
 }
 
 // ─── Cypher read-only validation ─────────────────────────────────────────────
@@ -165,10 +168,12 @@ export class ScopedQuery {
     try {
       // Build query that handles entities and/or tags with DISTINCT results
       let cypher: string;
-      const params: Record<string, unknown> = { limit: neo4j.int(limit) };
+      const tenantId = resolveTenant(scope.tenantId);
+      const params: Record<string, unknown> = { limit: neo4j.int(limit), [TENANT_PARAM]: tenantId };
       if (asOf) params.asOf = asOf;
 
       const relFilter = activeRelationshipFilter('r', asOf ? 'asOf' : undefined);
+      const tFilter = tenantWhere('s', tenantId); // mandatory tenant isolation
 
       if (entities.length > 0 && tags.length > 0) {
         params.entities = entities;
@@ -176,7 +181,7 @@ export class ScopedQuery {
         cypher = `
           MATCH (s:Semantic)-[r:ABOUT]->(e:Entity)
           WHERE e.name IN $entities AND ANY(t IN $tags WHERE t IN s.tags)
-            AND ${relFilter}
+            AND ${relFilter} AND ${tFilter}
           RETURN DISTINCT s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
@@ -185,7 +190,7 @@ export class ScopedQuery {
         cypher = `
           MATCH (s:Semantic)-[r:ABOUT]->(e:Entity)
           WHERE e.name IN $entities
-            AND ${relFilter}
+            AND ${relFilter} AND ${tFilter}
           RETURN DISTINCT s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
@@ -193,14 +198,15 @@ export class ScopedQuery {
         params.tags = tags;
         cypher = `
           MATCH (s:Semantic)
-          WHERE ANY(t IN $tags WHERE t IN s.tags)
+          WHERE ANY(t IN $tags WHERE t IN s.tags) AND ${tFilter}
           RETURN DISTINCT s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
       } else {
-        // No filters — return most-confident semantics
+        // No filters — return most-confident semantics (still tenant-scoped)
         cypher = `
           MATCH (s:Semantic)
+          WHERE ${tFilter}
           RETURN s
           ORDER BY s.confidence DESC, s.updated_at DESC
           LIMIT $limit`;
@@ -216,14 +222,22 @@ export class ScopedQuery {
   async byVector(
     embedding: number[],
     limit: number,
+    tenantId?: string,
   ): Promise<Array<SemanticNode & { score: number }>> {
     const session = this.driver.session();
     try {
+      const tenant = resolveTenant(tenantId);
+      // The vector index returns the K nearest BEFORE filtering, so for a
+      // non-default tenant we over-fetch and then tenant-filter, otherwise a
+      // tenant could be starved by another tenant's nearer neighbours.
+      const fetch = isDefaultTenant(tenant) ? limit : Math.min(limit * 5, 200);
       const result = await session.run(
-        `CALL db.index.vector.queryNodes('semantic_embedding', $limit, $embedding)
+        `CALL db.index.vector.queryNodes('semantic_embedding', $fetch, $embedding)
          YIELD node, score
-         RETURN node, score`,
-        { limit: neo4j.int(limit), embedding },
+         WHERE ${tenantWhere('node', tenant)}
+         RETURN node, score
+         LIMIT $limit`,
+        { fetch: neo4j.int(fetch), limit: neo4j.int(limit), embedding, [TENANT_PARAM]: tenant },
       );
       return result.records.map((r) => ({
         ...mapSemanticNode(r.get('node').properties),

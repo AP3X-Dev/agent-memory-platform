@@ -20,7 +20,8 @@ export class EpisodicStore {
           created_at: $created_at,
           ttl: $ttl,
           scope: $scope,
-          tags: $tags
+          tags: $tags,
+          tenant_id: $tenant_id
         }) RETURN e.id AS id`,
         {
           id: node.id,
@@ -33,6 +34,7 @@ export class EpisodicStore {
           ttl: node.ttl ?? null,
           scope: node.scope ?? null,
           tags: node.tags ?? [],
+          tenant_id: node.tenant_id ?? null,
         },
       );
 

@@ -163,6 +163,30 @@ describe('AMPService durable extraction', () => {
   });
 });
 
+describe('AMPService tenant isolation (wiring)', () => {
+  it('stamps the episode with the tenant on write (defaults to "default")', async () => {
+    const create = vi.fn().mockResolvedValue('ep-1');
+    const svcDefault = new AMPService(makeRedis(), makeNeo4j(create), availableEmbedding(), makeConfig());
+    await svcDefault.store(baseInput());
+    expect((create.mock.calls[0][0] as EpisodicNode).tenant_id).toBe('default');
+
+    const create2 = vi.fn().mockResolvedValue('ep-2');
+    const svcAcme = new AMPService(makeRedis(), makeNeo4j(create2), availableEmbedding(), makeConfig());
+    await svcAcme.store(baseInput({ tenantId: 'acme' }));
+    expect((create2.mock.calls[0][0] as EpisodicNode).tenant_id).toBe('acme');
+  });
+
+  it('passes the tenant into both scoped and vector retrieval on load', async () => {
+    const byScope = vi.fn().mockResolvedValue([]);
+    const neo4j = makeNeo4j(undefined, byScope);
+    const svc = new AMPService(makeRedis(), neo4j, availableEmbedding(), makeConfig());
+    await svc.load({ task: 'x', tags: ['project:test'], max_tokens: 2000, tenantId: 'acme' });
+    expect(byScope.mock.calls[0][0].tenantId).toBe('acme');
+    // byVector(embedding, limit, tenantId) — tenant is the 3rd arg
+    expect((neo4j.query.byVector as any).mock.calls[0][2]).toBe('acme');
+  });
+});
+
 describe('AMPService project scope isolation', () => {
   it('propagates the project tag to the scoped query', async () => {
     const byScope = vi.fn().mockResolvedValue([]);
