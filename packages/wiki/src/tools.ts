@@ -27,12 +27,33 @@ export interface IEditReconciler {
   reconcile(input: ReconcileInput): Promise<ReconcileResult>;
 }
 
-// ─── Injected instances ───────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The wiki tool layer depends on a single typed container of services rather than
+// a scatter of module-level singletons. A process-default container backs the
+// legacy setWikiServiceInstances() injection point, while buildWikiToolHandlers()
+// and registerWikiTools() also accept an explicit container — the seam that makes
+// per-session / multi-tenant service isolation possible without process globals.
 
-let wikiCompiler: IWikiCompiler | null = null;
-let ingestionService: IIngestionService | null = null;
-let wikiLinter: IWikiLinter | null = null;
-let editReconciler: IEditReconciler | null = null;
+export interface WikiServiceContainer {
+  wikiCompiler: IWikiCompiler | null;
+  ingestionService: IIngestionService | null;
+  wikiLinter: IWikiLinter | null;
+  editReconciler: IEditReconciler | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createWikiContainer(partial: Partial<WikiServiceContainer> = {}): WikiServiceContainer {
+  return {
+    wikiCompiler: partial.wikiCompiler ?? null,
+    ingestionService: partial.ingestionService ?? null,
+    wikiLinter: partial.wikiLinter ?? null,
+    editReconciler: partial.editReconciler ?? null,
+  };
+}
+
+/** Process-default container, populated by setWikiServiceInstances() at bootstrap. */
+const defaultContainer: WikiServiceContainer = createWikiContainer();
 
 export function setWikiServiceInstances(services: {
   wikiCompiler: IWikiCompiler;
@@ -40,10 +61,12 @@ export function setWikiServiceInstances(services: {
   wikiLinter: IWikiLinter;
   editReconciler?: IEditReconciler;
 }): void {
-  wikiCompiler = services.wikiCompiler;
-  ingestionService = services.ingestionService;
-  wikiLinter = services.wikiLinter;
-  editReconciler = services.editReconciler ?? null;
+  // Full reset of the default container (a service omitted from `services` is
+  // cleared). Mirrors @memberry/mcp setServiceInstances() reset semantics.
+  defaultContainer.wikiCompiler = services.wikiCompiler;
+  defaultContainer.ingestionService = services.ingestionService;
+  defaultContainer.wikiLinter = services.wikiLinter;
+  defaultContainer.editReconciler = services.editReconciler ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
@@ -187,7 +210,11 @@ export type WikiToolHandlers = {
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 };
 
-export function buildWikiToolHandlers(): WikiToolHandlers {
+export function buildWikiToolHandlers(container: WikiServiceContainer = defaultContainer): WikiToolHandlers {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call to buildWikiToolHandlers can now be bound to a different container.
+  const { wikiCompiler, ingestionService, wikiLinter, editReconciler } = container;
   return {
     async berry_compile(args) {
       if (!wikiCompiler) throw new Error('WikiCompiler not initialised');
@@ -314,8 +341,8 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerWikiTools(server: McpServer): RegisteredTool[] {
-  const handlers = buildWikiToolHandlers();
+export function registerWikiTools(server: McpServer, container: WikiServiceContainer = defaultContainer): RegisteredTool[] {
+  const handlers = buildWikiToolHandlers(container);
   const handles: RegisteredTool[] = [];
 
   handles.push(server.tool(

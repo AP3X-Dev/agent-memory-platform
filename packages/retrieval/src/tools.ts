@@ -46,17 +46,39 @@ export interface IFeedbackTracker {
   }): Promise<void>;
 }
 
-// ─── Injected instances ──────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The tool layer depends on a single typed container of services rather than a
+// scatter of module-level singletons. A process-default container backs the
+// legacy setRetrievalServiceInstances() injection point, while
+// registerRetrievalTools() also accepts an explicit container — the seam that
+// makes per-session / multi-tenant service isolation possible without process
+// globals.
 
-let assembler: IUnifiedAssembler | null = null;
-let feedbackTracker: IFeedbackTracker | null = null;
+export interface RetrievalServiceContainer {
+  assembler: IUnifiedAssembler | null;
+  feedbackTracker: IFeedbackTracker | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createRetrievalContainer(partial: Partial<RetrievalServiceContainer> = {}): RetrievalServiceContainer {
+  return {
+    assembler: partial.assembler ?? null,
+    feedbackTracker: partial.feedbackTracker ?? null,
+  };
+}
+
+/** Process-default container, populated by setRetrievalServiceInstances() at bootstrap. */
+const defaultContainer: RetrievalServiceContainer = createRetrievalContainer();
 
 export function setRetrievalServiceInstances(services: {
   assembler: IUnifiedAssembler;
   feedbackTracker: IFeedbackTracker;
 }): void {
-  assembler = services.assembler;
-  feedbackTracker = services.feedbackTracker;
+  // Full reset of the default container (a service omitted from `services` is
+  // cleared), mirroring packages/mcp/src/tools.ts setServiceInstances().
+  defaultContainer.assembler = services.assembler ?? null;
+  defaultContainer.feedbackTracker = services.feedbackTracker ?? null;
 }
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
@@ -76,7 +98,14 @@ export interface RetrievalRegisteredTools {
   tier2: RegisteredTool[];
 }
 
-export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTools {
+export function registerRetrievalTools(
+  server: McpServer,
+  container: RetrievalServiceContainer = defaultContainer,
+): RetrievalRegisteredTools {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call to registerRetrievalTools can now be bound to a different container.
+  const { assembler, feedbackTracker } = container;
   const tier1: RegisteredTool[] = [];
   const tier2: RegisteredTool[] = [];
 

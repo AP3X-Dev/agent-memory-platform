@@ -52,5 +52,5 @@ export { CodeWatcher, extractFilePaths } from './watcher.js';
 export type { CodeWatcherOptions, IFileIndexer, ISymbolDeleter } from './watcher.js';
 
 // MCP tools
-export { registerCodeTools, setCodeServiceInstances, CODE_TOOL_NAMES } from './tools.js';
-export type { ICodeIndexer, ICodeSearch, ISymbolStore } from './tools.js';
+export { registerCodeTools, setCodeServiceInstances, createCodeContainer, CODE_TOOL_NAMES } from './tools.js';
+export type { ICodeIndexer, ICodeSearch, ISymbolStore, CodeServiceContainer } from './tools.js';

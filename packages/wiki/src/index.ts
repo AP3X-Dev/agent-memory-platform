@@ -89,6 +89,6 @@ export {
 } from './renderers.js';
 
 // MCP tools
-export { registerWikiTools, setWikiServiceInstances, WIKI_TOOL_NAMES, validatePath, getAllowedBaseDir, buildWikiToolHandlers } from './tools.js';
-export type { WikiToolHandlers } from './tools.js';
+export { registerWikiTools, setWikiServiceInstances, WIKI_TOOL_NAMES, validatePath, getAllowedBaseDir, buildWikiToolHandlers, createWikiContainer } from './tools.js';
+export type { WikiToolHandlers, WikiServiceContainer } from './tools.js';
 export type { IWikiCompiler, IIngestionService, IWikiLinter } from './tools.js';

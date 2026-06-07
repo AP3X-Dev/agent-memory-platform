@@ -27,7 +27,7 @@ export { ArchContextBuilder } from './context.js';
 export { initArchSchema } from './schema.js';
 
 // MCP tools
-export { registerArchTools, setArchServiceInstances, ARCH_TOOL_NAMES } from './tools.js';
+export { registerArchTools, setArchServiceInstances, createArchContainer, ARCH_TOOL_NAMES } from './tools.js';
 export type {
   IArchEntityStore,
   IAspectStore,
@@ -35,4 +35,5 @@ export type {
   IImpactAnalyzer,
   IDriftDetector,
   IArchContextBuilder,
+  ArchServiceContainer,
 } from './tools.js';

@@ -56,14 +56,37 @@ export interface IResearchConsolidation {
   }>;
 }
 
-// ─── Injected instances ──────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The research tool layer depends on a single typed container of services rather
+// than a scatter of module-level singletons. A process-default container backs
+// the legacy setResearchServiceInstances() injection point, while
+// registerResearchTools() also accepts an explicit container — the seam that
+// makes per-session / multi-tenant service isolation possible without globals.
 
-let experimentStore: IExperimentStore | null = null;
-let campaignStore: ICampaignStore | null = null;
-let contextBuilder: IResearchContextBuilder | null = null;
-let hypothesisNav: IHypothesisNavigator | null = null;
-let contradictionDetector: IContradictionDetector | null = null;
-let researchConsolidation: IResearchConsolidation | null = null;
+export interface ResearchServiceContainer {
+  experimentStore: IExperimentStore | null;
+  campaignStore: ICampaignStore | null;
+  contextBuilder: IResearchContextBuilder | null;
+  hypothesisNav: IHypothesisNavigator | null;
+  contradictionDetector: IContradictionDetector | null;
+  researchConsolidation: IResearchConsolidation | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createResearchContainer(partial: Partial<ResearchServiceContainer> = {}): ResearchServiceContainer {
+  return {
+    experimentStore: partial.experimentStore ?? null,
+    campaignStore: partial.campaignStore ?? null,
+    contextBuilder: partial.contextBuilder ?? null,
+    hypothesisNav: partial.hypothesisNav ?? null,
+    contradictionDetector: partial.contradictionDetector ?? null,
+    researchConsolidation: partial.researchConsolidation ?? null,
+  };
+}
+
+/** Process-default container, populated by setResearchServiceInstances() at bootstrap. */
+const defaultContainer: ResearchServiceContainer = createResearchContainer();
 
 export function setResearchServiceInstances(services: {
   experimentStore: IExperimentStore;
@@ -73,12 +96,12 @@ export function setResearchServiceInstances(services: {
   contradictionDetector: IContradictionDetector;
   researchConsolidation: IResearchConsolidation;
 }): void {
-  experimentStore = services.experimentStore;
-  campaignStore = services.campaignStore;
-  contextBuilder = services.contextBuilder;
-  hypothesisNav = services.hypothesisNavigator;
-  contradictionDetector = services.contradictionDetector;
-  researchConsolidation = services.researchConsolidation;
+  defaultContainer.experimentStore = services.experimentStore;
+  defaultContainer.campaignStore = services.campaignStore;
+  defaultContainer.contextBuilder = services.contextBuilder;
+  defaultContainer.hypothesisNav = services.hypothesisNavigator;
+  defaultContainer.contradictionDetector = services.contradictionDetector;
+  defaultContainer.researchConsolidation = services.researchConsolidation;
 }
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
@@ -155,7 +178,8 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerResearchTools(server: McpServer): RegisteredTool[] {
+export function registerResearchTools(server: McpServer, container: ResearchServiceContainer = defaultContainer): RegisteredTool[] {
+  const { experimentStore, campaignStore, contextBuilder, hypothesisNav, contradictionDetector, researchConsolidation } = container;
   const handles: RegisteredTool[] = [];
 
   // ─── berry_research_init ──────────────────────────────────────────────────

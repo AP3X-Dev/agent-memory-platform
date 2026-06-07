@@ -64,10 +64,12 @@ export {
   registerGraphTools,
   setGraphServiceInstances,
   graphServicesReady,
+  createGraphContainer,
 } from './tools.js';
 export type {
   IGraphSnapshotService,
   IGraphReportService,
   IGraphExportService,
   IPrImpactService,
+  GraphServiceContainer,
 } from './tools.js';

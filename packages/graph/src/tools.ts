@@ -1,10 +1,12 @@
 /**
  * @memberry/graph MCP tool registration.
  *
- * Follows the established satellite-package pattern (see @memberry/wiki tools.ts):
- *  - services injected via a module-level `setGraphServiceInstances()` singleton
- *    called from bootstrap.ts (NOT passed as registration args);
- *  - `registerGraphTools(server)` takes ONLY the server and reads the singletons;
+ * Follows the established service-container DI pattern (see @memberry/mcp tools.ts):
+ *  - services live in a typed `GraphServiceContainer`; a process-default container
+ *    backs the legacy `setGraphServiceInstances()` injection point called from
+ *    bootstrap.ts;
+ *  - `registerGraphTools(server, container?)` defaults to the process container but
+ *    accepts an explicit one for per-session / multi-tenant isolation;
  *  - every tool registers with a NON-EMPTY `ToolAnnotations` — passing `{}` makes
  *    the MCP SDK misparse the handler slot ("typedHandler is not a function").
  *
@@ -53,10 +55,33 @@ export interface IPrImpactService {
   conflicts(input: PrConflictsInput): Promise<PrConflictsResult>;
 }
 
-let snapshotService: IGraphSnapshotService | null = null;
-let reportService: IGraphReportService | null = null;
-let exportService: IGraphExportService | null = null;
-let prImpactService: IPrImpactService | null = null;
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The tool layer depends on a single typed container of services rather than a
+// scatter of module-level singletons. A process-default container backs the
+// legacy setGraphServiceInstances() injection point, while registerGraphTools()
+// also accepts an explicit container — the seam that makes per-session /
+// multi-tenant service isolation possible without process globals.
+
+export interface GraphServiceContainer {
+  snapshotService: IGraphSnapshotService | null;
+  reportService: IGraphReportService | null;
+  exportService: IGraphExportService | null;
+  prImpactService: IPrImpactService | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createGraphContainer(partial: Partial<GraphServiceContainer> = {}): GraphServiceContainer {
+  return {
+    snapshotService: partial.snapshotService ?? null,
+    reportService: partial.reportService ?? null,
+    exportService: partial.exportService ?? null,
+    prImpactService: partial.prImpactService ?? null,
+  };
+}
+
+/** Process-default container, populated by setGraphServiceInstances() at bootstrap. */
+const defaultContainer: GraphServiceContainer = createGraphContainer();
 
 export function setGraphServiceInstances(services: {
   snapshotService?: IGraphSnapshotService;
@@ -64,10 +89,12 @@ export function setGraphServiceInstances(services: {
   exportService: IGraphExportService;
   prImpactService?: IPrImpactService;
 }): void {
-  snapshotService = services.snapshotService ?? null;
-  reportService = services.reportService;
-  exportService = services.exportService;
-  prImpactService = services.prImpactService ?? null;
+  // Assign into the process-default container, preserving the prior param→field
+  // mapping and optionality (snapshot/prImpact default to null when omitted).
+  defaultContainer.snapshotService = services.snapshotService ?? null;
+  defaultContainer.reportService = services.reportService;
+  defaultContainer.exportService = services.exportService;
+  defaultContainer.prImpactService = services.prImpactService ?? null;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -151,7 +178,14 @@ const AmpPrConflictsSchema = {
 
 // ─── Registration ────────────────────────────────────────────────────────────
 
-export function registerGraphTools(server: McpServer): RegisteredTool[] {
+export function registerGraphTools(
+  server: McpServer,
+  container: GraphServiceContainer = defaultContainer,
+): RegisteredTool[] {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call can now be bound to a different container.
+  const { snapshotService, reportService, exportService, prImpactService } = container;
   const handles: RegisteredTool[] = [];
 
   handles.push(
@@ -256,5 +290,9 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
 
 /** Exposed for tests/diagnostics: whether services have been injected. */
 export function graphServicesReady(): boolean {
-  return reportService != null && snapshotService != null && exportService != null;
+  return (
+    defaultContainer.reportService != null &&
+    defaultContainer.snapshotService != null &&
+    defaultContainer.exportService != null
+  );
 }

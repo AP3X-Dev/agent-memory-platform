@@ -45,14 +45,37 @@ export interface IArchContextBuilder {
   renderMarkdown(entityName: string, maxTokens?: number, asOf?: string, projectName?: string): Promise<string>;
 }
 
-// ─── Injected instances ──────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The tool layer depends on a single typed container of services rather than a
+// scatter of module-level singletons. A process-default container backs the
+// legacy setArchServiceInstances() injection point, while registerArchTools()
+// also accepts an explicit container — the seam that makes per-session /
+// multi-tenant service isolation possible without process globals.
 
-let archEntityStore: IArchEntityStore | null = null;
-let aspectStore: IAspectStore | null = null;
-let relationStore: IStructuralRelationStore | null = null;
-let impactAnalyzer: IImpactAnalyzer | null = null;
-let driftDetector: IDriftDetector | null = null;
-let archContextBuilder: IArchContextBuilder | null = null;
+export interface ArchServiceContainer {
+  archEntityStore: IArchEntityStore | null;
+  aspectStore: IAspectStore | null;
+  relationStore: IStructuralRelationStore | null;
+  impactAnalyzer: IImpactAnalyzer | null;
+  driftDetector: IDriftDetector | null;
+  archContextBuilder: IArchContextBuilder | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createArchContainer(partial: Partial<ArchServiceContainer> = {}): ArchServiceContainer {
+  return {
+    archEntityStore: partial.archEntityStore ?? null,
+    aspectStore: partial.aspectStore ?? null,
+    relationStore: partial.relationStore ?? null,
+    impactAnalyzer: partial.impactAnalyzer ?? null,
+    driftDetector: partial.driftDetector ?? null,
+    archContextBuilder: partial.archContextBuilder ?? null,
+  };
+}
+
+/** Process-default container, populated by setArchServiceInstances() at bootstrap. */
+const defaultContainer: ArchServiceContainer = createArchContainer();
 
 export function setArchServiceInstances(services: {
   archEntityStore: IArchEntityStore;
@@ -62,12 +85,14 @@ export function setArchServiceInstances(services: {
   driftDetector: IDriftDetector;
   archContextBuilder: IArchContextBuilder;
 }): void {
-  archEntityStore = services.archEntityStore;
-  aspectStore = services.aspectStore;
-  relationStore = services.relationStore;
-  impactAnalyzer = services.impactAnalyzer;
-  driftDetector = services.driftDetector;
-  archContextBuilder = services.archContextBuilder;
+  // Full reset of the default container — a service omitted from `services` is
+  // cleared (mirrors @memberry/mcp setServiceInstances reset semantics).
+  defaultContainer.archEntityStore = services.archEntityStore;
+  defaultContainer.aspectStore = services.aspectStore;
+  defaultContainer.relationStore = services.relationStore;
+  defaultContainer.impactAnalyzer = services.impactAnalyzer;
+  defaultContainer.driftDetector = services.driftDetector;
+  defaultContainer.archContextBuilder = services.archContextBuilder;
 }
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
@@ -89,7 +114,22 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerArchTools(server: McpServer): RegisteredTool[] {
+export function registerArchTools(
+  server: McpServer,
+  container: ArchServiceContainer = defaultContainer,
+): RegisteredTool[] {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call can now be bound to a different container.
+  const {
+    archEntityStore,
+    aspectStore,
+    relationStore,
+    impactAnalyzer,
+    driftDetector,
+    archContextBuilder,
+  } = container;
+
   const handles: RegisteredTool[] = [];
 
   // ─── berry_arch_register ──────────────────────────────────────────────────

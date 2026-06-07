@@ -33,7 +33,7 @@ export { ResearchConsolidation } from './consolidation.js';
 export { initResearchSchema, verifyResearchSchema } from './schema.js';
 
 // MCP tools
-export { registerResearchTools, setResearchServiceInstances, RESEARCH_TOOL_NAMES } from './tools.js';
+export { registerResearchTools, setResearchServiceInstances, createResearchContainer, RESEARCH_TOOL_NAMES } from './tools.js';
 export type {
   IExperimentStore,
   ICampaignStore,
@@ -41,4 +41,5 @@ export type {
   IHypothesisNavigator,
   IContradictionDetector,
   IResearchConsolidation,
+  ResearchServiceContainer,
 } from './tools.js';

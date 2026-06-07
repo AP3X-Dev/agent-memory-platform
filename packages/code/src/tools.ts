@@ -37,12 +37,33 @@ export interface ISymbolStore {
   getInheritanceChain(symbolName: string, options?: SymbolDependencyOptions): Promise<SymbolNode[]>;
 }
 
-// ─── Injected instances ──────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The tool layer depends on a single typed container of services rather than a
+// scatter of module-level singletons. A process-default container backs the
+// legacy setCodeServiceInstances() injection point, while registerCodeTools()
+// also accepts an explicit container — the seam that makes per-session /
+// multi-tenant service isolation possible without process globals.
 
-let codeIndexer: ICodeIndexer | null = null;
-let codeSearch: ICodeSearch | null = null;
-let symbolStore: ISymbolStore | null = null;
-let codeWatcher: CodeWatcher | null = null;
+export interface CodeServiceContainer {
+  codeIndexer: ICodeIndexer | null;
+  codeSearch: ICodeSearch | null;
+  symbolStore: ISymbolStore | null;
+  codeWatcher: CodeWatcher | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createCodeContainer(partial: Partial<CodeServiceContainer> = {}): CodeServiceContainer {
+  return {
+    codeIndexer: partial.codeIndexer ?? null,
+    codeSearch: partial.codeSearch ?? null,
+    symbolStore: partial.symbolStore ?? null,
+    codeWatcher: partial.codeWatcher ?? null,
+  };
+}
+
+/** Process-default container, populated by setCodeServiceInstances() at bootstrap. */
+const defaultContainer: CodeServiceContainer = createCodeContainer();
 
 export function setCodeServiceInstances(services: {
   codeIndexer: ICodeIndexer;
@@ -50,10 +71,10 @@ export function setCodeServiceInstances(services: {
   symbolStore: ISymbolStore;
   codeWatcher?: CodeWatcher;
 }): void {
-  codeIndexer = services.codeIndexer;
-  codeSearch = services.codeSearch;
-  symbolStore = services.symbolStore;
-  if (services.codeWatcher) codeWatcher = services.codeWatcher;
+  defaultContainer.codeIndexer = services.codeIndexer;
+  defaultContainer.codeSearch = services.codeSearch;
+  defaultContainer.symbolStore = services.symbolStore;
+  if (services.codeWatcher) defaultContainer.codeWatcher = services.codeWatcher;
 }
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
@@ -74,7 +95,14 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 
 // ─── Tool registration ────────────────────────────────────────────────────────
 
-export function registerCodeTools(server: McpServer): RegisteredTool[] {
+export function registerCodeTools(
+  server: McpServer,
+  container: CodeServiceContainer = defaultContainer,
+): RegisteredTool[] {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call to registerCodeTools can now be bound to a different container.
+  const { codeIndexer, codeSearch, symbolStore, codeWatcher } = container;
   const handles: RegisteredTool[] = [];
 
   // ─── berry_code_index ─────────────────────────────────────────────────────
