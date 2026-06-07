@@ -323,13 +323,16 @@ function renderOpsGraph(projects: PortalProject[]): string {
     `<line class="edge" x1="${hub.x}" y1="${hub.y}" x2="${n.x.toFixed(1)}" y2="${n.y.toFixed(1)}" />`,
   ).join('');
 
-  const renderNode = (n: typeof hub) => `
+  const renderNode = (n: typeof hub) => {
+    const diameter = n.size * 2;
+    return `
     <g class="node" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
       <a href="${escapeHtml(n.href)}">
-        <text x="0" y="0" font-size="${n.size * 2}" text-anchor="middle" dominant-baseline="central" style="user-select:none;">🔵</text>
+        <image class="node-logo" href="/assets/memberry-logo.png" x="${-n.size}" y="${-n.size}" width="${diameter}" height="${diameter}" preserveAspectRatio="xMidYMid meet" />
         <text class="node-label" x="0" y="${n.size + 14}" text-anchor="middle">${escapeHtml(n.label)}</text>
       </a>
     </g>`;
+  };
 
   return `
   <svg id="opsGraphSvg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" data-vb-w="${W}" data-vb-h="${H}">
@@ -1012,8 +1015,14 @@ a { color: var(--fg); text-decoration: none; }
 .graph-wrap[open] > summary .caret { transform: rotate(45deg); margin-bottom: 0; margin-top: 4px; }
 .graph-wrap > summary:hover .caret { border-color: var(--accent); }
 .graph { position: relative; }
-.graph svg { display: block; width: 100%; height: 520px; touch-action: none; cursor: grab; }
+.graph svg { display: block; width: 100%; height: 676px; touch-action: none; cursor: grab; }
 .graph svg.panning { cursor: grabbing; }
+.graph .node-logo {
+  filter: drop-shadow(0 0 6px #9b35ff66);
+}
+.graph .node:hover .node-logo {
+  filter: drop-shadow(0 0 10px #9b35ffaa);
+}
 .graph .node-label { fill: #a0a0a0; font-size: 10px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
 .graph .node:hover .node-label { fill: var(--fg); }
 .graph .edge { stroke: #2a2a2a; stroke-width: 0.7; opacity: 0.55; }

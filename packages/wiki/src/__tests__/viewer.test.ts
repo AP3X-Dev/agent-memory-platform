@@ -130,6 +130,8 @@ describe('WikiViewer', () => {
     expect(html).toContain('.hero-aurora {');
     expect(html).toContain('--hero-legacy-bg:');
     expect(html).toContain('--hero-left-scrim:');
+    expect(html).toContain('.graph .node-logo');
+    expect(html).toContain('.graph svg { display: block; width: 100%; height: 676px;');
 
     const logo = await fetch(`http://localhost:${TEST_PORT}/assets/memberry-logo.png`);
     expect(logo.status).toBe(200);
@@ -140,6 +142,51 @@ describe('WikiViewer', () => {
     const logoHead = await fetch(`http://localhost:${TEST_PORT}/assets/memberry-logo.png`, { method: 'HEAD' });
     expect(logoHead.status).toBe(200);
     expect(logoHead.headers.get('content-type')).toContain('image/png');
+  });
+
+  it('renders ops graph nodes with the MemBerry logo asset', async () => {
+    const opsDir = join(tmpdir(), `amp-wiki-ops-graph-test-${Date.now()}`);
+    const opsPort = TEST_PORT + 1;
+    let opsServer: Server | null = null;
+
+    try {
+      await mkdir(opsDir, { recursive: true });
+      await writeFile(
+        join(opsDir, '_index.md'),
+        [
+          '# MemBerry Portal',
+          '',
+          '**2** projects · **15** entities · **32** semantic facts · **5** session entries · **4** sources',
+          '',
+          '| Project | Entities | Facts | Sessions | Last Activity |',
+          '| --- | ---: | ---: | ---: | --- |',
+          '| [[projects/alpha/_index|Alpha]] | 10 | 20 | 3 | 2026-06-07 |',
+          '| [[projects/beta/_index|Beta]] | 5 | 12 | 2 | 2026-06-06 |',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      opsServer = await startWikiViewer({
+        port: opsPort,
+        wiki_dir: opsDir,
+        project_tag: 'project:test',
+      });
+
+      const res = await fetch(`http://localhost:${opsPort}/wiki/_index`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+      expect(html).toContain('<image class="node-logo" href="/assets/memberry-logo.png"');
+      expect(html).toContain('width="56" height="56"');
+      expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
+      expect(html).not.toContain('dominant-baseline="central" style="user-select:none;"');
+    } finally {
+      if (opsServer) {
+        await new Promise<void>((resolve) => opsServer!.close(() => resolve()));
+      }
+      resetViewerCache();
+      await rm(opsDir, { recursive: true, force: true }).catch(() => {});
+    }
   });
 
   it('resolves [[wikilinks]] to HTML links', async () => {
