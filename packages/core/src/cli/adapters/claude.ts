@@ -18,7 +18,7 @@ import { loadSettings, resolveNumber } from '../../config/settings.js';
 // per-turn budget. Precedence: env > settings file (wiki UI) > default.
 function sessionStartTimeoutMs(): number {
   const { hooks } = loadSettings();
-  const resolved = resolveNumber('AMP_HOOK_SESSION_TIMEOUT_MS', hooks.sessionTimeoutMs, 8000).value;
+  const resolved = resolveNumber('MEMBERRY_HOOK_SESSION_TIMEOUT_MS', hooks.sessionTimeoutMs, 8000).value;
   return Math.max(hookTimeoutMs(), resolved);
 }
 
@@ -67,7 +67,7 @@ function inject(event: ClaudeHookEvent, context: string | null): Record<string, 
 
 function turnTokenBudget(): number {
   const { hooks } = loadSettings();
-  return Math.max(200, resolveNumber('AMP_HOOK_TURN_TOKENS', hooks.turnTokens, DEFAULT_TURN_TOKENS).value);
+  return Math.max(200, resolveNumber('MEMBERRY_HOOK_TURN_TOKENS', hooks.turnTokens, DEFAULT_TURN_TOKENS).value);
 }
 
 // ─── SessionStart ────────────────────────────────────────────────────────────

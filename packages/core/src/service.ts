@@ -20,6 +20,7 @@ import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
 import { extractFacts, isTransientError } from './extract.js';
 import { CARD_BLOCK_NAMES } from './types.js';
+import { readEnv } from './config/settings.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
 
@@ -122,7 +123,7 @@ export class AMPService {
     const rawTag = explicitProjectTag ?? (prefixMatch ? `project:${prefixMatch[1]}` : null);
 
     if (!rawTag) {
-      if (process.env['AMP_REQUIRE_PROJECT_TAG'] === 'false') return { tag: '', isNew: false };
+      if (readEnv('MEMBERRY_REQUIRE_PROJECT_TAG') === 'false') return { tag: '', isNew: false };
       throw new Error(
         'berry_store: a project tag is required. Pass tags: ["project:<name>"] or prefix the task/content with [project:<name>]. ' +
         'Set AMP_REQUIRE_PROJECT_TAG=false to disable this check.',

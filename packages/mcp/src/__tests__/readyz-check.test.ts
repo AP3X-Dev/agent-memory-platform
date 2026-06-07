@@ -20,6 +20,20 @@ describe('readyz-check', () => {
     expect(options.intervalMs).toBe(100);
   });
 
+  it('prefers MEMBERRY_* env names over the legacy AMP_* fallback', () => {
+    const options = buildReadyzCheckOptions({
+      MEMBERRY_API_TOKEN: 'new-token',
+      AMP_API_TOKEN: 'legacy-token',
+      MEMBERRY_READYZ_HOST: 'new-host',
+      AMP_READYZ_HOST: 'legacy-host',
+      MCP_PORT: '3101',
+    });
+
+    // New name wins when both are present.
+    expect(options.token).toBe('new-token');
+    expect(options.url).toBe('http://new-host:3101/readyz');
+  });
+
   it('sends the bearer token and resolves when readiness returns 200', async () => {
     const fetchImpl = vi.fn(async () => new Response('{}', { status: 200 }));
 
@@ -68,7 +82,7 @@ describe('readyz-check', () => {
       timeoutMs: 1000,
       intervalMs: 100,
       fetchImpl: vi.fn(),
-    })).rejects.toThrow('AMP_API_TOKEN is required');
+    })).rejects.toThrow('MEMBERRY_API_TOKEN is required');
   });
 
   it('aborts a hung readiness request when the overall timeout expires', async () => {

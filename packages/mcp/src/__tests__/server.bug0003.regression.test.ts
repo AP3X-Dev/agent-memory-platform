@@ -11,16 +11,16 @@ const SERVER_SOURCE = fs.readFileSync(
 describe('server.ts auth regression', () => {
   it('BUG-0003: server requires authentication by default when no env vars are set', () => {
     // Before the fix, isAuthorized() returned true for all requests when
-    // AMP_API_TOKEN was unset, leaving the SSE server completely open.
+    // MEMBERRY_API_TOKEN was unset, leaving the SSE server completely open.
     // The v2 fix implements three-tier auth:
-    //   1. Use AMP_API_TOKEN if set
-    //   2. Allow unauth only with explicit AMP_ALLOW_UNAUTHENTICATED=true
+    //   1. Use MEMBERRY_API_TOKEN if set
+    //   2. Allow unauth only with explicit MEMBERRY_ALLOW_UNAUTHENTICATED=true
     //   3. Otherwise generate a random session token via randomUUID()
     // This ensures the server is authenticated by default.
 
     // Verify three-tier auth structure exists
-    expect(SERVER_SOURCE).toContain('AMP_API_TOKEN');
-    expect(SERVER_SOURCE).toContain('AMP_ALLOW_UNAUTHENTICATED');
+    expect(SERVER_SOURCE).toContain('MEMBERRY_API_TOKEN');
+    expect(SERVER_SOURCE).toContain('MEMBERRY_ALLOW_UNAUTHENTICATED');
     expect(SERVER_SOURCE).toContain('randomUUID()');
 
     // Verify isAuthorized checks Bearer token (not just returning true)

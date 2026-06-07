@@ -19,12 +19,12 @@ export interface LoadCapable {
 export const DEFAULT_HOOK_TIMEOUT_MS = 800;
 
 /**
- * Resolve the per-turn hook timeout. Precedence: AMP_HOOK_TIMEOUT_MS env >
+ * Resolve the per-turn hook timeout. Precedence: MEMBERRY_HOOK_TIMEOUT_MS env >
  * settings file (set via the wiki settings UI) > default. Clamped to a floor.
  */
 export function hookTimeoutMs(): number {
   const { hooks } = loadSettings();
-  return Math.max(50, resolveNumber('AMP_HOOK_TIMEOUT_MS', hooks.timeoutMs, DEFAULT_HOOK_TIMEOUT_MS).value);
+  return Math.max(50, resolveNumber('MEMBERRY_HOOK_TIMEOUT_MS', hooks.timeoutMs, DEFAULT_HOOK_TIMEOUT_MS).value);
 }
 
 /**

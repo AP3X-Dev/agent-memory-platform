@@ -7,6 +7,7 @@ import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { CompileInput, CompileResult, CompileV2Result, IngestInput, IngestResult, LintInput, LintResult, LintCheck } from './types.js';
 import type { ReconcileInput, ReconcileResult } from './reconcile.js';
 import { parseFrontmatter } from './reconcile.js';
+import { readEnv } from '@memberry/core';
 
 // ─── Service interfaces (injected, no concrete imports) ──────────────────────
 
@@ -115,10 +116,10 @@ const AmpLintSchema = {
 
 /**
  * Returns the allowed base directory for file access.
- * Uses AMP_INGEST_ALLOW_DIR env var if set, otherwise falls back to cwd.
+ * Uses MEMBERRY_INGEST_ALLOW_DIR env var if set, otherwise falls back to cwd.
  */
 export function getAllowedBaseDir(): string {
-  return path.resolve(process.env['AMP_INGEST_ALLOW_DIR'] ?? process.cwd());
+  return path.resolve(readEnv('MEMBERRY_INGEST_ALLOW_DIR') ?? process.cwd());
 }
 
 /**

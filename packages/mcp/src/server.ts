@@ -14,6 +14,7 @@ import { registerCodeTools, CODE_TOOL_NAMES } from '@memberry/code';
 import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@memberry/retrieval';
 import { registerWikiTools, WIKI_TOOL_NAMES } from '@memberry/wiki';
 import { registerGraphTools, GRAPH_TOOL_NAMES } from '@memberry/graph';
+import { readEnv } from '@memberry/core';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 
@@ -190,23 +191,24 @@ export function createAMPServer(): AMPMCPServer {
     }
 
     // ── Auth token resolution ────────────────────────────────────────────
-    // Priority: AMP_API_TOKEN env var → unauthenticated opt-out → generated session token
+    // Priority: MEMBERRY_API_TOKEN env var → unauthenticated opt-out → generated session token
     const allowUnauthenticated =
-      (process.env['AMP_ALLOW_UNAUTHENTICATED'] ?? '').toLowerCase() === 'true';
+      (readEnv('MEMBERRY_ALLOW_UNAUTHENTICATED') ?? '').toLowerCase() === 'true';
 
     let effectiveToken: string | null;
 
-    if (process.env['AMP_API_TOKEN']) {
-      effectiveToken = process.env['AMP_API_TOKEN'];
+    const apiToken = readEnv('MEMBERRY_API_TOKEN');
+    if (apiToken) {
+      effectiveToken = apiToken;
     } else if (allowUnauthenticated) {
       effectiveToken = null;
       console.error(
-        '[AMP] WARNING: AMP_ALLOW_UNAUTHENTICATED=true — server accepts unauthenticated requests.',
+        '[memberry] WARNING: MEMBERRY_ALLOW_UNAUTHENTICATED=true — server accepts unauthenticated requests.',
       );
     } else {
       effectiveToken = randomUUID();
       console.error(
-        `[AMP] No AMP_API_TOKEN set. Generated session token: ${effectiveToken}. Set AMP_ALLOW_UNAUTHENTICATED=true to disable auth.`,
+        `[memberry] No MEMBERRY_API_TOKEN set. Generated session token: ${effectiveToken}. Set MEMBERRY_ALLOW_UNAUTHENTICATED=true to disable auth.`,
       );
     }
 
@@ -490,7 +492,7 @@ if (isMain) {
 
       // ── Graceful shutdown ───────────────────────────────────────────────
       let shuttingDown = false;
-      const shutdownTimeoutMs = parseInt(process.env['AMP_SHUTDOWN_TIMEOUT_MS'] ?? String(DEFAULT_SHUTDOWN_TIMEOUT_MS), 10);
+      const shutdownTimeoutMs = parseInt(readEnv('MEMBERRY_SHUTDOWN_TIMEOUT_MS') ?? String(DEFAULT_SHUTDOWN_TIMEOUT_MS), 10);
 
       async function gracefulShutdown(signal: string): Promise<void> {
         if (shuttingDown) return;

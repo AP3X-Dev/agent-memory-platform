@@ -7,6 +7,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { Marked } from 'marked';
+import { readEnv } from '@memberry/core';
 import type { Driver } from 'neo4j-driver';
 import type { ViewerConfig } from './types.js';
 import { renderSettingsBody, applyHooksTuning, runHooksInstall, getSettingsData, type InstallRequest, type TuningPatch } from './settings.js';
@@ -164,9 +165,9 @@ function topBar(active: string): string {
 function footer(totalNodes: number | null = null): string {
   const nodes = totalNodes != null ? `${totalNodes} TOTAL NODES` : 'AUTO-COMPILED FROM NEO4J';
   // Optional right-side label, e.g. the public host of this wiki. Set
-  // AMP_WIKI_PUBLIC_LABEL=foo.example.com to display it. Empty by default
+  // MEMBERRY_WIKI_PUBLIC_LABEL=foo.example.com to display it. Empty by default
   // so deployments don't leak local LAN addresses.
-  const rightLabel = (process.env['AMP_WIKI_PUBLIC_LABEL'] ?? '').trim();
+  const rightLabel = (readEnv('MEMBERRY_WIKI_PUBLIC_LABEL') ?? '').trim();
   const rightSpan = rightLabel ? `<span>${escapeHtml(rightLabel)}</span>` : '';
   return `<div class="footer">
   <span>AMP WIKI · COMPILED FROM NEO4J · ${escapeHtml(nodes)}</span>

@@ -12,23 +12,39 @@ export interface ReadyzCheckOptions {
   now?: () => number;
 }
 
+/**
+ * Read from the provided env map by canonical MEMBERRY_ name, falling back to
+ * the legacy AMP_ name. Local copy of @memberry/core's readEnv that honours the
+ * injected env map (used so tests can drive a custom environment).
+ */
+function pick(env: Record<string, string | undefined>, canonical: string): string | undefined {
+  const direct = env[canonical];
+  if (direct !== undefined && direct !== '') return direct;
+  if (canonical.startsWith('MEMBERRY_')) {
+    const legacy = `AMP_${canonical.slice('MEMBERRY_'.length)}`;
+    const old = env[legacy];
+    if (old !== undefined && old !== '') return old;
+  }
+  return undefined;
+}
+
 export function buildReadyzCheckOptions(env: Record<string, string | undefined> = process.env): ReadyzCheckOptions {
-  const protocol = env['AMP_READYZ_PROTOCOL'] ?? 'http';
-  const host = env['AMP_READYZ_HOST'] ?? '127.0.0.1';
+  const protocol = pick(env, 'MEMBERRY_READYZ_PROTOCOL') ?? 'http';
+  const host = pick(env, 'MEMBERRY_READYZ_HOST') ?? '127.0.0.1';
   const port = env['MCP_PORT'] ?? env['PORT'] ?? '3101';
-  const url = env['AMP_READYZ_URL'] ?? `${protocol}://${host}:${port}/readyz`;
+  const url = pick(env, 'MEMBERRY_READYZ_URL') ?? `${protocol}://${host}:${port}/readyz`;
 
   return {
     url,
-    token: env['AMP_API_TOKEN'],
-    timeoutMs: positiveInt(env['AMP_READYZ_TIMEOUT_MS'], 15_000),
-    intervalMs: positiveInt(env['AMP_READYZ_INTERVAL_MS'], 500),
+    token: pick(env, 'MEMBERRY_API_TOKEN'),
+    timeoutMs: positiveInt(pick(env, 'MEMBERRY_READYZ_TIMEOUT_MS'), 15_000),
+    intervalMs: positiveInt(pick(env, 'MEMBERRY_READYZ_INTERVAL_MS'), 500),
   };
 }
 
 export async function waitForReadyz(options: ReadyzCheckOptions): Promise<void> {
   if (!options.token) {
-    throw new Error('AMP_API_TOKEN is required for authenticated /readyz checks');
+    throw new Error('MEMBERRY_API_TOKEN is required for authenticated /readyz checks');
   }
 
   const fetchImpl = options.fetchImpl ?? fetch;

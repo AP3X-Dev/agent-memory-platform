@@ -3,7 +3,7 @@
 
 import { DistributedLock, ProposalStore } from '@memberry/redis';
 import { initSchema, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
-import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine } from '@memberry/core';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, readEnv } from '@memberry/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -70,7 +70,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const neo4jPassword = process.env['NEO4J_PASSWORD'] ?? '';
   const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
   const openaiKey = process.env['OPENAI_API_KEY'] ?? '';
-  const exportPath = process.env['AMP_EXPORT_PATH'] ?? './.amp';
+  const exportPath = readEnv('MEMBERRY_EXPORT_PATH') ?? './.amp';
 
   // Build the shared core load/store kit through the single construction path
   // used by both the MCP server and the CLI hook commands (@memberry/core

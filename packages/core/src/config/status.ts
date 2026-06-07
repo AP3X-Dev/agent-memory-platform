@@ -6,7 +6,7 @@
 // restart) plus two env-derived runtime facts — surfaced for visibility, not
 // yet editable from the UI.
 
-import { loadRawSettings, resolveNumber, getSettingsPath, DEFAULT_SETTINGS, type HookSettings, type ResolvedNumber } from './settings.js';
+import { loadRawSettings, resolveNumber, readEnv, getSettingsPath, DEFAULT_SETTINGS, type HookSettings, type ResolvedNumber } from './settings.js';
 
 export interface ConfigStatus {
   settingsPath: string;
@@ -33,9 +33,9 @@ export function getConfigStatus(): ConfigStatus {
   return {
     settingsPath: getSettingsPath(),
     hookTuning: {
-      timeoutMs: resolveNumber('AMP_HOOK_TIMEOUT_MS', fileVal(raw.timeoutMs), DEFAULT_SETTINGS.hooks.timeoutMs),
-      turnTokens: resolveNumber('AMP_HOOK_TURN_TOKENS', fileVal(raw.turnTokens), DEFAULT_SETTINGS.hooks.turnTokens),
-      sessionTimeoutMs: resolveNumber('AMP_HOOK_SESSION_TIMEOUT_MS', fileVal(raw.sessionTimeoutMs), DEFAULT_SETTINGS.hooks.sessionTimeoutMs),
+      timeoutMs: resolveNumber('MEMBERRY_HOOK_TIMEOUT_MS', fileVal(raw.timeoutMs), DEFAULT_SETTINGS.hooks.timeoutMs),
+      turnTokens: resolveNumber('MEMBERRY_HOOK_TURN_TOKENS', fileVal(raw.turnTokens), DEFAULT_SETTINGS.hooks.turnTokens),
+      sessionTimeoutMs: resolveNumber('MEMBERRY_HOOK_SESSION_TIMEOUT_MS', fileVal(raw.sessionTimeoutMs), DEFAULT_SETTINGS.hooks.sessionTimeoutMs),
     },
     server: {
       editable: false,
@@ -44,7 +44,7 @@ export function getConfigStatus(): ConfigStatus {
       consolidation: { autoApply: false, signalThreshold: 3 },
       decayHalfLivesDays: { volatile: 14, stable: 90, permanent: 365 },
       // Live, env-derived (the wiki service shares the MCP server's env file).
-      requireProjectTag: process.env['AMP_REQUIRE_PROJECT_TAG'] !== 'false',
+      requireProjectTag: readEnv('MEMBERRY_REQUIRE_PROJECT_TAG') !== 'false',
       embeddings: (process.env['OPENAI_API_KEY'] ?? '').trim() ? 'openai' : 'zero-vector',
     },
   };
