@@ -361,9 +361,21 @@ const GRAPH_PAN_ZOOM_JS = `
 (function () {
   const svg = document.getElementById('opsGraphSvg');
   if (!svg) return;
+  const graphWrap = svg.closest('.graph-wrap');
   const initialW = parseFloat(svg.dataset.vbW);
   const initialH = parseFloat(svg.dataset.vbH);
   let vb = { x: 0, y: 0, w: initialW, h: initialH };
+
+  function syncModalState() {
+    document.body.classList.toggle('graph-modal-open', !!graphWrap && graphWrap.open);
+  }
+  if (graphWrap) {
+    graphWrap.addEventListener('toggle', syncModalState);
+    window.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && graphWrap.open) graphWrap.open = false;
+    });
+    syncModalState();
+  }
 
   function apply() {
     svg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
@@ -515,7 +527,7 @@ function renderOpsHomeBody(
       <div class="graph-bar-left">
         <div class="swatch"></div>
         <div class="title">GRAPH</div>
-        <div class="meta">${projects.length} nodes · click row to expand</div>
+        <div class="meta">${projects.length} nodes · full view</div>
       </div>
       <div class="graph-bar-right">
         <span class="status">● NEO4J ONLINE</span>
@@ -687,6 +699,7 @@ body {
   font-size: 13px;
   line-height: 1.55;
 }
+body.graph-modal-open { overflow: hidden; }
 .display { font-family: var(--display); font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase; }
 a { color: var(--fg); text-decoration: none; }
 
@@ -1000,6 +1013,23 @@ a { color: var(--fg); text-decoration: none; }
 .graph-wrap > summary::-webkit-details-marker { display: none; }
 .graph-wrap > summary:hover { background: var(--surface-hover); }
 .graph-wrap[open] > summary { border-bottom: 1px solid var(--border-faint); }
+.graph-wrap[open] {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-bottom: none;
+  background: var(--bg);
+}
+.graph-wrap[open] > summary {
+  flex: 0 0 56px;
+  min-height: 56px;
+  padding: 0 20px;
+  background: linear-gradient(180deg, #0d0d0d 0%, #070707 100%);
+  border-bottom: 1px solid var(--border-line);
+}
 .graph-bar-left { display: flex; align-items: center; gap: 10px; }
 .graph-bar-left .swatch { width: 4px; height: 14px; background: var(--accent); }
 .graph-bar-left .title { font-family: var(--display); font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; }
@@ -1016,6 +1046,17 @@ a { color: var(--fg); text-decoration: none; }
 .graph-wrap > summary:hover .caret { border-color: var(--accent); }
 .graph { position: relative; }
 .graph svg { display: block; width: 100%; height: 676px; touch-action: none; cursor: grab; }
+.graph-wrap[open] .graph {
+  flex: 1 1 auto;
+  min-height: 0;
+  background:
+    radial-gradient(ellipse at 82% 24%, #9b35ff14 0%, transparent 45%),
+    var(--bg-alt);
+}
+.graph-wrap[open] .graph svg { height: calc(100vh - 56px); }
+@supports (height: 100dvh) {
+  .graph-wrap[open] .graph svg { height: calc(100dvh - 56px); }
+}
 .graph svg.panning { cursor: grabbing; }
 .graph .node-logo {
   filter: drop-shadow(0 0 6px #9b35ff66);

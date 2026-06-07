@@ -132,6 +132,10 @@ describe('WikiViewer', () => {
     expect(html).toContain('--hero-left-scrim:');
     expect(html).toContain('.graph .node-logo');
     expect(html).toContain('.graph svg { display: block; width: 100%; height: 676px;');
+    expect(html).toContain('body.graph-modal-open { overflow: hidden; }');
+    expect(html).toContain('.graph-wrap[open] {');
+    expect(html).toContain('position: fixed;');
+    expect(html).toContain('.graph-wrap[open] .graph svg { height: calc(100vh - 56px); }');
 
     const logo = await fetch(`http://localhost:${TEST_PORT}/assets/memberry-logo.png`);
     expect(logo.status).toBe(200);
@@ -176,9 +180,11 @@ describe('WikiViewer', () => {
       const res = await fetch(`http://localhost:${opsPort}/wiki/_index`);
       expect(res.status).toBe(200);
       const html = await res.text();
+      expect(html).toContain('2 nodes · full view');
       expect(html).toContain('<image class="node-logo" href="/assets/memberry-logo.png"');
       expect(html).toContain('width="56" height="56"');
       expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
+      expect(html).toContain("if (e.key === 'Escape' && graphWrap.open) graphWrap.open = false;");
       expect(html).not.toContain('dominant-baseline="central" style="user-select:none;"');
     } finally {
       if (opsServer) {
