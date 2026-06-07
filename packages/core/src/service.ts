@@ -392,9 +392,13 @@ export class AMPService {
       };
     }
 
-    // 1. Atomic dedup check-and-mark (prevents TOCTOU race between isDuplicate/markSeen)
+    // Resolve the tenant once — used for dedup namespacing and the node stamp.
+    const tenantId = (input.tenantId && input.tenantId.trim()) || DEFAULT_TENANT;
+
+    // 1. Atomic dedup check-and-mark (prevents TOCTOU race between isDuplicate/markSeen).
+    // Namespaced by tenant so identical content in two tenants isn't cross-deduped.
     const contentHash = createHash('sha256').update(input.content).digest('hex');
-    const isDup = await this.redis.dedup.checkAndMark(input.agent_id, contentHash);
+    const isDup = await this.redis.dedup.checkAndMark(`${tenantId}:${input.agent_id}`, contentHash);
     if (isDup) {
       return { id: '', duplicate: true };
     }
@@ -426,7 +430,6 @@ export class AMPService {
       if (input.tags) return input.tags;
       return projectInfo.tag ? [projectInfo.tag] : undefined;
     })();
-    const tenantId = (input.tenantId && input.tenantId.trim()) || DEFAULT_TENANT;
     const node: EpisodicNode = {
       id,
       session_id: input.session_id,
@@ -737,6 +740,9 @@ export class AMPService {
 
 function hashScope(scope: LoadScope): string {
   const canonical = JSON.stringify({
+    // tenant first — the assembled-context cache MUST NOT be shared across
+    // tenants even when task/entities/tags are identical.
+    tenant: (scope.tenantId && scope.tenantId.trim()) || DEFAULT_TENANT,
     task: scope.task,
     entities: (scope.entities ?? []).slice().sort(),
     tags: (scope.tags ?? []).slice().sort(),
