@@ -1,7 +1,7 @@
 # MemBerry — persistent memory for AI agents
 
 <p align="center">
-  <img src="assets/memberry-logo.png" alt="MemBerry logo" width="180" />
+  <img src="assets/memberry-banner.png" alt="MemBerry — persistent memory for AI agents" />
 </p>
 
 **Every AI agent starts from zero.** A coding agent forgets last week's architecture decisions. A personal assistant re-asks your preferences. A business agent re-learns your org chart every conversation. Every session, you re-explain. Every session, the same mistakes you already corrected.
