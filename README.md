@@ -161,7 +161,7 @@ Prefer a UI? The wiki has a **Settings** page (`/settings`, port 3200) to enable
 
 ### Bootstrap Your Project
 
-Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your project and run `/amp-setup`. The agent analyzes your codebase, discovers entities, and scaffolds the knowledge graph. From that point on, every session loads and stores automatically.
+Copy `CLAUDE.md.example` (or `GEMINI.md.example`, `.cursorrules`) to your project and ask your agent to set up MemBerry. The agent analyzes your codebase, discovers entities, and scaffolds the knowledge graph. From that point on, every session loads and stores automatically.
 
 ---
 

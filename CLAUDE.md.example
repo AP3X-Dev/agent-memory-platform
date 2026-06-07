@@ -341,7 +341,7 @@ If the project doesn't have an `## MemBerry Memory` section in its CLAUDE.md, se
 3. Write `## MemBerry Memory` config section
 4. Call `berry_bootstrap` to scaffold the graph
 
-See the `/amp-setup` skill or the CLAUDE.md instructions in the user's global config.
+See the MemBerry setup skill or the CLAUDE.md instructions in the user's global config.
 
 ---
 
@@ -349,7 +349,7 @@ See the `/amp-setup` skill or the CLAUDE.md instructions in the user's global co
 
 ## MemBerry Memory
 
-<!-- Run /amp-setup or berry_bootstrap to generate this section for your project. -->
+<!-- Run the MemBerry setup skill or berry_bootstrap to generate this section for your project. -->
 <!-- It should contain your project-specific configuration.                     -->
 
 Project: <your-project-name>

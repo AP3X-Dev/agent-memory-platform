@@ -183,7 +183,7 @@ For full tool documentation with parameters and examples, see `CLAUDE.md` or `.c
 
 ## MemBerry Memory
 
-<!-- Run /amp-setup or berry_bootstrap to generate this section for your project. -->
+<!-- Run the MemBerry setup skill or berry_bootstrap to generate this section for your project. -->
 
 Project: <your-project-name>
 Description: <one-line description>
