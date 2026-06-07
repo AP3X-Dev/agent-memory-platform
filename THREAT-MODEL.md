@@ -255,10 +255,18 @@ their deployment model. None contradict the controls above; they bound them.
    not yet uniformly audited, and episode `actor` is the fixed MCP identity rather
    than the authenticated token's actor name.
 
-5. **Single shared Redis / Neo4j — no per-tenant DB isolation.** All projects live
-   in one graph and one cache. Isolation between projects is logical (tag-based),
-   not enforced at the database level. Mutually distrusting tenants require
-   separate deployments.
+5. **Tenant isolation is logical (enforced), not physical.** Opt-in multi-tenant
+   mode (`MEMBERRY_TENANT_TOKENS`) binds each session to a tenant and ENFORCES a
+   `tenant_id` filter on every exposed memory read/write (semantics, facts,
+   blocks, grep), with a default-deny tool surface and an adversarial cross-tenant
+   test. This is logical isolation over one shared Neo4j + Redis — strong enough
+   for cooperative multi-tenancy, but not a physical (per-database) boundary.
+   Residual gaps: `berry_context`/`berry_ask` and the satellite domains are not
+   yet tenant-scoped (so they are *withheld* from tenant sessions, not leaked);
+   the Redis block cache is bypassed (not namespaced) for non-default tenants; the
+   `default` tenant still shares one keyspace. Highly-sensitive or regulated
+   tenants should use a dedicated deployment (the per-session `ServiceContainer`
+   seam supports routing a tenant to its own datastore).
 
 6. **No JWT/OIDC / no fine-grained authz.** Authentication is static Bearer
    tokens (single or per-actor named). There is no token expiry, no OIDC

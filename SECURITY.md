@@ -251,10 +251,33 @@ Every memory is scoped to a project tag (`project:<name>`):
 - Retrieval (`berry_load`) and `berry_grep` filter by the supplied project
   scope/tags, so a correctly-scoped query returns only that project's knowledge.
 
-Project scoping is the mechanism for keeping unrelated projects' memories from
-contaminating each other. It is **logical** isolation enforced in the
-application layer over a shared graph — not a database-level tenant boundary, and
-the admin `berry_query` path bypasses it (read-only). See the threat model.
+Project scoping keeps unrelated projects' memories from contaminating each other
+within a single trusted deployment. It is advisory: a caller may pass any project
+tag. For separation between *mutually distrusting* parties, use tenant mode below.
+
+## Multi-tenant mode (opt-in, enforced)
+
+Set `MEMBERRY_TENANT_TOKENS="acme:tok_acme,globex:tok_globex"` to turn on
+multi-tenant mode. Each bearer token then binds its session to a tenant, and the
+binding is **enforced at the data layer**, not advisory:
+
+- Every write stamps `tenant_id` (episodes, facts, blocks, consolidated semantics).
+- Every read filters by the caller's tenant (`tenantWhere` in
+  `packages/neo4j/src/tenant.ts`): semantics, facts, blocks, and grep. A named
+  tenant matches strictly; the implicit `default` tenant also matches legacy rows
+  with no `tenant_id`, so enabling tenancy needs no data migration.
+- The assembled-context cache and store dedup are tenant-namespaced.
+- **Default-deny tool surface:** a tenant session is served only tools proven
+  tenant-isolated (`TENANT_SAFE_TOOLS`: load/store/grep/memory\_\*/timeline/fact\_diff).
+  Raw Cypher (`berry_query`) and the not-yet-tenant-scoped satellite/retrieval
+  domains (`berry_context`/`berry_ask`, code/arch/wiki/graph/research) are withheld
+  entirely from tenant sessions.
+
+The cross-tenant guarantee ("tenant A never sees tenant B") is covered by an
+adversarial integration test (`tenant-isolation.regression.test.ts`).
+Single-tenant deployments (no tenant tokens) are unaffected. The admin
+`berry_query` path remains read-only and unscoped — keep the `admin` domain
+disabled in shared deployments.
 
 ---
 
