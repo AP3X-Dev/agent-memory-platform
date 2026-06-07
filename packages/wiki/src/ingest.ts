@@ -1,5 +1,5 @@
 // packages/wiki/src/ingest.ts
-// Ingests raw source documents into the AMP graph as Source nodes,
+// Ingests raw source documents into the MemBerry graph as Source nodes,
 // Entity nodes, and Semantic nodes with CITES/ABOUT relationships.
 
 import neo4j, { type Driver } from 'neo4j-driver';

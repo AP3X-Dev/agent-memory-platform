@@ -1,6 +1,6 @@
 // packages/core/src/cli/install.ts
 //
-// `amp hooks install|uninstall|status` — the opt-in switch that wires AMP into
+// `amp hooks install|uninstall|status` — the opt-in switch that wires MemBerry into
 // an agent's lifecycle. Claude Code gets settings.json hook entries (live
 // adapter); Codex/Hermes get a materialized managed block + a refresh trigger
 // (wrapper alias by default, systemd timer optionally).
@@ -65,7 +65,7 @@ function installClaude(scope: string, cwd: string, flags: Flags): void {
   const settings = readJson(file);
   const command = resolveCliCommand(flags);
   writeJson(file, addAmpHooks(settings, command));
-  console.log(`Wired AMP hooks into ${file}`);
+  console.log(`Wired MemBerry hooks into ${file}`);
   console.log(`  events: SessionStart, UserPromptSubmit, PreCompact, SessionEnd`);
   console.log(`  command: ${command} hook claude <event>`);
   console.log('Restart Claude Code (or run /hooks) to load the new hooks.');
@@ -75,7 +75,7 @@ function uninstallClaude(scope: string, cwd: string): void {
   const file = claudeSettingsPath(scope, cwd);
   if (!fs.existsSync(file)) { console.log(`No settings file at ${file} — nothing to remove.`); return; }
   writeJson(file, removeAmpHooks(readJson(file)));
-  console.log(`Removed AMP hooks from ${file}`);
+  console.log(`Removed MemBerry hooks from ${file}`);
 }
 
 // ─── Codex / Hermes (materialized) ─────────────────────────────────────────
@@ -85,7 +85,7 @@ async function installMaterialized(agent: MaterializeAgent, cwd: string, flags: 
   const core = createCoreServices();
   try {
     const result = await materializeContext(core, { agent, cwd });
-    console.log(`Materialized AMP context → ${result.file} (scope ${result.scope}, loaded=${result.loaded})`);
+    console.log(`Materialized MemBerry context → ${result.file} (scope ${result.scope}, loaded=${result.loaded})`);
   } finally {
     await core.close();
   }
@@ -102,7 +102,7 @@ async function installMaterialized(agent: MaterializeAgent, cwd: string, flags: 
   if (flags['with-mcp'] === true && agent === 'codex') {
     addCodexMcp(cwd);
   } else if (agent === 'codex') {
-    console.log('\nTip: AMP also exposes an MCP server. Re-run with --with-mcp to add it to .codex/config.toml,');
+    console.log('\nTip: MemBerry also exposes an MCP server. Re-run with --with-mcp to add it to .codex/config.toml,');
     console.log('     or add it yourself. (MCP is the model-driven knowledge-OUT path; hooks are context-IN.)');
   }
 }
@@ -111,9 +111,9 @@ function uninstallMaterialized(agent: MaterializeAgent, cwd: string): void {
   const file = resolveTargetFile(agent, cwd);
   if (!fs.existsSync(file)) { console.log(`No ${path.basename(file)} — nothing to remove.`); return; }
   const content = fs.readFileSync(file, 'utf-8');
-  if (!hasManagedBlock(content)) { console.log(`No AMP managed block in ${file} — nothing to remove.`); return; }
+  if (!hasManagedBlock(content)) { console.log(`No MemBerry managed block in ${file} — nothing to remove.`); return; }
   fs.writeFileSync(file, stripManagedBlock(content), 'utf-8');
-  console.log(`Removed AMP managed block from ${file}`);
+  console.log(`Removed MemBerry managed block from ${file}`);
 }
 
 function printTimerInstructions(agent: MaterializeAgent, cwd: string): void {
@@ -172,7 +172,7 @@ export function getHooksStatus(cwd: string): HooksStatus {
 
 function status(cwd: string): void {
   const s = getHooksStatus(cwd);
-  console.log('AMP hooks status:');
+  console.log('MemBerry hooks status:');
   for (const c of s.claude) {
     console.log(`  claude (${c.scope}): ${c.events.length ? c.events.join(', ') : '—'}  [${c.file}]`);
   }

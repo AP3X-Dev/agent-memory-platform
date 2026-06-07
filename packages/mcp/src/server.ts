@@ -156,7 +156,7 @@ function registerAllTools(server: McpServer): ToolRegistry {
 export function createAMPServer(): AMPMCPServer {
   const server = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
 
-  // Register all AMP tools with progressive disclosure
+  // Register all MemBerry tools with progressive disclosure
   registerAllTools(server);
 
   // ─── SSE transport ────────────────────────────────────────────────────────

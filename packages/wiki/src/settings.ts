@@ -1,7 +1,7 @@
 // packages/wiki/src/settings.ts
 //
 // Settings page for the wiki viewer: enable/configure agent hooks and view the
-// rest of AMP's effective configuration. Hook tuning is persisted to the shared
+// rest of MemBerry's effective configuration. Hook tuning is persisted to the shared
 // settings file (read live by hook processes); enable/disable shells out to the
 // `amp hooks` installer so there is exactly one code path that edits
 // settings.json / AGENTS.md.
@@ -20,7 +20,7 @@ import {
 
 const execFileAsync = promisify(execFile);
 
-/** Absolute path to the AMP CLI source entry (the repo runs under tsx). */
+/** Absolute path to the MemBerry CLI source entry (the repo runs under tsx). */
 const CLI_PATH = fileURLToPath(new URL('../../core/src/cli.ts', import.meta.url));
 
 function esc(text: string): string {
@@ -211,7 +211,7 @@ export function renderSettingsBody(repoRoot: string): string {
   <div class="s-wrap">
     <header class="s-hero">
       <h1>Settings</h1>
-      <p class="s-muted">Enable and configure agent hooks, and review AMP's effective configuration. Changes here affect this host.</p>
+      <p class="s-muted">Enable and configure agent hooks, and review MemBerry's effective configuration. Changes here affect this host.</p>
     </header>
     <div id="s-toast" class="s-toast"></div>
 

@@ -118,7 +118,7 @@ describe('WikiViewer', () => {
     expect(res.status).toBe(200);
     const html = await res.text();
     expect(html).toContain('Test Portal');
-    expect(html).toContain('AMP Wiki');
+    expect(html).toContain('MemBerry Wiki');
   });
 
   it('resolves [[wikilinks]] to HTML links', async () => {

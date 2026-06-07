@@ -41,7 +41,7 @@ export async function runRunCommand(rest: string[]): Promise<void> {
     process.exit(1);
   }
 
-  // Refresh the block (best-effort — never block the launch on AMP).
+  // Refresh the block (best-effort — never block the launch on MemBerry).
   try {
     const core = createCoreServices();
     try {

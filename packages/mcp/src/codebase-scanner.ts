@@ -1,6 +1,6 @@
 // packages/mcp/src/codebase-scanner.ts
 // Scans a codebase directory to discover project metadata, languages, modules,
-// and source files for ingestion into the AMP knowledge graph.
+// and source files for ingestion into the MemBerry knowledge graph.
 
 import { readFile, readdir, stat } from 'fs/promises';
 import { resolve, extname, join, relative, basename } from 'path';

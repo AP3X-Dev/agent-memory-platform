@@ -2,7 +2,7 @@
  * Core graph snapshot types for @memberry/graph.
  *
  * A snapshot is a deterministic, project-scoped, bounded, secret-safe in-memory
- * view of the AMP Neo4j graph. It is the single choke point that every later
+ * view of the MemBerry Neo4j graph. It is the single choke point that every later
  * capability (report, export, community detection, PR impact) consumes, so the
  * property allowlist / redaction lives here at the snapshot boundary.
  */

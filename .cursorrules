@@ -1,74 +1,74 @@
-# AMP — Agent Memory Platform
+# MemBerry — persistent memory for AI agents
 
-You have access to a persistent memory system called AMP via MCP tools. It stores knowledge across sessions using a Neo4j knowledge graph. Use it autonomously during all coding work.
+You have access to a persistent memory system called MemBerry via MCP tools. It stores knowledge across sessions using a Neo4j knowledge graph. Use it autonomously during all coding work.
 
 ## Progressive Disclosure
 
-AMP uses progressive disclosure to manage its tool surface. **8 tools are always visible:**
+MemBerry uses progressive disclosure to manage its tool surface. **8 tools are always visible:**
 
 | Always-Visible Tool | Purpose |
 |---------------------|---------|
-| `amp_load` | Load memory context |
-| `amp_store` | Store episodic memory |
-| `amp_memory_read` | Read memory blocks (core/working/archive) |
-| `amp_memory_insert` | Insert or append to a memory block |
-| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
-| `amp_context` | Super-load: architecture + code + memory blended |
-| `amp_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable reasoning_level) |
-| `amp_tools` | Enable/disable/list domain-specific tool groups |
+| `berry_load` | Load memory context |
+| `berry_store` | Store episodic memory |
+| `berry_memory_read` | Read memory blocks (core/working/archive) |
+| `berry_memory_insert` | Insert or append to a memory block |
+| `berry_grep` | Search memory by text pattern (exact or regex) across all node types |
+| `berry_context` | Super-load: architecture + code + memory blended |
+| `berry_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable reasoning_level) |
+| `berry_tools` | Enable/disable/list domain-specific tool groups |
 
-All other tools are organized into **9 on-demand domains**. Call `amp_tools(action: "enable", domain: "<name>")` before using domain-specific tools:
+All other tools are organized into **9 on-demand domains**. Call `berry_tools(action: "enable", domain: "<name>")` before using domain-specific tools:
 
 | Domain | Tools | When to enable |
 |--------|-------|----------------|
-| `memory` | `amp_memory_replace`, `amp_memory_rewrite`, `amp_memory_promote`, `amp_memory_archive` | Session end, memory management |
-| `temporal` | `amp_timeline`, `amp_fact_diff` | Fact history, change tracking |
-| `admin` | `amp_query`, `amp_consolidate`, `amp_bootstrap`, `amp_resolve`, `amp_ingest_codebase`, `amp_provenance` | Graph queries, setup, codebase ingestion, provenance |
-| `research` | `amp_research_init`, `amp_research_log`, `amp_research_context`, `amp_research_tree`, `amp_research_contradictions`, `amp_research_consolidate` | Experiment campaigns |
-| `code` | `amp_code_index`, `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_context`, `amp_code_watch` | Code search, AST search, symbols, deps, file watching |
-| `arch` | `amp_arch_register`, `amp_arch_relate`, `amp_arch_aspect`, `amp_impact`, `amp_arch_drift`, `amp_arch_context` | Architecture context, blast radius |
-| `wiki` | `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` | Wiki compilation, ingestion, brain dumps, editable round-trip |
-| `retrieval` | `amp_feedback` | Recording retrieval usefulness |
-| `graph` | `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` | Graph audit, export/HTML map, PR blast radius/conflicts (read-only) |
+| `memory` | `berry_memory_replace`, `berry_memory_rewrite`, `berry_memory_promote`, `berry_memory_archive` | Session end, memory management |
+| `temporal` | `berry_timeline`, `berry_fact_diff` | Fact history, change tracking |
+| `admin` | `berry_query`, `berry_consolidate`, `berry_bootstrap`, `berry_resolve`, `berry_ingest_codebase`, `berry_provenance` | Graph queries, setup, codebase ingestion, provenance |
+| `research` | `berry_research_init`, `berry_research_log`, `berry_research_context`, `berry_research_tree`, `berry_research_contradictions`, `berry_research_consolidate` | Experiment campaigns |
+| `code` | `berry_code_index`, `berry_code_search`, `berry_code_ast_grep`, `berry_code_symbols`, `berry_code_deps`, `berry_code_context`, `berry_code_watch` | Code search, AST search, symbols, deps, file watching |
+| `arch` | `berry_arch_register`, `berry_arch_relate`, `berry_arch_aspect`, `berry_impact`, `berry_arch_drift`, `berry_arch_context` | Architecture context, blast radius |
+| `wiki` | `berry_compile`, `berry_ingest`, `berry_lint`, `berry_braindump`, `berry_wiki_sync` | Wiki compilation, ingestion, brain dumps, editable round-trip |
+| `retrieval` | `berry_feedback` | Recording retrieval usefulness |
+| `graph` | `berry_graph_report`, `berry_graph_export`, `berry_pr_impact`, `berry_pr_conflicts` | Graph audit, export/HTML map, PR blast radius/conflicts (read-only) |
 
 ## 5 Rules
 
-1. **Load before working.** Call `amp_context` or `amp_load` at session start.
-2. **Store after deciding.** Call `amp_store` when decisions, preferences, bugs, or conventions emerge.
+1. **Load before working.** Call `berry_context` or `berry_load` at session start.
+2. **Store after deciding.** Call `berry_store` when decisions, preferences, bugs, or conventions emerge.
 3. **Scope with project tags.** Every load/store includes `project:<name>`.
 4. **Link to entities.** Every store includes relevant entity names.
-5. **Be silent.** Don't narrate AMP usage. Just use it.
+5. **Be silent.** Don't narrate MemBerry usage. Just use it.
 
 ## When to Use Which Tool
 
-- **General context for a task** → `amp_context` (always visible)
-- **Ask a question, get a synthesized cited answer** → `amp_ask` (always visible; `reasoning_level` minimal→max)
-- **Memory load/store** → `amp_load`, `amp_store` (always visible)
-- **Trace knowledge history** → `amp_provenance` (enable `admin` domain first)
-- **Temporal facts** → `amp_timeline`, `amp_fact_diff` (enable `temporal` domain first)
-- **Memory tiers** → `amp_memory_read/insert` always visible; `replace/rewrite/promote/archive` require enabling `memory` domain
-- **Code search** → `amp_code_search`, `amp_code_ast_grep`, `amp_code_symbols`, `amp_code_deps`, `amp_code_watch` (enable `code` domain first)
-- **Architecture** → `amp_arch_context`, `amp_impact`, `amp_arch_register`, `amp_arch_relate` (enable `arch` domain first)
-- **Research experiments** → `amp_research_init`, `amp_research_log`, `amp_research_context` (enable `research` domain first)
-- **Wiki / knowledge base** → `amp_compile`, `amp_ingest`, `amp_lint`, `amp_braindump`, `amp_wiki_sync` (enable `wiki` domain first)
-- **Graph audit / export / PR analysis** → `amp_graph_report`, `amp_graph_export`, `amp_pr_impact`, `amp_pr_conflicts` (enable `graph` domain first)
+- **General context for a task** → `berry_context` (always visible)
+- **Ask a question, get a synthesized cited answer** → `berry_ask` (always visible; `reasoning_level` minimal→max)
+- **Memory load/store** → `berry_load`, `berry_store` (always visible)
+- **Trace knowledge history** → `berry_provenance` (enable `admin` domain first)
+- **Temporal facts** → `berry_timeline`, `berry_fact_diff` (enable `temporal` domain first)
+- **Memory tiers** → `berry_memory_read/insert` always visible; `replace/rewrite/promote/archive` require enabling `memory` domain
+- **Code search** → `berry_code_search`, `berry_code_ast_grep`, `berry_code_symbols`, `berry_code_deps`, `berry_code_watch` (enable `code` domain first)
+- **Architecture** → `berry_arch_context`, `berry_impact`, `berry_arch_register`, `berry_arch_relate` (enable `arch` domain first)
+- **Research experiments** → `berry_research_init`, `berry_research_log`, `berry_research_context` (enable `research` domain first)
+- **Wiki / knowledge base** → `berry_compile`, `berry_ingest`, `berry_lint`, `berry_braindump`, `berry_wiki_sync` (enable `wiki` domain first)
+- **Graph audit / export / PR analysis** → `berry_graph_report`, `berry_graph_export`, `berry_pr_impact`, `berry_pr_conflicts` (enable `graph` domain first)
 
 ## Autonomous Behavior
 
 ### Session Start
-- Core blocks (persona, user, project_state) arrive automatically in `amp_load`/`amp_context` output — no separate read needed. To re-read one block, name it: `amp_memory_read(block: "user", scope: "project:<tag>")`.
+- Core blocks (persona, user, project_state) arrive automatically in `berry_load`/`berry_context` output — no separate read needed. To re-read one block, name it: `berry_memory_read(block: "user", scope: "project:<tag>")`.
 - Load memory with the user's first message as context.
 - Generate `session_id`: `session-{YYYYMMDD}-{HHMMSS}`.
 - Only Tier 1 tools needed at session start. No domain enablement required.
 
 ### Before Modifying Code
-- Enable the domain first: `amp_tools(action: "enable", domain: "code")` or `amp_tools(action: "enable", domain: "arch")`.
-- Load `amp_arch_context` or `amp_code_context` for the affected module.
+- Enable the domain first: `berry_tools(action: "enable", domain: "code")` or `berry_tools(action: "enable", domain: "arch")`.
+- Load `berry_arch_context` or `berry_code_context` for the affected module.
 - Check for conventions, past decisions, known gotchas.
 
 ### During Debugging
-- Load context for the affected area. AMP may know past bugs and root causes.
-- Check blast radius: `amp_impact(entity_name: "<module>")`.
+- Load context for the affected area. MemBerry may know past bugs and root causes.
+- Check blast radius: `berry_impact(entity_name: "<module>")`.
 - After resolution, store the root cause.
 
 ### When Planning
@@ -81,39 +81,39 @@ Recalling the **right** memory at the **right** moment without flooding the cont
 
 - **Recall continuously, not just at session start** — before you answer about an entity, decide, modify a module, assume a default/limit/preference, or re-ask the user. If you might already know it, check first.
 - **Recall precisely.** Scope every load with `entities` + `tags` (`project:<tag>`) and set `max_tokens` to the smallest that fits — the goal is the *right* context, not *all* of it. Start specific; widen only if empty.
-- **Smallest tool that fits:** `amp_grep` for a specific fact/preference · `amp_memory_read(block)` for a known block · `amp_load(task, entities, tags, max_tokens)` for scoped task memory · `amp_context` for cross-cutting tasks · `amp_timeline`/`amp_fact_diff` (temporal) for how knowledge changed · `amp_code_search` (code) for code.
-- **Close the loop:** enable `retrieval`, use `amp_feedback` when recalled memory helped (or didn't).
+- **Smallest tool that fits:** `berry_grep` for a specific fact/preference · `berry_memory_read(block)` for a known block · `berry_load(task, entities, tags, max_tokens)` for scoped task memory · `berry_context` for cross-cutting tasks · `berry_timeline`/`berry_fact_diff` (temporal) for how knowledge changed · `berry_code_search` (code) for code.
+- **Close the loop:** enable `retrieval`, use `berry_feedback` when recalled memory helped (or didn't).
 
 ### Automatic Storing
 
-Store to AMP when:
+Store to MemBerry when:
 - A decision is made (with rationale)
 - The user corrects your approach (as a preference)
 - A bug is found and fixed (symptom + root cause)
 - A convention is established
 - An architecture pattern is chosen
 
-Format: `amp_store(session_id, task: "[project:<tag>] ...", content: "[project:<tag>] ...", entities: [...])`.
+Format: `berry_store(session_id, task: "[project:<tag>] ...", content: "[project:<tag>] ...", entities: [...])`.
 
-**Memory tiers:** Use `amp_memory_insert` (always visible) to update working memory during a session. For `amp_memory_replace`, `amp_memory_promote`, and `amp_memory_archive`, enable the `memory` domain first: `amp_tools(action: "enable", domain: "memory")`.
+**Memory tiers:** Use `berry_memory_insert` (always visible) to update working memory during a session. For `berry_memory_replace`, `berry_memory_promote`, and `berry_memory_archive`, enable the `memory` domain first: `berry_tools(action: "enable", domain: "memory")`.
 
-**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Each fact also carries an `inference_type` — `deductive` (explicit, default), `inductive` (consolidation-generalized), or `abductive` (a guess from the background "dream" pass); abductive facts rank lower and render as `[hypothesis]`, so never treat a guess as a known fact. Enable the `temporal` domain first: `amp_tools(action: "enable", domain: "temporal")`, then use `amp_timeline` to trace how facts evolved.
+**Temporal facts:** When existing knowledge is contradicted, facts get invalidated (not just overwritten). Each fact also carries an `inference_type` — `deductive` (explicit, default), `inductive` (consolidation-generalized), or `abductive` (a guess from the background "dream" pass); abductive facts rank lower and render as `[hypothesis]`, so never treat a guess as a known fact. Enable the `temporal` domain first: `berry_tools(action: "enable", domain: "temporal")`, then use `berry_timeline` to trace how facts evolved.
 
-**Dream pass:** `amp_consolidate(action: "dream", scope: "project:<tag>")` (enable `admin`) runs a background generative pass that fills knowledge gaps and mints low-confidence abductive hypotheses — it only adds guesses, never overwrites known facts. Also runs headless via the `amp dream` CLI / nightly timer.
+**Dream pass:** `berry_consolidate(action: "dream", scope: "project:<tag>")` (enable `admin`) runs a background generative pass that fills knowledge gaps and mints low-confidence abductive hypotheses — it only adds guesses, never overwrites known facts. Also runs headless via the `memberry dream` CLI / nightly timer.
 
 Don't store: routine edits, things derivable from code/git, raw code blocks.
 
 ### Session End
-- Enable the memory domain: `amp_tools(action: "enable", domain: "memory")`.
+- Enable the memory domain: `berry_tools(action: "enable", domain: "memory")`.
 - Store a session summary.
-- Promote valuable working memory: `amp_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
-- Clean up session-scoped blocks: `amp_memory_archive(block: "<block>")`.
-- Enable admin domain if needed: `amp_tools(action: "enable", domain: "admin")`.
-- Check consolidation: `amp_consolidate(action: "status")`.
+- Promote valuable working memory: `berry_memory_promote(block: "<block>", from_tier: "working", to_tier: "core")`.
+- Clean up session-scoped blocks: `berry_memory_archive(block: "<block>")`.
+- Enable admin domain if needed: `berry_tools(action: "enable", domain: "admin")`.
+- Check consolidation: `berry_consolidate(action: "status")`.
 
 ## Project Setup
 
-Each project needs an `## AMP Memory` section in its agent config with: project name, tag, entities, tags, and priors. If missing, scan the repo and call `amp_bootstrap` to seed the graph.
+Each project needs an `## MemBerry Memory` section in its agent config with: project name, tag, entities, tags, and priors. If missing, scan the repo and call `berry_bootstrap` to seed the graph.
 
 ## Tool Quick Reference
 
@@ -121,59 +121,59 @@ Each project needs an `## AMP Memory` section in its agent config with: project 
 
 | Tool | Purpose |
 |------|---------|
-| `amp_load` | Load memory context |
-| `amp_store` | Store episodic memory |
-| `amp_memory_read` | Read memory blocks from a tier (core/working/archive) |
-| `amp_memory_insert` | Insert or append to a memory block |
-| `amp_grep` | Search memory by text pattern (exact or regex) across all node types |
-| `amp_context` | Super-load: architecture + code + memory blended |
-| `amp_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable `reasoning_level`) |
-| `amp_tools` | Enable/disable/list on-demand tool domains |
+| `berry_load` | Load memory context |
+| `berry_store` | Store episodic memory |
+| `berry_memory_read` | Read memory blocks from a tier (core/working/archive) |
+| `berry_memory_insert` | Insert or append to a memory block |
+| `berry_grep` | Search memory by text pattern (exact or regex) across all node types |
+| `berry_context` | Super-load: architecture + code + memory blended |
+| `berry_ask` | Dialectic retrieval: ask a question, get a synthesized cited answer (tunable `reasoning_level`) |
+| `berry_tools` | Enable/disable/list on-demand tool domains |
 
-### On-Demand (enable domain first via `amp_tools`)
+### On-Demand (enable domain first via `berry_tools`)
 
 | Tool | Domain | Purpose |
 |------|--------|---------|
-| `amp_memory_replace` | memory | Replace content in a memory block |
-| `amp_memory_rewrite` | memory | Full rewrite of a memory block |
-| `amp_memory_promote` | memory | Move a block between tiers (e.g., working → core) |
-| `amp_memory_archive` | memory | Archive a memory block |
-| `amp_timeline` | temporal | Chronological fact history for an entity |
-| `amp_fact_diff` | temporal | What changed between two timestamps |
-| `amp_query` | admin | Read-only Cypher query |
-| `amp_consolidate` | admin | Run/check/review consolidation, or `action:"dream"` — background gap-filling + abductive hypotheses (also `amp dream` CLI / nightly timer) |
-| `amp_bootstrap` | admin | One-time project graph setup |
-| `amp_resolve` | admin | Resolve amp:// URIs |
-| `amp_ingest_codebase` | admin | One-shot project setup: scan repo, bootstrap, index code, seed blocks |
-| `amp_provenance` | admin | Trace full lifecycle of a semantic node |
-| `amp_code_index` | code | Index code (tree-sitter): TypeScript, JavaScript, Python, Go, Rust, SQL, Terraform/HCL, MCP config |
-| `amp_code_search` | code | Hybrid code + memory search |
-| `amp_code_ast_grep` | code | Structural AST search (ast-grep patterns + captures); JS/TS/TSX |
-| `amp_code_symbols` | code | Query symbols by file/name |
-| `amp_code_deps` | code | Callers, callees, importers |
-| `amp_code_context` | code | Code context for a task |
-| `amp_code_watch` | code | Start/stop/status the background re-indexing watcher |
-| `amp_arch_register` | arch | Enrich entity with architecture |
-| `amp_arch_relate` | arch | Create entity relationships |
-| `amp_arch_aspect` | arch | Cross-cutting concerns |
-| `amp_impact` | arch | Blast radius analysis |
-| `amp_arch_drift` | arch | Source file drift detection |
-| `amp_arch_context` | arch | Architectural context assembly |
-| `amp_research_init` | research | Start research campaign |
-| `amp_research_log` | research | Log experiment result |
-| `amp_research_context` | research | Research THINK phase context |
-| `amp_research_tree` | research | Hypothesis tree visualization |
-| `amp_research_contradictions` | research | Find conflicting principles |
-| `amp_research_consolidate` | research | Research pattern consolidation |
-| `amp_compile` | wiki | Compile graph into interlinked markdown wiki |
-| `amp_ingest` | wiki | Ingest source documents (text/markdown + PDF/Word/Excel/HTML/RTF via optional system tools); auto-extracts entities/claims |
-| `amp_lint` | wiki | 10 graph health checks |
-| `amp_braindump` | wiki | Capture a human brain dump as durable, human-authored memory |
-| `amp_wiki_sync` | wiki | Reconcile a human-edited wiki markdown file back into the graph |
-| `amp_feedback` | retrieval | Record retrieval usefulness |
-| `amp_graph_report` | graph | Deterministic graph audit: corpus summary, core abstractions, knowledge areas, cycles, gaps |
-| `amp_graph_export` | graph | Portable JSON or self-contained offline interactive HTML graph map (secret-safe) |
-| `amp_pr_impact` | graph | Blast radius of a GitHub PR over the code graph (requires gh CLI) |
-| `amp_pr_conflicts` | graph | PR pairs whose impact overlaps — likely merge/review conflicts (requires gh CLI) |
+| `berry_memory_replace` | memory | Replace content in a memory block |
+| `berry_memory_rewrite` | memory | Full rewrite of a memory block |
+| `berry_memory_promote` | memory | Move a block between tiers (e.g., working → core) |
+| `berry_memory_archive` | memory | Archive a memory block |
+| `berry_timeline` | temporal | Chronological fact history for an entity |
+| `berry_fact_diff` | temporal | What changed between two timestamps |
+| `berry_query` | admin | Read-only Cypher query |
+| `berry_consolidate` | admin | Run/check/review consolidation, or `action:"dream"` — background gap-filling + abductive hypotheses (also `memberry dream` CLI / nightly timer) |
+| `berry_bootstrap` | admin | One-time project graph setup |
+| `berry_resolve` | admin | Resolve memberry:// URIs |
+| `berry_ingest_codebase` | admin | One-shot project setup: scan repo, bootstrap, index code, seed blocks |
+| `berry_provenance` | admin | Trace full lifecycle of a semantic node |
+| `berry_code_index` | code | Index code (tree-sitter): TypeScript, JavaScript, Python, Go, Rust, SQL, Terraform/HCL, MCP config |
+| `berry_code_search` | code | Hybrid code + memory search |
+| `berry_code_ast_grep` | code | Structural AST search (ast-grep patterns + captures); JS/TS/TSX |
+| `berry_code_symbols` | code | Query symbols by file/name |
+| `berry_code_deps` | code | Callers, callees, importers |
+| `berry_code_context` | code | Code context for a task |
+| `berry_code_watch` | code | Start/stop/status the background re-indexing watcher |
+| `berry_arch_register` | arch | Enrich entity with architecture |
+| `berry_arch_relate` | arch | Create entity relationships |
+| `berry_arch_aspect` | arch | Cross-cutting concerns |
+| `berry_impact` | arch | Blast radius analysis |
+| `berry_arch_drift` | arch | Source file drift detection |
+| `berry_arch_context` | arch | Architectural context assembly |
+| `berry_research_init` | research | Start research campaign |
+| `berry_research_log` | research | Log experiment result |
+| `berry_research_context` | research | Research THINK phase context |
+| `berry_research_tree` | research | Hypothesis tree visualization |
+| `berry_research_contradictions` | research | Find conflicting principles |
+| `berry_research_consolidate` | research | Research pattern consolidation |
+| `berry_compile` | wiki | Compile graph into interlinked markdown wiki |
+| `berry_ingest` | wiki | Ingest source documents (text/markdown + PDF/Word/Excel/HTML/RTF via optional system tools); auto-extracts entities/claims |
+| `berry_lint` | wiki | 10 graph health checks |
+| `berry_braindump` | wiki | Capture a human brain dump as durable, human-authored memory |
+| `berry_wiki_sync` | wiki | Reconcile a human-edited wiki markdown file back into the graph |
+| `berry_feedback` | retrieval | Record retrieval usefulness |
+| `berry_graph_report` | graph | Deterministic graph audit: corpus summary, core abstractions, knowledge areas, cycles, gaps |
+| `berry_graph_export` | graph | Portable JSON or self-contained offline interactive HTML graph map (secret-safe) |
+| `berry_pr_impact` | graph | Blast radius of a GitHub PR over the code graph (requires gh CLI) |
+| `berry_pr_conflicts` | graph | PR pairs whose impact overlaps — likely merge/review conflicts (requires gh CLI) |
 
 For full tool documentation with parameters and examples, see `skills/amp/SKILL.md`.

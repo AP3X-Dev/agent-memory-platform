@@ -1,6 +1,6 @@
 // packages/research/src/tools.ts
 // MCP tool definitions for the research domain.
-// These are registered alongside the core AMP tools.
+// These are registered alongside the core MemBerry tools.
 
 import { z } from 'zod';
 import { nanoid } from 'nanoid';

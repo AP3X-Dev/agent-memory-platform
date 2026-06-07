@@ -1,6 +1,6 @@
 // packages/core/src/config/status.ts
 //
-// Read-only view of AMP's effective configuration, for the wiki settings panel.
+// Read-only view of MemBerry's effective configuration, for the wiki settings panel.
 // Hook tuning is live-resolved (env > file > default) and editable via the UI.
 // The server block reflects values baked into the MCP bootstrap (applied on
 // restart) plus two env-derived runtime facts — surfaced for visibility, not

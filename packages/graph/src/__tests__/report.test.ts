@@ -103,7 +103,7 @@ describe('GraphReportService.generate', () => {
   it('includes all expected sections and findings', async () => {
     const { markdown } = await new GraphReportService(fakeSnapshotService(FIXED)).generate({});
     // Sections
-    expect(markdown).toContain('# AMP Graph Report');
+    expect(markdown).toContain('# MemBerry Graph Report');
     expect(markdown).toContain('## Graph Summary');
     expect(markdown).toContain('## Memory Confidence Summary');
     expect(markdown).toContain('## Core Abstractions');

@@ -58,7 +58,7 @@ const ASK_LEVELS: Record<AskLevel, { retrievalTokens: number; synthTokens: numbe
   max: { retrievalTokens: 16000, synthTokens: 2000, task: 'synthesis' },
 };
 
-const ASK_SYSTEM_PROMPT = `You are AMP's memory analyst. Answer the question USING ONLY the numbered evidence.
+const ASK_SYSTEM_PROMPT = `You are MemBerry's memory analyst. Answer the question USING ONLY the numbered evidence.
 - Combine facts when needed and state the inference explicitly.
 - Cite the evidence numbers you used.
 - If the evidence is insufficient or conflicting, say so plainly. Do not invent facts.

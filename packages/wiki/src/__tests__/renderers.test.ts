@@ -450,7 +450,7 @@ describe('renderPortalHomepage', () => {
     };
 
     const result = renderPortalHomepage(data);
-    expect(result).toContain('# AMP Knowledge Portal');
+    expect(result).toContain('# MemBerry Knowledge Portal');
     expect(result).toContain('**1** projects');
     expect(result).toContain('mars-fps');
     expect(result).toContain('Use ECS architecture');

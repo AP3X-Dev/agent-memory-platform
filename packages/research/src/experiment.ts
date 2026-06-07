@@ -8,7 +8,7 @@ export class ExperimentStore {
   async create(node: ExperimentNode): Promise<string> {
     const session = this.driver.session();
     try {
-      // Create with dual labels: Episodic (for AMP compat) + Experiment (for research queries)
+      // Create with dual labels: Episodic (for MemBerry compat) + Experiment (for research queries)
       const result = await session.run(
         `CREATE (e:Episodic:Experiment {
           id: $id,

@@ -339,12 +339,12 @@ export function renderPortalHomepage(data: PortalData): string {
   const lines: string[] = [];
 
   lines.push(renderFrontmatter({
-    title: 'AMP Knowledge Portal',
+    title: 'MemBerry Knowledge Portal',
     compiled: new Date().toISOString().split('T')[0],
   }));
   lines.push('');
 
-  lines.push('# AMP Knowledge Portal');
+  lines.push('# MemBerry Knowledge Portal');
   lines.push('');
 
   // Stats bar

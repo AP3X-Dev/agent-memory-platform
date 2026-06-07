@@ -56,7 +56,7 @@ export async function waitForReadyz(options: ReadyzCheckOptions): Promise<void> 
   while (true) {
     const remainingMs = deadline - now();
     if (remainingMs <= 0) {
-      throw new Error(`AMP /readyz did not return 200 within ${options.timeoutMs}ms (${lastFailure})`);
+      throw new Error(`MemBerry /readyz did not return 200 within ${options.timeoutMs}ms (${lastFailure})`);
     }
 
     try {
@@ -70,7 +70,7 @@ export async function waitForReadyz(options: ReadyzCheckOptions): Promise<void> 
 
     const waitMs = deadline - now();
     if (waitMs <= 0) {
-      throw new Error(`AMP /readyz did not return 200 within ${options.timeoutMs}ms (${lastFailure})`);
+      throw new Error(`MemBerry /readyz did not return 200 within ${options.timeoutMs}ms (${lastFailure})`);
     }
 
     await sleep(Math.min(options.intervalMs, waitMs));

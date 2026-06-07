@@ -156,7 +156,7 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
   // ─── berry_feedback (Tier 2 — retrieval domain) ──────────────────────────
   tier2.push(server.tool(
     'berry_feedback',
-    'Record feedback on retrieval results. Tell AMP which results were useful and which were not. This improves future retrieval rankings over time.',
+    'Record feedback on retrieval results. Tell MemBerry which results were useful and which were not. This improves future retrieval rankings over time.',
     {
       result_id: z.string().max(500).describe('ID of the result to give feedback on'),
       was_useful: z.boolean().describe('Whether this result was useful for your task'),

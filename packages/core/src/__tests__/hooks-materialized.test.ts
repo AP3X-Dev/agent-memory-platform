@@ -12,7 +12,7 @@ function makeCore(ctx: MemoryContext | null): CoreServices {
   return {
     ampService: {
       load: async () => {
-        if (!ctx) throw new Error('AMP down');
+        if (!ctx) throw new Error('MemBerry down');
         return ctx;
       },
     },
@@ -61,10 +61,10 @@ describe('materializeContext', () => {
     expect(second).toBe(first);
   });
 
-  it('writes a placeholder block (loaded=false) when AMP is unreachable', async () => {
+  it('writes a placeholder block (loaded=false) when MemBerry is unreachable', async () => {
     const res = await materializeContext(makeCore(null), { agent: 'codex', cwd: dir, now: FIXED });
     expect(res.loaded).toBe(false);
-    expect(fs.readFileSync(res.file, 'utf-8')).toContain('AMP unreachable');
+    expect(fs.readFileSync(res.file, 'utf-8')).toContain('MemBerry unreachable');
   });
 
   it('preserves human-authored content around the block', async () => {

@@ -44,7 +44,7 @@ export function isMcpConfigBasename(name: string): boolean {
 /**
  * Resolve a file's language by BASENAME first (for config files whose extname is
  * unhelpful, e.g. `.mcp.json`), then by extension. Returns undefined for files
- * AMP does not index. Use this everywhere instead of `LANGUAGE_EXTENSIONS[ext]`.
+ * MemBerry does not index. Use this everywhere instead of `LANGUAGE_EXTENSIONS[ext]`.
  */
 export function detectLanguage(filePath: string): SupportedLanguage | undefined {
   const base = (filePath.split(/[\\/]/).pop() ?? '').toLowerCase();

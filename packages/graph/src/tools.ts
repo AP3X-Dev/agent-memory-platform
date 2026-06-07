@@ -157,7 +157,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
   handles.push(
     server.tool(
       'berry_graph_report',
-      'Generate a deterministic markdown audit of the AMP knowledge graph: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), import/dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only; project-scoped via project_tag/project_name.',
+      'Generate a deterministic markdown audit of the MemBerry knowledge graph: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), import/dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only; project-scoped via project_tag/project_name.',
       AmpGraphReportSchema,
       // Non-empty annotations are MANDATORY — `{}` re-triggers the SDK
       // "typedHandler is not a function" overload bug.
@@ -182,7 +182,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
   handles.push(
     server.tool(
       'berry_graph_export',
-      'Export the AMP knowledge graph as a portable artifact: "json" (the secret-safe graph snapshot) or "html" (a self-contained, offline, interactive force-directed viewer you open in a browser — pan/zoom/drag, click a node to inspect its properties). Works for any memory graph (code, people, orgs, topics). Project-scoped; writes to amp-graph-out/ when output_path is given, otherwise returns the artifact inline.',
+      'Export the MemBerry knowledge graph as a portable artifact: "json" (the secret-safe graph snapshot) or "html" (a self-contained, offline, interactive force-directed viewer you open in a browser — pan/zoom/drag, click a node to inspect its properties). Works for any memory graph (code, people, orgs, topics). Project-scoped; writes to amp-graph-out/ when output_path is given, otherwise returns the artifact inline.',
       AmpGraphExportSchema,
       // Writes a file when output_path is set, so this is not purely read-only.
       // Non-empty annotations are MANDATORY (empty {} re-triggers the SDK bug).

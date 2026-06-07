@@ -1,7 +1,7 @@
 // packages/core/src/hooks/safe-load.ts
 //
 // Fail-open wrapper around AMPService.load for use in agent hooks. A hook that
-// injects memory context MUST NEVER block or fail the user's turn: if AMP is
+// injects memory context MUST NEVER block or fail the user's turn: if MemBerry is
 // slow or down, we return null and the caller emits empty context (exit 0).
 //
 // The default timeout is intentionally short — a synchronous hook (e.g. Claude

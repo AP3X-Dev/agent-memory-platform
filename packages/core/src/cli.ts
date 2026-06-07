@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // packages/core/src/cli.ts
-// AMP CLI — export, import, snapshot commands.
+// MemBerry CLI — export, import, snapshot commands.
 // Usage: npx amp <command> [options]
 
 import { execFileSync } from 'child_process';
@@ -117,7 +117,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
   const message =
     typeof flags['message'] === 'string'
       ? flags['message']
-      : `AMP snapshot ${new Date().toISOString().slice(0, 10)}`;
+      : `MemBerry snapshot ${new Date().toISOString().slice(0, 10)}`;
 
   // 1. Run full export
   await runExport({ path: snapshotPath });

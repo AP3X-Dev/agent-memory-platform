@@ -226,7 +226,7 @@ const AmpConsolidateSchema = {
 };
 
 const AmpResolveSchema = {
-  uri: z.string().max(500).describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
+  uri: z.string().max(500).describe('MemBerry URI to resolve (memberry://entity/Name or memberry://tag/name)'),
   max_tokens: z.number().int().positive().optional().default(2000).describe('Max tokens for resolved content'),
   stage_context: z.string().max(2000).optional().describe('Current stage description for relevance ranking'),
 };
@@ -1135,7 +1135,7 @@ export interface RegisteredToolSet {
 }
 
 /**
- * Register core AMP tools on the given server.
+ * Register core MemBerry tools on the given server.
  * Returns handles grouped by tier for progressive disclosure.
  */
 export function registerTools(
@@ -1275,7 +1275,7 @@ export function registerTools(
 
   addToDomain('admin', server.tool(
     'berry_resolve',
-    'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
+    'Resolve an MemBerry URI (memberry://entity/Name or memberry://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
     AmpResolveSchema,
     ANN_READONLY,
     handlers.berry_resolve,

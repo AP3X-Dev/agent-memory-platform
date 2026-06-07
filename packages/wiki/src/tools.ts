@@ -320,7 +320,7 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
 
   handles.push(server.tool(
     'berry_compile',
-    'Compile the AMP knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
+    'Compile the MemBerry knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
     AmpCompileSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
     // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
@@ -330,7 +330,7 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
 
   handles.push(server.tool(
     'berry_ingest',
-    'Ingest a raw source document into the AMP graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Handles text/markdown directly and converts documents (PDF, Word/.docx, Excel/.xlsx, HTML, RTF) to text first when the needed system tools are installed. Use this to feed research material, articles, notes, contracts, reports, or org docs into the knowledge base.',
+    'Ingest a raw source document into the MemBerry graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Handles text/markdown directly and converts documents (PDF, Word/.docx, Excel/.xlsx, HTML, RTF) to text first when the needed system tools are installed. Use this to feed research material, articles, notes, contracts, reports, or org docs into the knowledge base.',
     AmpIngestSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
     handlers.berry_ingest,
@@ -346,7 +346,7 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
 
   handles.push(server.tool(
     'berry_braindump',
-    'Capture a human brain dump into AMP as durable, human-authored memory. Turns freeform text (your role, preferences, tech stack, how you like AI to respond) into graph knowledge under a custom scope (e.g. project:user-personal) while keeping the verbatim text as a Source. Auto-extracts entities and claims, creates the scope if new, and optionally compiles that scope into its own wiki. Use when the user says "remember this about me".',
+    'Capture a human brain dump into MemBerry as durable, human-authored memory. Turns freeform text (your role, preferences, tech stack, how you like AI to respond) into graph knowledge under a custom scope (e.g. project:user-personal) while keeping the verbatim text as a Source. Auto-extracts entities and claims, creates the scope if new, and optionally compiles that scope into its own wiki. Use when the user says "remember this about me".',
     AmpBraindumpSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
     handlers.berry_braindump,

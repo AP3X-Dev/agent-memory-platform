@@ -245,7 +245,7 @@ export function exportHtml(
   const membership: Record<string, number> = {};
   for (const [nodeId, communityId] of communityResult.membership) membership[nodeId] = communityId;
 
-  const title = `AMP Graph — ${graph.project_name ?? graph.project_tag ?? 'all projects'}`;
+  const title = `MemBerry Graph — ${graph.project_name ?? graph.project_tag ?? 'all projects'}`;
   const dataJson = escapeJsonForScript(exportJson(renderGraph));
   const colorsJson = escapeJsonForScript(JSON.stringify(NODE_TYPE_COLORS));
   const communitiesJson = escapeJsonForScript(JSON.stringify(membership));

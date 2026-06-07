@@ -1,7 +1,7 @@
 // packages/core/src/cli/project-scope.ts
 //
-// Resolves the AMP project tag for a working directory by reading the
-// `## AMP Memory` config block from the project's CLAUDE.md (the same block the
+// Resolves the MemBerry project tag for a working directory by reading the
+// `## MemBerry Memory` config block from the project's CLAUDE.md (the same block the
 // agents already read). Walks up to the git root. Falls back to the directory
 // name so a hook still produces a sane scope in an unconfigured repo.
 
@@ -11,7 +11,7 @@ import path from 'node:path';
 export interface ProjectScope {
   /** e.g. "project:amp" */
   tag: string;
-  /** Entity names listed under the AMP Memory config, if any. */
+  /** Entity names listed under the MemBerry Memory config, if any. */
   entities: string[];
   /** Absolute path to the CLAUDE.md the config came from, or null if none. */
   source: string | null;
@@ -31,13 +31,13 @@ function findClaudeMd(start: string): string | null {
   return null;
 }
 
-/** Extract `Project Tag: project:xyz` from the AMP Memory section. */
+/** Extract `Project Tag: project:xyz` from the MemBerry Memory section. */
 function parseTag(content: string): string | null {
   const m = content.match(/Project Tag:\s*(project:[A-Za-z0-9._-]+)/i);
   return m ? m[1] : null;
 }
 
-/** Extract the bullet list under an `Entities:` heading in the AMP Memory section. */
+/** Extract the bullet list under an `Entities:` heading in the MemBerry Memory section. */
 function parseEntities(content: string): string[] {
   const idx = content.search(/^Entities:\s*$/im);
   if (idx === -1) return [];

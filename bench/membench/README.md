@@ -7,7 +7,7 @@ context at the right moment**: current truth, in-scope, low-noise, **without** l
 stale assumptions or contaminating across projects.
 
 MemBench measures those agent-relevant properties, and it does so through a thin adapter
-so the **same suite scores any memory system** — AMP, a naive baseline, or an external
+so the **same suite scores any memory system** — MemBerry, a naive baseline, or an external
 system (Zep, Letta, Mem0, …) once an adapter is written.
 
 ## Run
@@ -33,26 +33,26 @@ into a single **composite** effectiveness score.
 
 ```
 system          recall  precis  conflic stale   contami  COMPOSITE
-AMP             1.00    1.00    1.00    1.00    1.00     1.000
+MemBerry             1.00    1.00    1.00    1.00    1.00     1.000
 Keyword(BM25)   1.00    1.00    0.25    0.42    0.75     0.683
 NaiveRecency    0.17    0.00    0.75    0.42    0.50     0.367
 ```
 
-Reading: BM25 retrieval (the common "vector/keyword memory") matches AMP on recall and
+Reading: BM25 retrieval (the common "vector/keyword memory") matches MemBerry on recall and
 precision but **fails the agent-specific dimensions** — it surfaces superseded facts
 (conflict 0.25, stale 0.42) and bleeds across projects (contamination 0.75). NaiveRecency
 aces *implicit* conflict (newest = current) but is useless at recall/precision — showing a
-good system needs BOTH relevance and currency, which only AMP combines.
+good system needs BOTH relevance and currency, which only MemBerry combines.
 
-AMP scores 1.0 across all five — including the hard **implicit-conflict-inference**
+MemBerry scores 1.0 across all five — including the hard **implicit-conflict-inference**
 scenario (a newer fact silently supersedes an older one with *no* stale flag). It earns
-that via subject-similarity supersession, a faithful proxy for AMP's fact layer
+that via subject-similarity supersession, a faithful proxy for MemBerry's fact layer
 (`findBySubjectPredicate` → invalidate-old-on-different-object), NOT a recency hack — a
 global recency tiebreaker was tried and reverted because it traded multi-hop recall for
-conflict. AMP's recall stays 1.0 because supersession fires only for same-subject
+conflict. MemBerry's recall stays 1.0 because supersession fires only for same-subject
 near-duplicates, leaving distinct facts alone.
 
-**What 1.0 here does and does not prove:** it proves AMP's architecture *covers* these
+**What 1.0 here does and does not prove:** it proves MemBerry's architecture *covers* these
 five quality dimensions while the baselines structurally cannot. It does NOT prove
 downstream task superiority on a coding benchmark — and note that a public coding
 benchmark with a strong agent is a poor test of memory value, because the model already
@@ -74,5 +74,5 @@ head-to-head on the same suite.
 - `types.ts` — the adapter contract + scenario/probe model
 - `scenarios.ts` — the suite (one scenario per dimension; ground truth is human-judged)
 - `scorer.ts` — pure, normalized metric computation
-- `adapters.ts` — NaiveRecency / Keyword(BM25) / AMP reference adapters
+- `adapters.ts` — NaiveRecency / Keyword(BM25) / MemBerry reference adapters
 - `run.ts` — runner + comparison report (`runMemBench()` is importable for tests)

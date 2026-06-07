@@ -14,7 +14,7 @@ export function renderGraphReport(s: GraphReportSections): string {
   const lines: string[] = [];
 
   // 1. Header
-  lines.push('# AMP Graph Report');
+  lines.push('# MemBerry Graph Report');
   lines.push('');
   lines.push(`- **Project:** ${graph.project_name ?? '(all projects)'}`);
   lines.push(`- **Project tag:** ${graph.project_tag ?? '(none)'}`);

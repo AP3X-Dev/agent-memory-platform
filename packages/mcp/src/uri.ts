@@ -10,7 +10,7 @@ export interface AmpUri {
  *   memberry://entity/ClientX
  *   memberry://tag/brand-voice
  *
- * The legacy `amp://` scheme is still accepted so existing MWP stage
+ * The legacy `memberry://` scheme is still accepted so existing MWP stage
  * CONTEXT.md files keep resolving after the rebrand.
  *
  * Throws on invalid URIs.

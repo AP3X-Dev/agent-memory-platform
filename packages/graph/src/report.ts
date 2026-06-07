@@ -1,7 +1,7 @@
 /**
  * GraphReportService — Capability 3, community-free MVP.
  *
- * Generates a deterministic markdown audit of the AMP graph from a single
+ * Generates a deterministic markdown audit of the MemBerry graph from a single
  * read-only snapshot. It does NOT call community detection and is
  * side-effect-free (no persisted runs) — re-scoped per Critical Issues #1/#19.
  *
