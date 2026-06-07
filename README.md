@@ -1,5 +1,9 @@
 # MemBerry — persistent memory for AI agents
 
+<p align="center">
+  <img src="assets/memberry-logo.png" alt="MemBerry logo" width="180" />
+</p>
+
 **Every AI agent starts from zero.** A coding agent forgets last week's architecture decisions. A personal assistant re-asks your preferences. A business agent re-learns your org chart every conversation. Every session, you re-explain. Every session, the same mistakes you already corrected.
 
 **MemBerry fixes that.**
@@ -75,8 +79,8 @@ On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki,
 ### Setup
 
 ```bash
-git clone https://github.com/AP3X-Dev/agent-memory-platform.git
-cd agent-memory-platform
+git clone https://github.com/AP3X-Dev/memberry.git
+cd memberry
 
 # Start the knowledge graph
 docker compose up -d
@@ -112,7 +116,7 @@ npm run dev
       "type": "stdio",
       "command": "npx",
       "args": ["tsx", "packages/mcp/src/server.ts", "--stdio"],
-      "cwd": "/path/to/agent-memory-platform",
+      "cwd": "/path/to/memberry",
       "env": {
         "NEO4J_URI": "bolt://localhost:7687",
         "NEO4J_USER": "neo4j",
