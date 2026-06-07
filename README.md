@@ -1,5 +1,3 @@
-# MemBerry — persistent memory for AI agents
-
 <p align="center">
   <img src="assets/memberry-banner.png" alt="MemBerry — persistent memory for AI agents" />
 </p>
