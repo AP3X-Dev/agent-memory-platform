@@ -80,16 +80,41 @@ export interface ICodeIndexerService {
   }>;
 }
 
-// ─── Injected instances ───────────────────────────────────────────────────────
+// ─── Service container ────────────────────────────────────────────────────────
+//
+// The tool layer depends on a single typed container of services rather than a
+// scatter of module-level singletons. A process-default container backs the
+// legacy setServiceInstances() injection point, while buildToolHandlers() and
+// registerTools() also accept an explicit container — the seam that makes
+// per-session / multi-tenant service isolation possible without process globals.
 
-let ampService: IAMPService | null = null;
-let consolidationEngine: IConsolidationEngine | null = null;
-let scopedQuery: IScopedQuery | null = null;
-let bootstrapService: IBootstrapGraphService | null = null;
-let memoryBlockService: IMemoryBlockService | null = null;
-let factStore: IFactStore | null = null;
-let codeIndexerService: ICodeIndexerService | null = null;
-let provenanceTraversal: IProvenanceTraversal | null = null;
+export interface ServiceContainer {
+  ampService: IAMPService | null;
+  consolidationEngine: IConsolidationEngine | null;
+  scopedQuery: IScopedQuery | null;
+  bootstrapService: IBootstrapGraphService | null;
+  memoryBlockService: IMemoryBlockService | null;
+  factStore: IFactStore | null;
+  codeIndexerService: ICodeIndexerService | null;
+  provenanceTraversal: IProvenanceTraversal | null;
+}
+
+/** Build a container, defaulting any service not supplied to null. */
+export function createServiceContainer(partial: Partial<ServiceContainer> = {}): ServiceContainer {
+  return {
+    ampService: partial.ampService ?? null,
+    consolidationEngine: partial.consolidationEngine ?? null,
+    scopedQuery: partial.scopedQuery ?? null,
+    bootstrapService: partial.bootstrapService ?? null,
+    memoryBlockService: partial.memoryBlockService ?? null,
+    factStore: partial.factStore ?? null,
+    codeIndexerService: partial.codeIndexerService ?? null,
+    provenanceTraversal: partial.provenanceTraversal ?? null,
+  };
+}
+
+/** Process-default container, populated by setServiceInstances() at bootstrap. */
+const defaultContainer: ServiceContainer = createServiceContainer();
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
@@ -101,14 +126,17 @@ export function setServiceInstances(services: {
   codeIndexer?: ICodeIndexerService;
   provenance?: IProvenanceTraversal;
 }): void {
-  ampService = services.ampService;
-  consolidationEngine = services.consolidationEngine;
-  scopedQuery = services.scopedQuery;
-  bootstrapService = services.bootstrapService;
-  memoryBlockService = services.memoryBlockService ?? null;
-  factStore = services.factStore ?? null;
-  codeIndexerService = services.codeIndexer ?? null;
-  provenanceTraversal = services.provenance ?? null;
+  // Full reset of the default container (a service omitted from `services` is
+  // cleared). Bootstrap injects in two phases and re-passes every service it
+  // wants retained on the second call — see bootstrap.ts.
+  defaultContainer.ampService = services.ampService;
+  defaultContainer.consolidationEngine = services.consolidationEngine;
+  defaultContainer.scopedQuery = services.scopedQuery;
+  defaultContainer.bootstrapService = services.bootstrapService;
+  defaultContainer.memoryBlockService = services.memoryBlockService ?? null;
+  defaultContainer.factStore = services.factStore ?? null;
+  defaultContainer.codeIndexerService = services.codeIndexer ?? null;
+  defaultContainer.provenanceTraversal = services.provenance ?? null;
 }
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
@@ -425,7 +453,20 @@ function normalizeBoundedPositiveInt(value: number | undefined, defaultValue: nu
   return Math.min(floored, maxValue);
 }
 
-export function buildToolHandlers(): ToolHandlers {
+export function buildToolHandlers(container: ServiceContainer = defaultContainer): ToolHandlers {
+  // Destructure once into closure-captured locals. Handlers reference these by
+  // the same names they used as module globals, so their bodies are unchanged —
+  // but each call to buildToolHandlers can now be bound to a different container.
+  const {
+    ampService,
+    consolidationEngine,
+    scopedQuery,
+    bootstrapService,
+    memoryBlockService,
+    factStore,
+    codeIndexerService,
+    provenanceTraversal,
+  } = container;
   return {
     async berry_load(args) {
       if (!ampService) throw new Error('AMPService not initialised');
@@ -1141,8 +1182,9 @@ export interface RegisteredToolSet {
 export function registerTools(
   server: McpServer,
   toolRegistry?: ToolRegistry,
+  container: ServiceContainer = defaultContainer,
 ): RegisteredToolSet {
-  const handlers = buildToolHandlers();
+  const handlers = buildToolHandlers(container);
   const tier1: RegisteredTool[] = [];
   const domains = new Map<ToolDomain, RegisteredTool[]>();
 

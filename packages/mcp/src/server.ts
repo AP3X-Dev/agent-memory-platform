@@ -4,7 +4,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
-import { randomUUID } from 'node:crypto';
+import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
 import type { ToolRegistry } from './tools.js';
@@ -195,11 +195,31 @@ export function createAMPServer(): AMPMCPServer {
     const allowUnauthenticated =
       (readEnv('MEMBERRY_ALLOW_UNAUTHENTICATED') ?? '').toLowerCase() === 'true';
 
+    // Per-actor named tokens: MEMBERRY_API_TOKENS="alice:tokenA,bob:tokenB".
+    // Each token maps to an actor identity, so a leaked token can be revoked
+    // individually instead of rotating one shared secret for everyone.
+    const tokenToActor = new Map<string, string>();
+    const namedTokensRaw = readEnv('MEMBERRY_API_TOKENS');
+    if (namedTokensRaw) {
+      for (const pair of namedTokensRaw.split(',')) {
+        const idx = pair.indexOf(':');
+        if (idx <= 0) continue;
+        const name = pair.slice(0, idx).trim();
+        const tok = pair.slice(idx + 1).trim();
+        if (name && tok) tokenToActor.set(tok, name);
+      }
+    }
+
+    // effectiveToken is the single-token / "is auth on?" sentinel kept for the
+    // status payload; actual validation goes through tokenToActor.
     let effectiveToken: string | null;
 
     const apiToken = readEnv('MEMBERRY_API_TOKEN');
     if (apiToken) {
       effectiveToken = apiToken;
+      tokenToActor.set(apiToken, 'default');
+    } else if (tokenToActor.size > 0) {
+      effectiveToken = '<multi>'; // named tokens only — auth still required
     } else if (allowUnauthenticated) {
       effectiveToken = null;
       console.error(
@@ -207,16 +227,39 @@ export function createAMPServer(): AMPMCPServer {
       );
     } else {
       effectiveToken = randomUUID();
+      tokenToActor.set(effectiveToken, 'default');
       console.error(
         `[memberry] No MEMBERRY_API_TOKEN set. Generated session token: ${effectiveToken}. Set MEMBERRY_ALLOW_UNAUTHENTICATED=true to disable auth.`,
       );
     }
 
-    /** Require a matching Bearer token unless auth is explicitly disabled. */
+    if (tokenToActor.size > 0) {
+      const actors = [...new Set(tokenToActor.values())].join(', ');
+      console.error(`[memberry] auth: ${tokenToActor.size} token(s) configured for actor(s): ${actors}`);
+    }
+
+    /** Constant-time match of a presented token → actor name, or null. */
+    function actorForToken(provided: string): string | null {
+      const a = Buffer.from(provided);
+      for (const [tok, actor] of tokenToActor) {
+        const b = Buffer.from(tok);
+        if (a.length === b.length && timingSafeEqual(a, b)) return actor;
+      }
+      return null;
+    }
+
+    /** Resolve the acting identity for a request, or null if unauthenticated. */
+    function actorFor(req: IncomingMessage): string | null {
+      if (effectiveToken === null) return 'anonymous'; // auth explicitly disabled
+      const header = req.headers['authorization'] ?? '';
+      const m = /^Bearer (.+)$/.exec(header);
+      return m ? actorForToken(m[1]) : null;
+    }
+
+    /** Require a matching Bearer token (any configured actor) unless auth is off. */
     function isAuthorized(req: IncomingMessage): boolean {
       if (effectiveToken === null) return true; // auth explicitly disabled via opt-out
-      const header = req.headers['authorization'] ?? '';
-      return header === `Bearer ${effectiveToken}`;
+      return actorFor(req) !== null;
     }
 
     function setCorsHeaders(res: ServerResponse, origin: string | undefined): void {

@@ -23,9 +23,13 @@ describe('server.ts auth regression', () => {
     expect(SERVER_SOURCE).toContain('MEMBERRY_ALLOW_UNAUTHENTICATED');
     expect(SERVER_SOURCE).toContain('randomUUID()');
 
-    // Verify isAuthorized checks Bearer token (not just returning true)
+    // Verify isAuthorized validates a Bearer token (not just returning true).
+    // Auth now resolves a per-actor identity and compares tokens in constant time
+    // (timingSafeEqual) rather than a single string-equality on `effectiveToken`.
     expect(SERVER_SOURCE).toMatch(/function isAuthorized/);
-    expect(SERVER_SOURCE).toMatch(/Bearer \$\{effectiveToken\}/);
+    expect(SERVER_SOURCE).toMatch(/Bearer /);
+    expect(SERVER_SOURCE).toContain('timingSafeEqual');
+    expect(SERVER_SOURCE).toMatch(/actorFor\(req\)/);
 
     // Verify the fallback generates a token (not null/undefined)
     // The else branch must call randomUUID, not set null

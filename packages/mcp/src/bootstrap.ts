@@ -2,7 +2,7 @@
 // Wires up Redis, Neo4j, embedding, and core services from environment variables.
 
 import { DistributedLock, ProposalStore } from '@memberry/redis';
-import { initSchema, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
+import { runMigrations, checkVectorIndexDimensions, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
 import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, readEnv } from '@memberry/core';
 import { setServiceInstances } from './tools.js';
 import {
@@ -97,14 +97,6 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   console.error('[memberry-mcp] Redis connected');
   await driver.getServerInfo();
   console.error('[memberry-mcp] Neo4j connected');
-  await initSchema(driver);
-  console.error('[memberry-mcp] Neo4j schema verified');
-
-  // Services the MCP server needs beyond the core load/store kit.
-  const semantic = new SemanticStore(driver);
-  const lock = new DistributedLock(redis);
-  const proposals = new ProposalStore(redis);
-  const provenanceTraversal = new ProvenanceTraversal(driver);
 
   // ─── Operational status tracking ────────────────────────────────────────────
   const status = {
@@ -114,9 +106,36 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     degraded: [] as string[],
   };
 
+  const migration = await runMigrations(driver);
+  console.error(
+    `[memberry-mcp] Neo4j schema verified (migrations: ${migration.version} applied` +
+    `${migration.applied.length > 0 ? `, +${migration.applied.length} new: ${migration.applied.join(', ')}` : ''})`,
+  );
+  // Drift guard: a vector index whose dimension no longer matches EMBEDDING_DIM
+  // would silently break similarity search. Surface it loudly with a remediation hint.
+  const dimDrift = await checkVectorIndexDimensions(driver);
+  if (dimDrift.length > 0) {
+    for (const d of dimDrift) {
+      console.error(
+        `[memberry-mcp] WARNING: vector index "${d.name}" has dimension ${d.actual} but ` +
+        `EMBEDDING_DIM is ${d.expected}. Drop and recreate it (DROP INDEX ${d.name}) ` +
+        `or set MEMBERRY_EMBEDDING_DIM=${d.actual} to match.`,
+      );
+    }
+    status.degraded.push(`schema: ${dimDrift.length} vector index dimension mismatch`);
+  }
+
+  // Services the MCP server needs beyond the core load/store kit.
+  const semantic = new SemanticStore(driver);
+  const lock = new DistributedLock(redis);
+  const proposals = new ProposalStore(redis);
+  const provenanceTraversal = new ProvenanceTraversal(driver);
+
   if (!openaiKey) {
-    status.degraded.push('embeddings: zero vectors (no OPENAI_API_KEY)');
-    console.error('[memberry-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings. Vector search will return random results.');
+    status.degraded.push('embeddings: disabled (no OPENAI_API_KEY) — lexical/fulltext retrieval only');
+    console.error('[memberry-mcp] No OPENAI_API_KEY — semantic vector search is DISABLED. ' +
+      'Retrieval falls back to deterministic lexical + fulltext ranking (no random results). ' +
+      'Set OPENAI_API_KEY to enable embeddings.');
   }
 
   const consolidationEngine = new ConsolidationEngine(
@@ -240,7 +259,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     codeWatcher: codeWatcherService,
   });
 
-  // Inject codeIndexer into core tools so berry_ingest_codebase can use it
+  // Re-inject with codeIndexer now available so berry_ingest_codebase works.
+  // NOTE: every service must be re-passed here — setServiceInstances does a full
+  // reset, so an omitted service is cleared. (Previously `provenance` was dropped
+  // on this second call, silently disabling berry_provenance.)
   setServiceInstances({
     ampService,
     consolidationEngine: consolidationAdapter,
@@ -249,6 +271,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     memoryBlockService: memoryBlockServiceInstance,
     factStore: factStoreInstance,
     codeIndexer: codeIndexerService,
+    provenance: provenanceTraversal,
   });
 
   console.error('[memberry-mcp] Code services initialized');

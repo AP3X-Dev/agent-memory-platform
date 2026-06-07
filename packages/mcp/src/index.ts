@@ -6,6 +6,7 @@ export {
   registerTools,
   setServiceInstances,
   buildToolHandlers,
+  createServiceContainer,
   TOOL_NAMES,
   DOMAIN_DESCRIPTIONS,
 } from './tools.js';
@@ -14,6 +15,7 @@ export type {
   IConsolidationEngine,
   IScopedQuery,
   ICodeIndexerService,
+  ServiceContainer,
   ToolHandlers,
   ToolDomain,
   ToolRegistry,

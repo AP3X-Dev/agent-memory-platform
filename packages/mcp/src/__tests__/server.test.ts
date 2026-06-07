@@ -156,6 +156,37 @@ describe('createAMPServer', () => {
     });
   });
 
+  it('accepts any configured per-actor token and rejects unknown ones', async () => {
+    const saved = {
+      tokens: process.env.MEMBERRY_API_TOKENS,
+      ampTok: process.env.AMP_API_TOKEN,
+      memTok: process.env.MEMBERRY_API_TOKEN,
+    };
+    delete process.env.AMP_API_TOKEN;
+    delete process.env.MEMBERRY_API_TOKEN;
+    process.env.MEMBERRY_API_TOKENS = 'alice:tok-alice,bob:tok-bob';
+
+    const amp = createAMPServer();
+    const handle = await amp.startSSE(0);
+    const address = handle.httpServer.address() as AddressInfo;
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    try {
+      const alice = await fetch(`${baseUrl}/readyz`, { headers: { authorization: 'Bearer tok-alice' } });
+      expect(alice.status).toBe(200);
+      const bob = await fetch(`${baseUrl}/readyz`, { headers: { authorization: 'Bearer tok-bob' } });
+      expect(bob.status).toBe(200);
+      const wrong = await fetch(`${baseUrl}/readyz`, { headers: { authorization: 'Bearer not-a-real-token' } });
+      expect(wrong.status).toBe(401);
+      const none = await fetch(`${baseUrl}/readyz`);
+      expect(none.status).toBe(401);
+    } finally {
+      await closeSSEHandle(handle, 500);
+      if (saved.tokens === undefined) delete process.env.MEMBERRY_API_TOKENS; else process.env.MEMBERRY_API_TOKENS = saved.tokens;
+      if (saved.ampTok !== undefined) process.env.AMP_API_TOKEN = saved.ampTok;
+      if (saved.memTok !== undefined) process.env.MEMBERRY_API_TOKEN = saved.memTok;
+    }
+  });
+
   it('serves Codex-compatible Streamable HTTP sessions on /mcp', async () => {
     await withSseServer(async (baseUrl) => {
       const baseHeaders = {
