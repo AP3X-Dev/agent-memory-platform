@@ -125,7 +125,7 @@ describe('WikiViewer', () => {
     const page = await fetch(`http://localhost:${TEST_PORT}/wiki/_index`);
     const html = await page.text();
     expect(html).toContain('src="/assets/memberry-logo.png"');
-    expect(html).toContain('<span class="title-mem">Mem</span><span class="title-berry">Berry</span>');
+    expect(html).toContain('<span class="title-mem">MEM</span><span class="title-berry">BERRY</span>');
     expect(html).toContain('--accent: #9b35ff;');
     expect(html).toContain('.hero-aurora {');
     expect(html).toContain('--hero-legacy-bg:');
@@ -181,11 +181,14 @@ describe('WikiViewer', () => {
       expect(res.status).toBe(200);
       const html = await res.text();
       expect(html).toContain('2 nodes · full view');
+      expect(html).toContain('<a href="/wiki/_index">');
+      expect(html).toContain('<text class="node-label node-label-brand" x="0" y="42" text-anchor="middle">MemBerry</text>');
       expect(html).toContain('<image class="node-logo" href="/assets/memberry-logo.png"');
       expect(html).toContain('width="56" height="56"');
       expect(html).toContain('preserveAspectRatio="xMidYMid meet"');
       expect(html).toContain("if (e.key === 'Escape' && graphWrap.open) graphWrap.open = false;");
       expect(html).not.toContain('dominant-baseline="central" style="user-select:none;"');
+      expect(html).not.toContain('<text class="node-label" x="0" y="42" text-anchor="middle">amp</text>');
     } finally {
       if (opsServer) {
         await new Promise<void>((resolve) => opsServer!.close(() => resolve()));

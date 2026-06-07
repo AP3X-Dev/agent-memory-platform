@@ -152,7 +152,7 @@ function topBar(active: string): string {
   return `<div class="topbar">
   <div class="brand">
     <a href="/wiki/_index" class="logo" aria-label="MemBerry Wiki home"><img src="/assets/memberry-logo.png" alt="" decoding="async"></a>
-    <a href="/wiki/_index" class="title" aria-label="MemBerry Wiki"><span class="title-mem">Mem</span><span class="title-berry">Berry</span><span class="title-suffix">&nbsp;WIKI</span></a>
+    <a href="/wiki/_index" class="title" aria-label="MemBerry Wiki"><span class="title-mem">MEM</span><span class="title-berry">BERRY</span><span class="title-suffix">&nbsp;WIKI</span></a>
     <span class="stamp">v2.4 · synced ${escapeHtml(compiledStamp)}</span>
   </div>
   <nav>${navHtml}</nav>
@@ -298,13 +298,13 @@ function parseRecentChanges(md: string): RecentChange[] {
 }
 
 function renderOpsGraph(projects: PortalProject[]): string {
-  // Build a small project-centric graph: hub "amp" + top N projects radially.
+  // Build a small project-centric graph: MemBerry hub + top N projects radially.
   const W = 1200, H = 520, cx = W / 2, cy = H / 2;
   const top = projects
     .filter((p) => p.entities + p.facts + p.sessions > 0)
     .sort((a, b) => (b.entities + b.facts + b.sessions) - (a.entities + a.facts + a.sessions))
     .slice(0, 12);
-  const hub = { id: 'amp', label: 'amp', x: cx, y: cy, size: 28, href: '/wiki/projects/amp/_index' };
+  const hub = { id: 'memberry', label: 'MemBerry', x: cx, y: cy, size: 28, href: '/wiki/_index' };
   const nodes = top.map((p, i) => {
     const angle = (2 * Math.PI * i) / top.length - Math.PI / 2;
     const r = 200 + (i % 3) * 25;
@@ -325,11 +325,12 @@ function renderOpsGraph(projects: PortalProject[]): string {
 
   const renderNode = (n: typeof hub) => {
     const diameter = n.size * 2;
+    const labelClass = n.id === 'memberry' ? 'node-label node-label-brand' : 'node-label';
     return `
     <g class="node" transform="translate(${n.x.toFixed(1)},${n.y.toFixed(1)})">
       <a href="${escapeHtml(n.href)}">
         <image class="node-logo" href="/assets/memberry-logo.png" x="${-n.size}" y="${-n.size}" width="${diameter}" height="${diameter}" preserveAspectRatio="xMidYMid meet" />
-        <text class="node-label" x="0" y="${n.size + 14}" text-anchor="middle">${escapeHtml(n.label)}</text>
+        <text class="${labelClass}" x="0" y="${n.size + 14}" text-anchor="middle">${escapeHtml(n.label)}</text>
       </a>
     </g>`;
   };
@@ -1065,6 +1066,7 @@ a { color: var(--fg); text-decoration: none; }
   filter: drop-shadow(0 0 10px #9b35ffaa);
 }
 .graph .node-label { fill: #a0a0a0; font-size: 10px; font-family: 'JetBrains Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; }
+.graph .node-label-brand { text-transform: none; letter-spacing: 0.02em; }
 .graph .node:hover .node-label { fill: var(--fg); }
 .graph .edge { stroke: #2a2a2a; stroke-width: 0.7; opacity: 0.55; }
 .graph .controls {
