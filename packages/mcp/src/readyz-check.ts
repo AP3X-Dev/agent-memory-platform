@@ -109,7 +109,7 @@ async function fetchWithDeadline(
 export async function readyzCheckMain(env: Record<string, string | undefined> = process.env): Promise<void> {
   const options = buildReadyzCheckOptions(env);
   await waitForReadyz(options);
-  console.error(`[amp-readyz] Ready: ${options.url}`);
+  console.error(`[memberry-readyz] Ready: ${options.url}`);
 }
 
 function positiveInt(value: string | undefined, fallback: number): number {
@@ -121,7 +121,7 @@ function positiveInt(value: string | undefined, fallback: number): number {
 const invokedPath = process.argv[1] ? pathToFileURL(process.argv[1]).href : '';
 if (import.meta.url === invokedPath) {
   readyzCheckMain().catch((err: unknown) => {
-    console.error(`[amp-readyz] ${err instanceof Error ? err.message : String(err)}`);
+    console.error(`[memberry-readyz] ${err instanceof Error ? err.message : String(err)}`);
     process.exit(1);
   });
 }

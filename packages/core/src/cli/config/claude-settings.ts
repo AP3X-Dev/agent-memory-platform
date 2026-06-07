@@ -22,7 +22,7 @@ export interface ClaudeSettings {
   [key: string]: unknown;
 }
 
-/** Hook event name → `amp hook claude <event>` subcommand. */
+/** Hook event name → `memberry hook claude <event>` subcommand. */
 export const AMP_HOOK_EVENTS: Record<string, string> = {
   SessionStart: 'session-start',
   UserPromptSubmit: 'user-prompt',
@@ -30,7 +30,11 @@ export const AMP_HOOK_EVENTS: Record<string, string> = {
   SessionEnd: 'session-end',
 };
 
-const isAmpGroup = (g: HookGroup): boolean => g._amp === true || g.hooks?.some((h) => h.command?.includes('amp hook claude'));
+// Detect MemBerry-owned groups by the persisted `_amp` marker (kept stable
+// across the rebrand so pre-rebrand installs are still recognised) OR, as a
+// fallback for marker-less groups, a brand-agnostic command match that catches
+// both legacy `amp hook claude` and new `memberry hook claude` invocations.
+const isAmpGroup = (g: HookGroup): boolean => g._amp === true || (g.hooks?.some((h) => h.command?.includes('hook claude')) ?? false);
 
 /**
  * Insert (or refresh) MemBerry's hook groups, returning a new settings object.

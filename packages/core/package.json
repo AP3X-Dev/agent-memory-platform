@@ -9,6 +9,7 @@
     "test": "vitest run"
   },
   "bin": {
+    "memberry": "dist/cli.js",
     "amp": "dist/cli.js"
   },
   "dependencies": {

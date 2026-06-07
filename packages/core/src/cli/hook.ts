@@ -1,6 +1,6 @@
 // packages/core/src/cli/hook.ts
 //
-// `amp hook <agent> <event>` — the harness-driven entry point. Reads the hook
+// `memberry hook <agent> <event>` — the harness-driven entry point. Reads the hook
 // payload as JSON on stdin, dispatches to the agent adapter, and writes the
 // adapter's output JSON on stdout. ALWAYS exits 0 with at least `{}` so a hook
 // can never block or fail the user's turn.
@@ -58,7 +58,7 @@ async function dispatchClaude(
   }
 }
 
-/** Entry: argv is everything after `amp hook`, i.e. [agent, event]. */
+/** Entry: argv is everything after `memberry hook`, i.e. [agent, event]. */
 export async function runHookCommand(argv: string[]): Promise<void> {
   const [agent, event] = argv;
   let output: Record<string, unknown> = {};

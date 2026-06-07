@@ -3,7 +3,7 @@
 // Settings page for the wiki viewer: enable/configure agent hooks and view the
 // rest of MemBerry's effective configuration. Hook tuning is persisted to the shared
 // settings file (read live by hook processes); enable/disable shells out to the
-// `amp hooks` installer so there is exactly one code path that edits
+// `memberry hooks` installer so there is exactly one code path that edits
 // settings.json / AGENTS.md.
 
 import { execFile } from 'node:child_process';
@@ -79,7 +79,7 @@ export interface InstallResult {
   status: HooksStatus;
 }
 
-/** Run the `amp hooks <action>` installer, then return refreshed status. */
+/** Run the `memberry hooks <action>` installer, then return refreshed status. */
 export async function runHooksInstall(repoRoot: string, req: InstallRequest): Promise<InstallResult> {
   const agents = ['claude', 'codex', 'hermes'];
   const actions = ['install', 'uninstall'];
@@ -153,7 +153,7 @@ function materializedRow(s: HooksStatus, agent: 'codex' | 'hermes'): string {
       : '';
   return `<div class="s-card">
     <h3>${agent === 'codex' ? 'OpenAI Codex' : 'Nous Hermes'} <span class="s-tag s-tag-alt">materialized</span></h3>
-    <p class="s-muted">Writes a managed block into <code>${esc(m.file.split('/').pop() ?? '')}</code> (session-start context only). Refresh at launch via <code>amp run --agent ${agent} -- ${agent}</code>.</p>
+    <p class="s-muted">Writes a managed block into <code>${esc(m.file.split('/').pop() ?? '')}</code> (session-start context only). Refresh at launch via <code>memberry run --agent ${agent} -- ${agent}</code>.</p>
     <div class="s-scope">
       <div class="s-scope-head">${badge(m.present, 'BLOCK PRESENT')}</div>
       <div class="s-muted s-path">${esc(m.file)}</div>

@@ -99,7 +99,7 @@ async function settleWithin<T>(
       } catch {
         // Ignore timeout cleanup failures; the caller is already degrading.
       }
-      console.error(`[amp-mcp] Timed out during ${description} after ${timeoutMs}ms; continuing shutdown.`);
+      console.error(`[memberry-mcp] Timed out during ${description} after ${timeoutMs}ms; continuing shutdown.`);
       resolve(undefined);
     }, timeoutMs);
   });
@@ -154,7 +154,7 @@ function registerAllTools(server: McpServer): ToolRegistry {
 }
 
 export function createAMPServer(): AMPMCPServer {
-  const server = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+  const server = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
 
   // Register all MemBerry tools with progressive disclosure
   registerAllTools(server);
@@ -233,7 +233,7 @@ export function createAMPServer(): AMPMCPServer {
     function statusPayload(status: 'ok' | 'ready'): Record<string, unknown> {
       return {
         status,
-        service: 'amp-mcp',
+        service: 'memberry-mcp',
         transport: 'sse',
         active_sessions: transports.size + streamableTransports.size,
         registered_sessions: servers.size + streamableServers.size,
@@ -363,7 +363,7 @@ export function createAMPServer(): AMPMCPServer {
                 return;
               }
 
-              const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+              const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
               registerAllTools(perSessionServer);
 
               let nextTransport: StreamableHTTPServerTransport | undefined;
@@ -394,7 +394,7 @@ export function createAMPServer(): AMPMCPServer {
 
           if (req.method === 'GET' && pathname === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
-            const perSessionServer = new McpServer({ name: 'amp-mcp', version: '0.1.0' });
+            const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
             registerAllTools(perSessionServer);
 
             const transport = new SSEServerTransport('/messages', res);
@@ -428,7 +428,7 @@ export function createAMPServer(): AMPMCPServer {
           res.writeHead(404);
           res.end('Not found');
         } catch (err) {
-          console.error('[amp-mcp] Unhandled error in HTTP handler:', err);
+          console.error('[memberry-mcp] Unhandled error in HTTP handler:', err);
           if (!res.headersSent) {
             res.writeHead(500);
             res.end('Internal Server Error');
@@ -442,7 +442,7 @@ export function createAMPServer(): AMPMCPServer {
       httpServer.once('error', reject);
     });
 
-    console.error(`[amp-mcp] SSE server listening on http://localhost:${port}/sse`);
+    console.error(`[memberry-mcp] SSE server listening on http://localhost:${port}/sse`);
 
     return { httpServer, transports, servers, streamableTransports, streamableServers };
   }
@@ -452,7 +452,7 @@ export function createAMPServer(): AMPMCPServer {
   async function startStdio(): Promise<void> {
     const transport = new StdioServerTransport();
     await server.connect(transport);
-    console.error('[amp-mcp] stdio transport connected');
+    console.error('[memberry-mcp] stdio transport connected');
   }
 
   return {
@@ -497,7 +497,7 @@ if (isMain) {
       async function gracefulShutdown(signal: string): Promise<void> {
         if (shuttingDown) return;
         shuttingDown = true;
-        console.error(`[amp-mcp] ${signal} received — shutting down gracefully`);
+        console.error(`[memberry-mcp] ${signal} received — shutting down gracefully`);
 
         if (sseHandle) {
           await closeSSEHandle(sseHandle, shutdownTimeoutMs);
@@ -509,25 +509,25 @@ if (isMain) {
           'Redis/Neo4j shutdown',
         );
 
-        console.error('[amp-mcp] Shutdown complete');
+        console.error('[memberry-mcp] Shutdown complete');
         process.exit(0);
       }
 
       process.on('SIGTERM', () => {
         gracefulShutdown('SIGTERM').catch((err: unknown) => {
-          console.error('[amp-mcp] Error during SIGTERM shutdown:', err);
+          console.error('[memberry-mcp] Error during SIGTERM shutdown:', err);
           process.exit(1);
         });
       });
       process.on('SIGINT', () => {
         gracefulShutdown('SIGINT').catch((err: unknown) => {
-          console.error('[amp-mcp] Error during SIGINT shutdown:', err);
+          console.error('[memberry-mcp] Error during SIGINT shutdown:', err);
           process.exit(1);
         });
       });
     })
     .catch((err: unknown) => {
-      console.error('[amp-mcp] Fatal startup error:', err);
+      console.error('[memberry-mcp] Fatal startup error:', err);
       process.exit(1);
     });
 }

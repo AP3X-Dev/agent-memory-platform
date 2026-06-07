@@ -59,7 +59,7 @@ function registeredHandlers(server: McpServer): Record<string, unknown> {
 
 describe('tool registration regression (typedHandler is not a function)', () => {
   it('registers every core tool with a callable handler', () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
 
     const handlers = registeredHandlers(server);
@@ -74,7 +74,7 @@ describe('tool registration regression (typedHandler is not a function)', () => 
   });
 
   it('the originally-broken mutating tools have function handlers', () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
     const handlers = registeredHandlers(server);
 
@@ -91,7 +91,7 @@ describe('tool registration regression (typedHandler is not a function)', () => 
   });
 
   it('invoking the registered berry_store handler succeeds (original repro)', async () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
     const handler = registeredHandlers(server)['berry_store'] as (
       args: unknown,

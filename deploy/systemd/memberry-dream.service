@@ -1,5 +1,5 @@
 [Unit]
-Description=AMP background dream pass (gap-filling + abductive hypotheses)
+Description=MemBerry background dream pass (gap-filling + abductive hypotheses)
 After=network.target neo4j.service redis-server.service
 Documentation=https://github.com/plastic-labs/honcho
 
@@ -7,9 +7,9 @@ Documentation=https://github.com/plastic-labs/honcho
 Type=oneshot
 User=cerebro
 WorkingDirectory=/home/cerebro/projects/amp
-# Load NEO4J_*, REDIS_URL, OPENAI_API_KEY, AMP_MODEL_* from the repo .env.
+# Load NEO4J_*, REDIS_URL, OPENAI_API_KEY, MEMBERRY_MODEL_* from the repo .env.
 EnvironmentFile=/home/cerebro/projects/amp/.env
-# Run via tsx: the @amp/* workspace packages export their TS source
+# Run via tsx: the @memberry/* workspace packages export their TS source
 # (package.json "exports".import -> ./src/index.ts), matching `npm run dev` and
 # the readyz check. `node dist/cli.js` cannot resolve those source exports.
 ExecStart=/usr/bin/npx tsx packages/core/src/cli.ts dream --scope project:amp

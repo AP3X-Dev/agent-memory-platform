@@ -248,8 +248,8 @@ Store to MemBerry whenever these happen — don't ask:
 
 ### Wiki Auto-Compile
 
-The wiki recompiles automatically every 6 hours via systemd timer (`amp-wiki-compile.timer`).
-The viewer runs persistently on **port 3200** (`amp-wiki.service`).
+The wiki recompiles automatically every 6 hours via systemd timer (`memberry-wiki-compile.timer`).
+The viewer runs persistently on **port 3200** (`memberry-wiki.service`).
 
 In addition, agents should trigger a recompile when significant knowledge changes occur:
 

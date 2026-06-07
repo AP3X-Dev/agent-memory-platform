@@ -112,7 +112,7 @@ describe('createAMPServer', () => {
       const body = await response.json() as Record<string, unknown>;
       expect(body).toMatchObject({
         status: 'ok',
-        service: 'amp-mcp',
+        service: 'memberry-mcp',
         transport: 'sse',
         active_sessions: 0,
         auth_required: true,
@@ -136,7 +136,7 @@ describe('createAMPServer', () => {
       const body = await authenticated.json() as Record<string, unknown>;
       expect(body).toMatchObject({
         status: 'ready',
-        service: 'amp-mcp',
+        service: 'memberry-mcp',
         transport: 'sse',
         active_sessions: 0,
         auth_required: true,
@@ -181,7 +181,7 @@ describe('createAMPServer', () => {
       expect(initializeBody).toMatchObject({
         jsonrpc: '2.0',
         id: 1,
-        result: { serverInfo: { name: 'amp-mcp' } },
+        result: { serverInfo: { name: 'memberry-mcp' } },
       });
 
       const sessionHeaders = {

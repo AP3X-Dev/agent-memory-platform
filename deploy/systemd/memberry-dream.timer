@@ -1,11 +1,11 @@
 [Unit]
-Description=Run the AMP dream pass nightly (off-peak)
+Description=Run the MemBerry dream pass nightly (off-peak)
 
 [Timer]
 # Off-peak nightly. Persistent=true catches up if the machine was asleep.
 OnCalendar=*-*-* 03:30:00
 Persistent=true
-Unit=amp-dream.service
+Unit=memberry-dream.service
 
 [Install]
 WantedBy=timers.target

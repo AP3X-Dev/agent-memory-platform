@@ -1,11 +1,11 @@
 # AMP infrastructure — Neo4j only.
 # Redis is shared from ~/infra (cerebro-redis), bound to 127.0.0.1 with requirepass.
-# MCP server runs via systemd (amp-mcp.service), not Docker.
+# MCP server runs via systemd (memberry-mcp.service), not Docker.
 
 services:
   neo4j:
     image: neo4j:5-community
-    container_name: amp-neo4j
+    container_name: memberry-neo4j
     ports:
       - "127.0.0.1:7474:7474"
       - "127.0.0.1:7687:7687"

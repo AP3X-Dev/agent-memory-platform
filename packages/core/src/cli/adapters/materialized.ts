@@ -2,7 +2,7 @@
 //
 // Materialized adapter for agents that only read a static context file at
 // startup (Codex → AGENTS.md, Hermes → .hermes.md/AGENTS.md). There is
-// no dynamic hook callback, so `amp context materialize` writes MemBerry's load
+// no dynamic hook callback, so `memberry context materialize` writes MemBerry's load
 // output into a fenced managed block that the agent picks up for free. This is
 // session-start-equivalent injection only; the rendered header shows the refresh
 // time so staleness is visible.

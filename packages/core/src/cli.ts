@@ -201,22 +201,22 @@ async function main(): Promise<void> {
       break;
 
     case 'dream':
-      // `amp dream --scope project:x` — background gap-filling + abductive hypotheses.
+      // `memberry dream --scope project:x` — background gap-filling + abductive hypotheses.
       await runDream(flags);
       break;
 
     case 'hook':
-      // `amp hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
+      // `memberry hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
       await runHookCommand(positionals);
       break;
 
     case 'context':
-      // `amp context materialize ...`
+      // `memberry context materialize ...`
       await runContextCommand(positionals[0] ?? '', flags);
       break;
 
     case 'hooks':
-      // `amp hooks <install|uninstall|status> ...`
+      // `memberry hooks <install|uninstall|status> ...`
       await runHooksCommand(positionals[0] ?? '', flags);
       break;
 

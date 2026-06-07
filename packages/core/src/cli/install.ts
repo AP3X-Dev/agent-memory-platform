@@ -1,6 +1,6 @@
 // packages/core/src/cli/install.ts
 //
-// `amp hooks install|uninstall|status` — the opt-in switch that wires MemBerry into
+// `memberry hooks install|uninstall|status` — the opt-in switch that wires MemBerry into
 // an agent's lifecycle. Claude Code gets settings.json hook entries (live
 // adapter); Codex/Hermes get a materialized managed block + a refresh trigger
 // (wrapper alias by default, systemd timer optionally).
@@ -119,11 +119,11 @@ function uninstallMaterialized(agent: MaterializeAgent, cwd: string): void {
 function printTimerInstructions(agent: MaterializeAgent, cwd: string): void {
   const cli = resolveCliCommand({});
   console.log('\nRefresh trigger: systemd user timer. Create these units:');
-  console.log(`  ~/.config/systemd/user/amp-materialize-${agent}.service`);
+  console.log(`  ~/.config/systemd/user/memberry-materialize-${agent}.service`);
   console.log(`    [Service]\n    Type=oneshot\n    WorkingDirectory=${cwd}\n    ExecStart=${cli} context materialize --agent ${agent}`);
-  console.log(`  ~/.config/systemd/user/amp-materialize-${agent}.timer`);
+  console.log(`  ~/.config/systemd/user/memberry-materialize-${agent}.timer`);
   console.log('    [Timer]\n    OnUnitActiveSec=15min\n    OnBootSec=1min\n    [Install]\n    WantedBy=timers.target');
-  console.log(`Then: systemctl --user enable --now amp-materialize-${agent}.timer`);
+  console.log(`Then: systemctl --user enable --now memberry-materialize-${agent}.timer`);
 }
 
 /** Derive the repo root from the CLI entry path (…/packages/core/src/cli.ts). */
@@ -204,6 +204,6 @@ export async function runHooksCommand(sub: string, flags: Flags): Promise<void> 
     return;
   }
 
-  console.error('Usage: amp hooks <install|uninstall|status> --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp] [--command "..."]');
+  console.error('Usage: memberry hooks <install|uninstall|status> --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp] [--command "..."]');
   process.exit(1);
 }
