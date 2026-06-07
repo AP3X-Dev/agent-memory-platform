@@ -1,0 +1,4 @@
+# Runtime metrics snapshot written by eval.ts on every run (contains a generatedAt
+# timestamp). It is a build artifact, not a source of truth — the baseline numbers live
+# in RESULTS.md and the thresholds in eval.ts / packages/retrieval/bench/quality-eval.ts.
+last-run.json

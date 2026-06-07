@@ -19,7 +19,8 @@
     "dev": "tsx packages/mcp/src/server.ts",
     "setup": "bash scripts/setup.sh",
     "smoke": "node scripts/smoke.mjs",
-    "start": "tsx packages/mcp/src/server.ts"
+    "start": "tsx packages/mcp/src/server.ts",
+    "bench:quality": "tsx bench/quality/eval.ts"
   },
   "engines": {
     "node": ">=20.0.0"

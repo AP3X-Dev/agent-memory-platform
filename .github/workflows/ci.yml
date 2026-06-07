@@ -35,6 +35,15 @@ jobs:
           REDIS_URL: ""
           NEO4J_URI: ""
 
+      # Memory-quality gate: deterministic Recall@k / MRR / nDCG@k over a committed golden
+      # set, using the lexical + RRF + MMR ranking path only (no embeddings, no live
+      # Neo4j/Redis). Exits non-zero on any threshold regression. See bench/quality/.
+      - name: Memory-quality gate (Recall/MRR/nDCG)
+        run: npm run bench:quality
+        env:
+          REDIS_URL: ""
+          NEO4J_URI: ""
+
   # Full job: integration tests with Redis + Neo4j service containers
   integration:
     runs-on: ubuntu-latest
