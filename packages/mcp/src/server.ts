@@ -6,8 +6,9 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import { randomUUID, timingSafeEqual } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
-import { registerTools, TOOL_NAMES } from './tools.js';
+import { registerTools, coreContainerForTenant, TOOL_NAMES } from './tools.js';
 import type { ToolRegistry } from './tools.js';
+import { DEFAULT_TENANT } from '@memberry/core';
 import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@memberry/research';
 import { registerArchTools, ARCH_TOOL_NAMES } from '@memberry/arch';
 import { registerCodeTools, CODE_TOOL_NAMES } from '@memberry/code';
@@ -117,33 +118,43 @@ async function settleWithin<T>(
  * Register all tools on a server with progressive disclosure.
  * Returns the ToolRegistry for the berry_tools gateway.
  */
-function registerAllTools(server: McpServer): ToolRegistry {
+function registerAllTools(
+  server: McpServer,
+  opts: { tenantId?: string; multiTenant?: boolean } = {},
+): ToolRegistry {
   const toolRegistry: ToolRegistry = new Map();
 
-  // Register core tools — returns Tier 1 (always-on) + core domains (Tier 2)
-  registerTools(server, toolRegistry);
+  // Register core tools — returns Tier 1 (always-on) + core domains (Tier 2).
+  // In multi-tenant mode, bind the session's tenant and apply default-deny so
+  // only tenant-isolated tools are usable.
+  const container = opts.multiTenant ? coreContainerForTenant(opts.tenantId ?? DEFAULT_TENANT) : undefined;
+  registerTools(server, toolRegistry, container, { multiTenant: opts.multiTenant });
 
-  // Register satellite domain tools — all Tier 2
-  const researchHandles = registerResearchTools(server);
-  toolRegistry.set('research', researchHandles);
+  // Satellite + retrieval domains are not yet tenant-scoped, so they are only
+  // registered for single-tenant sessions. A tenant-bound session gets just the
+  // default-deny core set (load/store + gateway) until Phase 2 scopes them.
+  if (!opts.multiTenant) {
+    const researchHandles = registerResearchTools(server);
+    toolRegistry.set('research', researchHandles);
 
-  const archHandles = registerArchTools(server);
-  toolRegistry.set('arch', archHandles);
+    const archHandles = registerArchTools(server);
+    toolRegistry.set('arch', archHandles);
 
-  const codeHandles = registerCodeTools(server);
-  toolRegistry.set('code', codeHandles);
+    const codeHandles = registerCodeTools(server);
+    toolRegistry.set('code', codeHandles);
 
-  const retrievalResult = registerRetrievalTools(server);
-  // berry_context is Tier 1, berry_feedback is Tier 2
-  const existingRetrieval = toolRegistry.get('retrieval') ?? [];
-  existingRetrieval.push(...retrievalResult.tier2);
-  toolRegistry.set('retrieval', existingRetrieval);
+    const retrievalResult = registerRetrievalTools(server);
+    // berry_context is Tier 1, berry_feedback is Tier 2
+    const existingRetrieval = toolRegistry.get('retrieval') ?? [];
+    existingRetrieval.push(...retrievalResult.tier2);
+    toolRegistry.set('retrieval', existingRetrieval);
 
-  const wikiHandles = registerWikiTools(server);
-  toolRegistry.set('wiki', wikiHandles);
+    const wikiHandles = registerWikiTools(server);
+    toolRegistry.set('wiki', wikiHandles);
 
-  const graphHandles = registerGraphTools(server);
-  toolRegistry.set('graph', graphHandles);
+    const graphHandles = registerGraphTools(server);
+    toolRegistry.set('graph', graphHandles);
+  }
 
   // Disable all Tier 2 tools by default
   for (const handles of toolRegistry.values()) {
@@ -210,6 +221,25 @@ export function createAMPServer(): AMPMCPServer {
       }
     }
 
+    // Per-tenant tokens: MEMBERRY_TENANT_TOKENS="acme:tokA,globex:tokB". Presence
+    // of any tenant token turns on multi-tenant mode; each token binds a request
+    // to its tenant. Tenant tokens are also valid auth tokens (actor = tenant).
+    const tokenToTenant = new Map<string, string>();
+    const tenantTokensRaw = readEnv('MEMBERRY_TENANT_TOKENS');
+    if (tenantTokensRaw) {
+      for (const pair of tenantTokensRaw.split(',')) {
+        const idx = pair.indexOf(':');
+        if (idx <= 0) continue;
+        const tenant = pair.slice(0, idx).trim();
+        const tok = pair.slice(idx + 1).trim();
+        if (tenant && tok) {
+          tokenToTenant.set(tok, tenant);
+          if (!tokenToActor.has(tok)) tokenToActor.set(tok, tenant);
+        }
+      }
+    }
+    const multiTenantMode = tokenToTenant.size > 0;
+
     // effectiveToken is the single-token / "is auth on?" sentinel kept for the
     // status payload; actual validation goes through tokenToActor.
     let effectiveToken: string | null;
@@ -254,6 +284,27 @@ export function createAMPServer(): AMPMCPServer {
       const header = req.headers['authorization'] ?? '';
       const m = /^Bearer (.+)$/.exec(header);
       return m ? actorForToken(m[1]) : null;
+    }
+
+    /** Resolve the tenant for a request from its bearer token (constant-time). */
+    function tenantFor(req: IncomingMessage): string {
+      if (!multiTenantMode) return DEFAULT_TENANT;
+      const header = req.headers['authorization'] ?? '';
+      const m = /^Bearer (.+)$/.exec(header);
+      if (!m) return DEFAULT_TENANT;
+      const a = Buffer.from(m[1]);
+      for (const [tok, tenant] of tokenToTenant) {
+        const b = Buffer.from(tok);
+        if (a.length === b.length && timingSafeEqual(a, b)) return tenant;
+      }
+      return DEFAULT_TENANT;
+    }
+
+    if (multiTenantMode) {
+      console.error(
+        `[memberry] multi-tenant mode ON (${tokenToTenant.size} tenant token(s)) — ` +
+        `tenant sessions get the default-deny core tool set (${'berry_load, berry_store, berry_tools'}).`,
+      );
     }
 
     /** Require a matching Bearer token (any configured actor) unless auth is off. */
@@ -407,7 +458,7 @@ export function createAMPServer(): AMPMCPServer {
               }
 
               const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
-              registerAllTools(perSessionServer);
+              registerAllTools(perSessionServer, { tenantId: tenantFor(req), multiTenant: multiTenantMode });
 
               let nextTransport: StreamableHTTPServerTransport | undefined;
               nextTransport = new StreamableHTTPServerTransport({
@@ -438,7 +489,7 @@ export function createAMPServer(): AMPMCPServer {
           if (req.method === 'GET' && pathname === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
             const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
-            registerAllTools(perSessionServer);
+            registerAllTools(perSessionServer, { tenantId: tenantFor(req), multiTenant: multiTenantMode });
 
             const transport = new SSEServerTransport('/messages', res);
             transports.set(transport.sessionId, transport);

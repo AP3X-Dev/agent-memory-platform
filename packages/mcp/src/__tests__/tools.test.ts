@@ -106,6 +106,8 @@ describe('berry_load handler', () => {
       entities: ['ClientX'],
       tags: ['brand-voice'],
       max_tokens: 2000,
+      temporal: undefined,
+      tenantId: 'default',
     });
     expect(result.content[0].type).toBe('text');
     expect(result.content[0].text).toContain('# Memory Context');

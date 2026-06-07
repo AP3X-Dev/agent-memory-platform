@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@memberry/core';
+import { DEFAULT_TENANT } from '@memberry/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
 import { scanCodebase, type CodebaseScan } from './codebase-scanner.js';
 
@@ -97,6 +98,8 @@ export interface ServiceContainer {
   factStore: IFactStore | null;
   codeIndexerService: ICodeIndexerService | null;
   provenanceTraversal: IProvenanceTraversal | null;
+  /** Tenant this container's tool calls are bound to (defaults to DEFAULT_TENANT). */
+  tenantId: string;
 }
 
 /** Build a container, defaulting any service not supplied to null. */
@@ -110,11 +113,27 @@ export function createServiceContainer(partial: Partial<ServiceContainer> = {}):
     factStore: partial.factStore ?? null,
     codeIndexerService: partial.codeIndexerService ?? null,
     provenanceTraversal: partial.provenanceTraversal ?? null,
+    tenantId: partial.tenantId ?? DEFAULT_TENANT,
   };
 }
 
 /** Process-default container, populated by setServiceInstances() at bootstrap. */
 const defaultContainer: ServiceContainer = createServiceContainer();
+
+/** A container bound to a specific tenant, reusing the process-default services. */
+export function coreContainerForTenant(tenantId: string): ServiceContainer {
+  return { ...defaultContainer, tenantId };
+}
+
+/**
+ * Tools that are proven tenant-isolated and therefore safe to expose to a
+ * tenant-bound (multi-tenant) session. Everything else is withheld by
+ * default-deny until its data path is tenant-scoped (see THREAT-MODEL.md).
+ * Grows as Phase 2 scopes grep/blocks/facts/context.
+ */
+export const TENANT_SAFE_TOOLS: ReadonlySet<string> = new Set([
+  'berry_load', 'berry_store', 'berry_tools',
+]);
 
 export function setServiceInstances(services: {
   ampService: IAMPService;
@@ -466,6 +485,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
     factStore,
     codeIndexerService,
     provenanceTraversal,
+    tenantId,
   } = container;
   return {
     async berry_load(args) {
@@ -476,6 +496,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         tags: args.tags,
         max_tokens: args.max_tokens ?? 4000,
         temporal: args.temporal,
+        tenantId,
       };
       const ctx = await ampService.load(scope);
       return textContent(ctx.markdown);
@@ -494,6 +515,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         model_id: args.model_id,
         scope: args.scope,
         tags: args.tags,
+        tenantId,
       };
       const result = await ampService.store(input);
       if (result.duplicate) {
@@ -1183,8 +1205,24 @@ export function registerTools(
   server: McpServer,
   toolRegistry?: ToolRegistry,
   container: ServiceContainer = defaultContainer,
+  opts: { multiTenant?: boolean } = {},
 ): RegisteredToolSet {
-  const handlers = buildToolHandlers(container);
+  let handlers = buildToolHandlers(container);
+  if (opts.multiTenant) {
+    // Default-deny: in a tenant-bound session, every tool NOT proven
+    // tenant-isolated is replaced with a refusal, so a not-yet-scoped path can
+    // never serve cross-tenant data even if the tenant enables its domain.
+    const gated = { ...handlers } as Record<string, (args: unknown) => ToolResult>;
+    for (const name of Object.keys(gated)) {
+      if (!TENANT_SAFE_TOOLS.has(name)) {
+        gated[name] = async () => textContent(
+          `**Error:** "${name}" is not available in multi-tenant mode yet (tenant scoping pending). ` +
+          `Tenant-safe tools: ${[...TENANT_SAFE_TOOLS].join(', ')}.`,
+        );
+      }
+    }
+    handlers = gated as unknown as ToolHandlers;
+  }
   const tier1: RegisteredTool[] = [];
   const domains = new Map<ToolDomain, RegisteredTool[]>();
 
