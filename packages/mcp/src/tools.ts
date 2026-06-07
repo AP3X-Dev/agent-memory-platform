@@ -100,6 +100,8 @@ export interface ServiceContainer {
   provenanceTraversal: IProvenanceTraversal | null;
   /** Tenant this container's tool calls are bound to (defaults to DEFAULT_TENANT). */
   tenantId: string;
+  /** Authenticated actor for this session (recorded in the audit trail; defaults to 'mcp'). */
+  actor: string;
 }
 
 /** Build a container, defaulting any service not supplied to null. */
@@ -114,6 +116,7 @@ export function createServiceContainer(partial: Partial<ServiceContainer> = {}):
     codeIndexerService: partial.codeIndexerService ?? null,
     provenanceTraversal: partial.provenanceTraversal ?? null,
     tenantId: partial.tenantId ?? DEFAULT_TENANT,
+    actor: partial.actor ?? 'mcp',
   };
 }
 
@@ -132,9 +135,10 @@ export function setTenantContainer(tenantId: string, services: Partial<ServiceCo
   tenantContainers.set(tenantId, createServiceContainer({ ...services, tenantId }));
 }
 
-/** A container bound to a tenant: its dedicated services if registered, else the shared defaults. */
-export function coreContainerForTenant(tenantId: string): ServiceContainer {
-  return tenantContainers.get(tenantId) ?? { ...defaultContainer, tenantId };
+/** A container bound to a tenant (+ authenticated actor): dedicated services if registered, else shared defaults. */
+export function coreContainerForTenant(tenantId: string, actor = 'mcp'): ServiceContainer {
+  const dedicated = tenantContainers.get(tenantId);
+  return dedicated ? { ...dedicated, actor } : { ...defaultContainer, tenantId, actor };
 }
 
 /**
@@ -506,6 +510,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
     codeIndexerService,
     provenanceTraversal,
     tenantId,
+    actor,
   } = container;
   return {
     async berry_load(args) {
@@ -526,7 +531,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
       if (!ampService) throw new Error('AMPService not initialised');
       const input: EpisodeInput = {
         session_id: args.session_id,
-        agent_id: 'mcp',
+        agent_id: actor,
         task: args.task,
         content: args.content,
         outcome: args.outcome,

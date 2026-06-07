@@ -120,14 +120,16 @@ async function settleWithin<T>(
  */
 function registerAllTools(
   server: McpServer,
-  opts: { tenantId?: string; multiTenant?: boolean } = {},
+  opts: { tenantId?: string; actor?: string; multiTenant?: boolean } = {},
 ): ToolRegistry {
   const toolRegistry: ToolRegistry = new Map();
 
   // Register core tools — returns Tier 1 (always-on) + core domains (Tier 2).
   // In multi-tenant mode, bind the session's tenant and apply default-deny so
   // only tenant-isolated tools are usable.
-  const container = opts.multiTenant ? coreContainerForTenant(opts.tenantId ?? DEFAULT_TENANT) : undefined;
+  const container = (opts.multiTenant || opts.actor)
+    ? coreContainerForTenant(opts.tenantId ?? DEFAULT_TENANT, opts.actor ?? 'mcp')
+    : undefined;
   registerTools(server, toolRegistry, container, { multiTenant: opts.multiTenant });
 
   // Retrieval (berry_context / berry_ask) IS tenant-scoped, so it is registered
@@ -462,7 +464,7 @@ export function createAMPServer(): AMPMCPServer {
               }
 
               const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
-              registerAllTools(perSessionServer, { tenantId: tenantFor(req), multiTenant: multiTenantMode });
+              registerAllTools(perSessionServer, { tenantId: tenantFor(req), actor: actorFor(req) ?? 'mcp', multiTenant: multiTenantMode });
 
               let nextTransport: StreamableHTTPServerTransport | undefined;
               nextTransport = new StreamableHTTPServerTransport({
@@ -493,7 +495,7 @@ export function createAMPServer(): AMPMCPServer {
           if (req.method === 'GET' && pathname === '/sse') {
             // Create a fresh McpServer per connection (SDK limitation: one transport per server)
             const perSessionServer = new McpServer({ name: 'memberry-mcp', version: '0.1.0' });
-            registerAllTools(perSessionServer, { tenantId: tenantFor(req), multiTenant: multiTenantMode });
+            registerAllTools(perSessionServer, { tenantId: tenantFor(req), actor: actorFor(req) ?? 'mcp', multiTenant: multiTenantMode });
 
             const transport = new SSEServerTransport('/messages', res);
             transports.set(transport.sessionId, transport);
