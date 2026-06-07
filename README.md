@@ -56,7 +56,7 @@ Session 15: New agent loads context → knows about OAuth2, Zod convention, and 
 
 ### Progressive Disclosure
 
-Your agent sees 7 tools by default. The other 41 activate on demand — no tool sprawl, no decision fatigue.
+Your agent sees 8 tools by default. The other 41 activate on demand — no tool sprawl, no decision fatigue.
 
 ```
 Always visible:  berry_load · berry_store · berry_memory_read · berry_memory_insert · berry_context · berry_ask · berry_grep · berry_tools

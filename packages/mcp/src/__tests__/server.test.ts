@@ -63,6 +63,18 @@ describe('createAMPServer', () => {
     expect(amp.toolNames.length).toBeGreaterThanOrEqual(6);
   });
 
+  it('REBRAND-GUARD: the tool surface is exactly 49 berry_* tools with no legacy amp_* names', () => {
+    const amp = createAMPServer();
+    const names = [...amp.toolNames];
+    // Clean cutover: every tool is canonical berry_*; no amp_* survives.
+    expect(names.every((n) => n.startsWith('berry_'))).toBe(true);
+    expect(names.some((n) => n.startsWith('amp_'))).toBe(false);
+    // 8 always-on (Tier 1) + 41 on-demand (Tier 2) = 49.
+    expect(names.length).toBe(49);
+    expect(ALWAYS_ON_TOOL_NAMES.length).toBe(8);
+    expect(Object.values(DOMAIN_TOOL_NAMES_MAP).flat().length).toBe(41);
+  });
+
   it('berry_provenance is registered and discoverable in the admin domain', () => {
     const amp = createAMPServer();
     expect(amp.toolNames).toContain('berry_provenance');
