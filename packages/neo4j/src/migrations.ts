@@ -87,6 +87,29 @@ export const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    id: '0004-tenant-block-uniqueness',
+    description:
+      'Widen MemoryBlock uniqueness from (scope,name) to (scope,name,tenant_id) so two ' +
+      'tenants can hold a same-named block; backfill existing blocks to the default tenant.',
+    up: async (driver) => {
+      const session = driver.session();
+      try {
+        // Existing blocks predate tenancy → default tenant (so the new MERGE key,
+        // which includes tenant_id, matches them instead of creating duplicates).
+        await session.run("MATCH (b:MemoryBlock) WHERE b.tenant_id IS NULL SET b.tenant_id = 'default'");
+        // (scope,name,tenant_id) is strictly more permissive than (scope,name),
+        // so this can't introduce new violations on existing data.
+        await session.run('DROP CONSTRAINT memblock_scope_name IF EXISTS');
+        await session.run(
+          'CREATE CONSTRAINT memblock_scope_name_tenant IF NOT EXISTS ' +
+          'FOR (b:MemoryBlock) REQUIRE (b.scope, b.name, b.tenant_id) IS UNIQUE',
+        );
+      } finally {
+        await session.close();
+      }
+    },
+  },
 ];
 
 export interface MigrationResult {

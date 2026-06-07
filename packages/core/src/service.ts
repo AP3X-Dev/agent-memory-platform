@@ -55,14 +55,14 @@ export interface RedisLayer {
    * the in-process background path.
    */
   extraction?: {
-    enqueue(job: { episodeId: string; content: string }): Promise<string>;
+    enqueue(job: { episodeId: string; content: string; tenantId?: string }): Promise<string>;
   };
 }
 
 export interface FactLayer {
-  getActive(entityName: string, options?: TemporalOptions): Promise<FactNode[]>;
+  getActive(entityName: string, options?: TemporalOptions, tenantId?: string): Promise<FactNode[]>;
   create(fact: FactNode): Promise<string>;
-  findBySubjectPredicate(subject: string, predicate: string): Promise<FactNode[]>;
+  findBySubjectPredicate(subject: string, predicate: string, tenantId?: string): Promise<FactNode[]>;
   invalidate(id: string, invalidAt: string, supersededById?: string): Promise<void>;
   /** Link two co-extracted facts from the same episode (optional — degrades gracefully) */
   linkCoExtracted?(factId1: string, factId2: string, episodeId: string): Promise<void>;
@@ -238,7 +238,7 @@ export class AMPService {
 
     const factsPromise: Promise<FactNode[][]> =
       this.neo4j.fact && scope.entities && scope.entities.length > 0
-        ? Promise.all(scope.entities.map((e) => this.neo4j.fact!.getActive(e, scope.temporal)))
+        ? Promise.all(scope.entities.map((e) => this.neo4j.fact!.getActive(e, scope.temporal, scope.tenantId)))
         : Promise.resolve([]);
 
     const [[coreRaw, workingRaw], [byScope, byVector], factResults] = await Promise.all([
@@ -499,13 +499,13 @@ export class AMPService {
       if (this.redis.extraction) {
         // One XADD, persisted before we return. On enqueue failure, fall back
         // to in-process so a transient Redis hiccup doesn't lose the facts.
-        this.redis.extraction.enqueue({ episodeId, content: contentForExtraction }).catch((err) => {
+        this.redis.extraction.enqueue({ episodeId, content: contentForExtraction, tenantId }).catch((err) => {
           console.error('[amp-store] extraction enqueue failed; running in-process fallback:', err instanceof Error ? err.message : err);
-          void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId);
+          void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId, tenantId);
         });
       } else {
         // Detach from the request path; _extractFactsBackground retries + logs.
-        void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId);
+        void this._extractFactsBackground(factLayer, apiKey, contentForExtraction, episodeId, tenantId);
       }
     }
 
@@ -528,11 +528,11 @@ export class AMPService {
    * attempt and THROWS on failure, so the queue can decide retry vs dead-letter.
    * No-op if there's no fact layer or API key configured.
    */
-  async processExtraction(content: string, episodeId: string): Promise<void> {
+  async processExtraction(content: string, episodeId: string, tenantId?: string): Promise<void> {
     const factLayer = this.neo4j.fact;
     const apiKey = this.config.embedding.apiKey;
     if (!factLayer || !apiKey) return;
-    await this._extractFactsOnce(factLayer, apiKey, content, episodeId);
+    await this._extractFactsOnce(factLayer, apiKey, content, episodeId, tenantId);
   }
 
   /**
@@ -546,12 +546,13 @@ export class AMPService {
     apiKey: string,
     content: string,
     episodeId: string,
+    tenantId?: string,
   ): Promise<void> {
     const MAX_RETRIES = 2;
 
     for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
       try {
-        await this._extractFactsOnce(factLayer, apiKey, content, episodeId);
+        await this._extractFactsOnce(factLayer, apiKey, content, episodeId, tenantId);
         return; // Success — exit retry loop
       } catch (err) {
         if (attempt < MAX_RETRIES && isTransientError(err)) {
@@ -576,9 +577,11 @@ export class AMPService {
     apiKey: string,
     content: string,
     episodeId: string,
+    tenantId?: string,
   ): Promise<void> {
     {
       {
+        const factTenant = (tenantId && tenantId.trim()) || DEFAULT_TENANT;
         const factInputs = await extractFacts(content, apiKey, this.config.models?.extraction);
         const now = new Date().toISOString();
         const createdFactIds: string[] = [];
@@ -590,7 +593,8 @@ export class AMPService {
           const normalizedPredicate = normalizePredicate(fi.predicate);
 
           // Check for existing active fact with same subject + normalized predicate
-          const existing = await factLayer.findBySubjectPredicate(fi.subject, normalizedPredicate);
+          // (tenant-scoped so we never reconcile against another tenant's fact).
+          const existing = await factLayer.findBySubjectPredicate(fi.subject, normalizedPredicate, factTenant);
           const conflicting = existing.find(f => f.object !== fi.object);
           const reinforcing = existing.find(f => f.object === fi.object);
 
@@ -630,6 +634,7 @@ export class AMPService {
             inference_type: 'deductive',
             supersedes_fact_id: conflicting?.id ?? null,
             scope: fi.scope ?? 'project',
+            tenant_id: factTenant,
             tags: fi.tags ?? [],
             created_at: now,
             updated_at: now,
@@ -667,7 +672,7 @@ export class AMPService {
             );
 
             // Get all active facts for this entity
-            const activeFacts = await factLayer.getActive(entityName);
+            const activeFacts = await factLayer.getActive(entityName, undefined, factTenant);
 
             for (const fact of activeFacts) {
               const normalizedPred = normalizePredicate(fact.predicate);

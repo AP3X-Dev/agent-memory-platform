@@ -387,6 +387,152 @@ describe('ConsolidationEngine.reviewProposal', () => {
   });
 });
 
+describe('ConsolidationEngine tenant propagation', () => {
+  it('carries the tenant forward when superseding a node', async () => {
+    const node = { ...makeSemanticNode('sem-tenant'), tenant_id: 'acme' };
+    const proposal: ConsolidationProposal = {
+      id: 'prop-supersede-tenant',
+      type: 'supersede',
+      scope: 'test',
+      affected_ids: ['sem-tenant'],
+      before: { ...node } as Record<string, unknown>,
+      after: { ...node, confidence: 0.9 } as Record<string, unknown>,
+      score: 15,
+      created_at: new Date().toISOString(),
+    };
+
+    const supersede = vi.fn().mockResolvedValue('new-sem-id');
+    const redis = makeRedis({
+      proposals: {
+        save: vi.fn().mockResolvedValue(undefined),
+        get: vi.fn().mockResolvedValue(proposal),
+        listPending: vi.fn().mockResolvedValue(['prop-supersede-tenant']),
+        remove: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const neo4j = makeNeo4j({
+      semantic: {
+        getById: vi.fn().mockResolvedValue(node),
+        updateConfidence: vi.fn().mockResolvedValue(undefined),
+        supersede,
+      },
+    });
+
+    const engine = new ConsolidationEngine(redis, neo4j, makeConfig());
+    await engine.reviewProposal('prop-supersede-tenant', 'approve');
+
+    expect(supersede).toHaveBeenCalledWith('sem-tenant', expect.objectContaining({
+      tenant_id: 'acme',
+    }));
+  });
+
+  it('derives a promoted semantic\'s tenant from the common tenant of source episodes', async () => {
+    const proposal: ConsolidationProposal = {
+      id: 'prop-promote',
+      type: 'promote',
+      scope: 'test',
+      affected_ids: ['ep-1', 'ep-2'],
+      before: {},
+      after: { content: 'Distilled knowledge', confidence: 0.7 } as Record<string, unknown>,
+      score: 10,
+      created_at: new Date().toISOString(),
+    };
+
+    const promoteFromEpisodic = vi.fn().mockResolvedValue('new-promoted-id');
+    const episodicGetById = vi.fn().mockResolvedValue({
+      id: 'ep-x',
+      session_id: 's',
+      agent_id: 'a',
+      task: 't',
+      content: 'c',
+      created_at: new Date().toISOString(),
+      tenant_id: 'acme',
+    });
+
+    const redis = makeRedis({
+      proposals: {
+        save: vi.fn().mockResolvedValue(undefined),
+        get: vi.fn().mockResolvedValue(proposal),
+        listPending: vi.fn().mockResolvedValue(['prop-promote']),
+        remove: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const neo4j = makeNeo4j({
+      semantic: {
+        getById: vi.fn().mockResolvedValue(null),
+        updateConfidence: vi.fn().mockResolvedValue(undefined),
+        supersede: vi.fn().mockResolvedValue('x'),
+        promoteFromEpisodic,
+      },
+      episodic: { getById: episodicGetById },
+    });
+
+    const engine = new ConsolidationEngine(redis, neo4j, makeConfig());
+    await engine.reviewProposal('prop-promote', 'approve');
+
+    expect(promoteFromEpisodic).toHaveBeenCalledWith(
+      'ep-1',
+      expect.objectContaining({ tenant_id: 'acme', content: 'Distilled knowledge' }),
+      'acme',
+    );
+  });
+
+  it('falls back to DEFAULT_TENANT for a promote when source episodes mix tenants', async () => {
+    const proposal: ConsolidationProposal = {
+      id: 'prop-promote-mixed',
+      type: 'promote',
+      scope: 'test',
+      affected_ids: ['ep-1', 'ep-2'],
+      before: {},
+      after: { content: 'Mixed', confidence: 0.6 } as Record<string, unknown>,
+      score: 10,
+      created_at: new Date().toISOString(),
+    };
+
+    const promoteFromEpisodic = vi.fn().mockResolvedValue('new-id');
+    let call = 0;
+    const episodicGetById = vi.fn().mockImplementation(() => {
+      call++;
+      return Promise.resolve({
+        id: `ep-${call}`,
+        session_id: 's',
+        agent_id: 'a',
+        task: 't',
+        content: 'c',
+        created_at: new Date().toISOString(),
+        tenant_id: call === 1 ? 'acme' : 'globex',
+      });
+    });
+
+    const redis = makeRedis({
+      proposals: {
+        save: vi.fn().mockResolvedValue(undefined),
+        get: vi.fn().mockResolvedValue(proposal),
+        listPending: vi.fn().mockResolvedValue(['prop-promote-mixed']),
+        remove: vi.fn().mockResolvedValue(undefined),
+      },
+    });
+    const neo4j = makeNeo4j({
+      semantic: {
+        getById: vi.fn().mockResolvedValue(null),
+        updateConfidence: vi.fn().mockResolvedValue(undefined),
+        supersede: vi.fn().mockResolvedValue('x'),
+        promoteFromEpisodic,
+      },
+      episodic: { getById: episodicGetById },
+    });
+
+    const engine = new ConsolidationEngine(redis, neo4j, makeConfig());
+    await engine.reviewProposal('prop-promote-mixed', 'approve');
+
+    expect(promoteFromEpisodic).toHaveBeenCalledWith(
+      'ep-1',
+      expect.objectContaining({ tenant_id: 'default' }),
+      'default',
+    );
+  });
+});
+
 describe('ConsolidationEngine.status', () => {
   it('returns list of pending proposal IDs', async () => {
     const redis = makeRedis({

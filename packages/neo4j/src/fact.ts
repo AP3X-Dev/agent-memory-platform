@@ -4,6 +4,7 @@ import { nanoid } from 'nanoid';
 import type { FactNode, FactTimeline, FactDiff, TemporalOptions } from '@memberry/core';
 import { EntityResolver } from './entity-resolver.js';
 import { temporalSetClause } from './temporal-edges.js';
+import { tenantWhere, resolveTenant, TENANT_PARAM } from './tenant.js';
 
 export class FactStore {
   private resolver: EntityResolver;
@@ -37,6 +38,7 @@ export class FactStore {
           supersedes_fact_id: $supersedes_fact_id,
           scope: $scope,
           tags: $tags,
+          tenant_id: $tenant_id,
           created_at: $created_at,
           updated_at: $updated_at
         })`,
@@ -55,6 +57,7 @@ export class FactStore {
           supersedes_fact_id: fact.supersedes_fact_id,
           scope: fact.scope,
           tags: fact.tags,
+          tenant_id: resolveTenant(fact.tenant_id),
           created_at: fact.created_at,
           updated_at: fact.updated_at,
         },
@@ -118,7 +121,7 @@ export class FactStore {
     }
   }
 
-  async getActive(entityName: string, options?: TemporalOptions): Promise<FactNode[]> {
+  async getActive(entityName: string, options?: TemporalOptions, tenantId?: string): Promise<FactNode[]> {
     // Resolve entityName to canonical ID via EntityResolver (handles
     // exact match, case-insensitive, and alias matching)
     const resolved = await this.resolver.resolveExisting(entityName);
@@ -127,14 +130,17 @@ export class FactStore {
     const session = this.driver.session();
     try {
       const timeMode = options?.time_mode ?? 'current';
+      const tenant = resolveTenant(tenantId);
+      const tFilter = tenantWhere('f', tenant); // tenant isolation
       let cypher: string;
-      const params: Record<string, unknown> = { entityId: resolved.id };
+      const params: Record<string, unknown> = { entityId: resolved.id, [TENANT_PARAM]: tenant };
 
       switch (timeMode) {
         case 'current':
           cypher = `
             MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.status = 'active' AND f.invalid_at IS NULL
+              AND ${tFilter}
             RETURN f ORDER BY f.valid_at DESC`;
           break;
 
@@ -143,6 +149,7 @@ export class FactStore {
           cypher = `
             MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
+              AND ${tFilter}
             RETURN f ORDER BY f.valid_at DESC`;
           break;
 
@@ -152,6 +159,7 @@ export class FactStore {
           cypher = `
             MATCH (f:Fact) WHERE f.entity_id = $entityId
               AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+              AND ${tFilter}
             RETURN f ORDER BY f.valid_at DESC`;
           break;
 
@@ -159,11 +167,13 @@ export class FactStore {
           if (options?.include_invalidated) {
             cypher = `
               MATCH (f:Fact) WHERE f.entity_id = $entityId
+                AND ${tFilter}
               RETURN f ORDER BY f.valid_at ASC`;
           } else {
             cypher = `
               MATCH (f:Fact) WHERE f.entity_id = $entityId
                 AND f.status <> 'invalidated'
+                AND ${tFilter}
               RETURN f ORDER BY f.valid_at ASC`;
           }
           break;
@@ -217,16 +227,18 @@ export class FactStore {
     }
   }
 
-  async timeline(entityName: string): Promise<FactTimeline> {
+  async timeline(entityName: string, tenantId?: string): Promise<FactTimeline> {
     const resolved = await this.resolver.resolveExisting(entityName);
     if (!resolved) return { entity: entityName, facts: [] };
 
     const session = this.driver.session();
     try {
+      const tenant = resolveTenant(tenantId);
       const result = await session.run(
         `MATCH (f:Fact) WHERE f.entity_id = $entityId
+           AND ${tenantWhere('f', tenant)}
          RETURN f ORDER BY f.valid_at ASC`,
-        { entityId: resolved.id },
+        { entityId: resolved.id, [TENANT_PARAM]: tenant },
       );
 
       const facts = result.records.map((r) => {
@@ -254,18 +266,21 @@ export class FactStore {
     }
   }
 
-  async diff(entityName: string, from: string, to: string): Promise<FactDiff> {
+  async diff(entityName: string, from: string, to: string, tenantId?: string): Promise<FactDiff> {
     const resolved = await this.resolver.resolveExisting(entityName);
     if (!resolved) return { entity: entityName, from, to, added: [], invalidated: [], changed: [] };
 
     const session = this.driver.session();
     try {
+      const tenant = resolveTenant(tenantId);
+      const tFilter = tenantWhere('f', tenant);
       // Facts active at 'from' timestamp
       const fromResult = await session.run(
         `MATCH (f:Fact) WHERE f.entity_id = $entityId
            AND f.valid_at <= $from AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+           AND ${tFilter}
          RETURN f`,
-        { entityId: resolved.id, from },
+        { entityId: resolved.id, from, [TENANT_PARAM]: tenant },
       );
       const fromFacts = fromResult.records.map((r) => mapFactNode(r.get('f').properties));
 
@@ -273,8 +288,9 @@ export class FactStore {
       const toResult = await session.run(
         `MATCH (f:Fact) WHERE f.entity_id = $entityId
            AND f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $to)
+           AND ${tFilter}
          RETURN f`,
-        { entityId: resolved.id, to },
+        { entityId: resolved.id, to, [TENANT_PARAM]: tenant },
       );
       const toFacts = toResult.records.map((r) => mapFactNode(r.get('f').properties));
 
@@ -315,7 +331,7 @@ export class FactStore {
     }
   }
 
-  async findBySubjectPredicate(subject: string, predicate: string): Promise<FactNode[]> {
+  async findBySubjectPredicate(subject: string, predicate: string, tenantId?: string): Promise<FactNode[]> {
     // Resolve subject to canonical entity_id first — same resolution
     // path as getActive/timeline/diff to avoid fragmentation
     const resolved = await this.resolver.resolveExisting(subject);
@@ -323,14 +339,16 @@ export class FactStore {
 
     const session = this.driver.session();
     try {
+      const tenant = resolveTenant(tenantId);
       const result = await session.run(
         `MATCH (f:Fact)
          WHERE f.entity_id = $entityId
            AND toLower(f.predicate) = toLower($predicate)
            AND f.status = 'active'
+           AND ${tenantWhere('f', tenant)}
          RETURN f
          ORDER BY f.valid_at DESC`,
-        { entityId: resolved.id, predicate },
+        { entityId: resolved.id, predicate, [TENANT_PARAM]: tenant },
       );
       return result.records.map((r) => mapFactNode(r.get('f').properties));
     } finally {
@@ -425,6 +443,7 @@ function mapFactNode(props: Record<string, unknown>): FactNode {
     tags: Array.isArray(props.tags) ? (props.tags as string[]) : [],
     created_at: typeof props.created_at === 'string' ? props.created_at : now,
     updated_at: typeof props.updated_at === 'string' ? props.updated_at : now,
+    ...(typeof props.tenant_id === 'string' && { tenant_id: props.tenant_id }),
     ...(props.embedding != null && Array.isArray(props.embedding) && { embedding: props.embedding as number[] }),
   };
 }

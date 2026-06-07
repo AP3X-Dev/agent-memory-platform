@@ -27,6 +27,8 @@ export interface SemanticNode {
   updated_at: string;
   decay_class: 'volatile' | 'stable' | 'permanent';
   tags: string[];
+  /** Tenant this node belongs to (defaults to DEFAULT_TENANT). */
+  tenant_id?: string;
 }
 
 export interface EntityNode {
@@ -270,6 +272,8 @@ export interface FactNode {
   tags: string[];
   created_at: string;
   updated_at: string;
+  /** Tenant this fact belongs to (defaults to DEFAULT_TENANT). */
+  tenant_id?: string;
 }
 
 export interface FactInput {
@@ -321,6 +325,8 @@ export interface MemoryBlock {
   max_tokens?: number;
   created_at: string;
   updated_at: string;
+  /** Tenant this block belongs to (defaults to DEFAULT_TENANT). */
+  tenant_id?: string;
 }
 
 export interface MemoryBlockInput {

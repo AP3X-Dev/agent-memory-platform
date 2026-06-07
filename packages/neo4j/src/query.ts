@@ -248,18 +248,21 @@ export class ScopedQuery {
     }
   }
 
-  async byFacts(entityName: string, options?: TemporalOptions): Promise<FactNode[]> {
+  async byFacts(entityName: string, options?: TemporalOptions, tenantId?: string): Promise<FactNode[]> {
     const session = this.driver.session();
     try {
       const timeMode = options?.time_mode ?? 'current';
+      const tenant = resolveTenant(tenantId);
+      const tFilter = tenantWhere('f', tenant); // tenant isolation
       let cypher: string;
-      const params: Record<string, unknown> = { entityName };
+      const params: Record<string, unknown> = { entityName, [TENANT_PARAM]: tenant };
 
       switch (timeMode) {
         case 'current':
           cypher = `
             MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
             WHERE f.status = 'active' AND f.invalid_at IS NULL
+              AND ${tFilter}
             RETURN f
             ORDER BY f.confidence DESC, f.valid_at DESC`;
           break;
@@ -269,6 +272,7 @@ export class ScopedQuery {
           cypher = `
             MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
             WHERE f.valid_at <= $as_of AND (f.invalid_at IS NULL OR f.invalid_at > $as_of)
+              AND ${tFilter}
             RETURN f
             ORDER BY f.confidence DESC, f.valid_at DESC`;
           break;
@@ -279,6 +283,7 @@ export class ScopedQuery {
           cypher = `
             MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
             WHERE f.valid_at <= $to AND (f.invalid_at IS NULL OR f.invalid_at > $from)
+              AND ${tFilter}
             RETURN f
             ORDER BY f.confidence DESC, f.valid_at DESC`;
           break;
@@ -287,12 +292,14 @@ export class ScopedQuery {
           if (options?.include_invalidated) {
             cypher = `
               MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
+              WHERE ${tFilter}
               RETURN f
               ORDER BY f.valid_at ASC`;
           } else {
             cypher = `
               MATCH (f:Fact)-[:FACT_ABOUT]->(e:Entity {name: $entityName})
               WHERE f.status <> 'invalidated'
+                AND ${tFilter}
               RETURN f
               ORDER BY f.valid_at ASC`;
           }
@@ -314,6 +321,7 @@ export class ScopedQuery {
   async byEntityWithFacts(
     entityName: string,
     options?: TemporalOptions,
+    tenantId?: string,
   ): Promise<{ semantics: SemanticNode[]; facts: FactNode[]; episodes: EpisodicNode[] }> {
     let semantics: SemanticNode[];
     let episodes: EpisodicNode[];
@@ -357,7 +365,7 @@ export class ScopedQuery {
     }
 
     // Query facts via byFacts (opens its own session)
-    const facts = await this.byFacts(entityName, options);
+    const facts = await this.byFacts(entityName, options, tenantId);
 
     return { semantics, facts, episodes };
   }
@@ -524,6 +532,7 @@ function mapFactNode(props: Record<string, unknown>): FactNode {
     tags: (props.tags as string[]) ?? [],
     created_at: props.created_at as string,
     updated_at: props.updated_at as string,
+    ...(typeof props.tenant_id === 'string' && { tenant_id: props.tenant_id }),
     ...(props.embedding != null && { embedding: props.embedding as number[] }),
   };
 }

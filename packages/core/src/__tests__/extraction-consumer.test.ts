@@ -48,7 +48,7 @@ describe('ExtractionConsumer', () => {
     const n = await consumer.drainOnce();
 
     expect(n).toBe(1);
-    expect(handler).toHaveBeenCalledWith('hello', 'ep1');
+    expect(handler).toHaveBeenCalledWith('hello', 'ep1', undefined);
     expect(q.acked).toHaveLength(1);
     expect(q.dead).toHaveLength(0);
     expect(q.available).toHaveLength(0);

@@ -1,6 +1,6 @@
 // packages/neo4j/src/semantic.ts
 import { type Driver } from 'neo4j-driver';
-import type { SemanticNode } from '@memberry/core';
+import { type SemanticNode, DEFAULT_TENANT } from '@memberry/core';
 import { temporalSetClause } from './temporal-edges.js';
 
 export class SemanticStore {
@@ -18,7 +18,8 @@ export class SemanticStore {
           created_at: $created_at,
           updated_at: $updated_at,
           decay_class: $decay_class,
-          tags: $tags
+          tags: $tags,
+          tenant_id: $tenant_id
         })
         ${node.embedding ? 'SET s.embedding = $embedding' : ''}
         RETURN s.id AS id
@@ -32,6 +33,7 @@ export class SemanticStore {
         updated_at: node.updated_at,
         decay_class: node.decay_class,
         tags: node.tags,
+        tenant_id: node.tenant_id ?? DEFAULT_TENANT,
       };
       if (node.embedding) {
         params.embedding = node.embedding;
@@ -61,6 +63,7 @@ export class SemanticStore {
         updated_at: props.updated_at as string,
         decay_class: props.decay_class as SemanticNode['decay_class'],
         tags: props.tags as string[],
+        tenant_id: (props.tenant_id as string | undefined) ?? DEFAULT_TENANT,
         ...(props.embedding !== undefined && { embedding: props.embedding as number[] }),
       };
     } finally {
@@ -94,7 +97,8 @@ export class SemanticStore {
           created_at: $created_at,
           updated_at: $updated_at,
           decay_class: $decay_class,
-          tags: $tags
+          tags: $tags,
+          tenant_id: $tenant_id
         })
         WITH new
         MATCH (old:Semantic {id: $oldId})
@@ -115,6 +119,7 @@ export class SemanticStore {
         updated_at: newNode.updated_at,
         decay_class: newNode.decay_class,
         tags: newNode.tags,
+        tenant_id: newNode.tenant_id ?? DEFAULT_TENANT,
         oldId,
         now,
       });
@@ -124,7 +129,11 @@ export class SemanticStore {
     }
   }
 
-  async promoteFromEpisodic(episodicId: string, newNode: SemanticNode): Promise<string> {
+  async promoteFromEpisodic(
+    episodicId: string,
+    newNode: SemanticNode,
+    tenantId?: string,
+  ): Promise<string> {
     const session = this.driver.session();
     try {
       const query = `
@@ -136,7 +145,8 @@ export class SemanticStore {
           created_at: $created_at,
           updated_at: $updated_at,
           decay_class: $decay_class,
-          tags: $tags
+          tags: $tags,
+          tenant_id: $tenant_id
         })
         WITH s
         MATCH (ep:Episodic {id: $episodicId})
@@ -152,6 +162,7 @@ export class SemanticStore {
         updated_at: newNode.updated_at,
         decay_class: newNode.decay_class,
         tags: newNode.tags,
+        tenant_id: tenantId ?? newNode.tenant_id ?? DEFAULT_TENANT,
         episodicId,
       });
       return result.records[0].get('id') as string;

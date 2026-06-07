@@ -257,6 +257,6 @@ export function buildDreamEngine(core: CoreServices): DreamEngine {
 export function buildExtractionConsumer(core: CoreServices): ExtractionConsumer {
   return new ExtractionConsumer(
     core.extractionQueue,
-    (content, episodeId) => core.ampService.processExtraction(content, episodeId),
+    (content, episodeId, tenantId) => core.ampService.processExtraction(content, episodeId, tenantId),
   );
 }

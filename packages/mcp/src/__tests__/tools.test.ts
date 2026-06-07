@@ -470,7 +470,7 @@ describe('berry_memory_read handler', () => {
   it('reads a block and returns JSON', async () => {
     const handlers = buildToolHandlers();
     const result = await handlers.berry_memory_read({ block: 'persona', scope: 'project:test' });
-    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'persona', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.name).toBe('persona');
     expect(parsed.content).toBe('You are a helpful assistant.');
@@ -487,13 +487,13 @@ describe('berry_memory_read handler', () => {
   it('uses default scope when not provided', async () => {
     const handlers = buildToolHandlers();
     await handlers.berry_memory_read({ block: 'persona' });
-    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('default', 'persona', undefined);
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('default', 'persona', undefined, 'default');
   });
 
   it('passes session_id for working blocks', async () => {
     const handlers = buildToolHandlers();
     await handlers.berry_memory_read({ block: 'working_state', scope: 'project:test', session_id: 'sess-1' });
-    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
+    expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1', 'default');
   });
 });
 
@@ -505,7 +505,7 @@ describe('berry_memory_insert handler', () => {
       text: ' And wise.',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.insert).toHaveBeenCalledWith('project:test', 'persona', ' And wise.', undefined);
+    expect(mockMemoryBlockService.insert).toHaveBeenCalledWith('project:test', 'persona', ' And wise.', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
     expect(parsed.block).toBe('persona');
@@ -521,7 +521,7 @@ describe('berry_memory_replace handler', () => {
       new_text: 'wise',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.replace).toHaveBeenCalledWith('project:test', 'persona', 'helpful', 'wise', undefined);
+    expect(mockMemoryBlockService.replace).toHaveBeenCalledWith('project:test', 'persona', 'helpful', 'wise', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
   });
@@ -535,7 +535,7 @@ describe('berry_memory_rewrite handler', () => {
       content: 'Completely new persona.',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.rewrite).toHaveBeenCalledWith('project:test', 'persona', 'Completely new persona.', undefined);
+    expect(mockMemoryBlockService.rewrite).toHaveBeenCalledWith('project:test', 'persona', 'Completely new persona.', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
     expect(parsed.block).toBe('persona');
@@ -551,7 +551,7 @@ describe('berry_memory_promote handler', () => {
       to_tier: 'core',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.promote).toHaveBeenCalledWith('project:test', 'working_state', 'working', 'core', undefined);
+    expect(mockMemoryBlockService.promote).toHaveBeenCalledWith('project:test', 'working_state', 'working', 'core', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
     expect(parsed.tier).toBe('core');
@@ -565,7 +565,7 @@ describe('berry_memory_archive handler', () => {
       block: 'persona',
       scope: 'project:test',
     });
-    expect(mockMemoryBlockService.archive).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    expect(mockMemoryBlockService.archive).toHaveBeenCalledWith('project:test', 'persona', undefined, 'default');
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.ok).toBe(true);
     expect(parsed.archived_length).toBe('archived block content'.length);

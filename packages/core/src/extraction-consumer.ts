@@ -11,6 +11,7 @@ export interface QueuedJob {
   id: string;
   episodeId: string;
   content: string;
+  tenantId?: string;
   attempt: number;
 }
 
@@ -20,7 +21,7 @@ export interface ExtractionQueuePort {
   read(consumer: string, count: number): Promise<QueuedJob[]>;
   claimStale(consumer: string, minIdleMs: number, count: number): Promise<QueuedJob[]>;
   ack(id: string): Promise<void>;
-  enqueue(job: { episodeId: string; content: string; attempt?: number }): Promise<string>;
+  enqueue(job: { episodeId: string; content: string; tenantId?: string; attempt?: number }): Promise<string>;
   deadLetter(job: QueuedJob, error: string): Promise<void>;
 }
 
@@ -43,7 +44,7 @@ export class ExtractionConsumer {
 
   constructor(
     private queue: ExtractionQueuePort,
-    private handler: (content: string, episodeId: string) => Promise<void>,
+    private handler: (content: string, episodeId: string, tenantId?: string) => Promise<void>,
     opts: ExtractionConsumerOptions = {},
   ) {
     this.consumerName = opts.consumerName ?? `consumer-${process.pid}`;
@@ -93,7 +94,7 @@ export class ExtractionConsumer {
 
   private async handle(job: QueuedJob): Promise<void> {
     try {
-      await this.handler(job.content, job.episodeId);
+      await this.handler(job.content, job.episodeId, job.tenantId);
       await this.queue.ack(job.id);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -105,7 +106,7 @@ export class ExtractionConsumer {
         await this.queue.deadLetter(job, msg);
       } else {
         console.warn(`[amp-extraction] job ${job.id} attempt ${job.attempt + 1} failed; re-enqueuing:`, msg);
-        await this.queue.enqueue({ episodeId: job.episodeId, content: job.content, attempt: job.attempt + 1 });
+        await this.queue.enqueue({ episodeId: job.episodeId, content: job.content, tenantId: job.tenantId, attempt: job.attempt + 1 });
       }
       // Remove the current delivery either way (we've re-enqueued or dead-lettered).
       await this.queue.ack(job.id);

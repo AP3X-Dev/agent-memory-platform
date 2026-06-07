@@ -30,12 +30,12 @@ export interface IScopedQuery {
 }
 
 export interface IMemoryBlockService {
-  read(scope: string, name: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string; session_id?: string; created_at: string; updated_at: string } | null>;
-  insert(scope: string, name: string, text: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
-  replace(scope: string, name: string, oldText: string, newText: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
-  rewrite(scope: string, name: string, content: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
-  promote(scope: string, name: string, fromTier: string, toTier: string, sessionId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
-  archive(scope: string, name: string, sessionId?: string): Promise<string>;
+  read(scope: string, name: string, sessionId?: string, tenantId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string; session_id?: string; created_at: string; updated_at: string } | null>;
+  insert(scope: string, name: string, text: string, sessionId?: string, tenantId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  replace(scope: string, name: string, oldText: string, newText: string, sessionId?: string, tenantId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  rewrite(scope: string, name: string, content: string, sessionId?: string, tenantId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  promote(scope: string, name: string, fromTier: string, toTier: string, sessionId?: string, tenantId?: string): Promise<{ id: string; name: string; tier: string; content: string; scope: string }>;
+  archive(scope: string, name: string, sessionId?: string, tenantId?: string): Promise<string>;
 }
 
 export interface IBootstrapGraphService {
@@ -61,8 +61,8 @@ export interface IBootstrapGraphService {
 }
 
 export interface IFactStore {
-  timeline(entityName: string): Promise<FactTimeline>;
-  diff(entityName: string, from: string, to: string): Promise<FactDiff>;
+  timeline(entityName: string, tenantId?: string): Promise<FactTimeline>;
+  diff(entityName: string, from: string, to: string, tenantId?: string): Promise<FactDiff>;
 }
 
 export interface IProvenanceTraversal {
@@ -132,7 +132,13 @@ export function coreContainerForTenant(tenantId: string): ServiceContainer {
  * Grows as Phase 2 scopes grep/blocks/facts/context.
  */
 export const TENANT_SAFE_TOOLS: ReadonlySet<string> = new Set([
-  'berry_load', 'berry_store', 'berry_tools',
+  // Core memory read/write/search — all tenant-scoped at the data layer
+  // (episodes, semantics, facts, blocks, grep all filter by tenant_id).
+  'berry_load', 'berry_store', 'berry_grep',
+  'berry_memory_read', 'berry_memory_insert', 'berry_memory_replace',
+  'berry_memory_rewrite', 'berry_memory_promote', 'berry_memory_archive',
+  'berry_timeline', 'berry_fact_diff',
+  'berry_tools',
 ]);
 
 export function setServiceInstances(services: {
@@ -548,7 +554,17 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         grepPatternLower: pattern.toLowerCase(),
         grepRegex: caseSensitive ? `.*${pattern}.*` : `(?i).*${pattern}.*`,
         grepScope: args.scope ?? '',
+        grepTenant: tenantId,
       };
+
+      // Mandatory tenant isolation per node type. The default tenant also matches
+      // legacy rows with no tenant_id; a named tenant matches strictly.
+      const tenantIsDefault = tenantId === DEFAULT_TENANT;
+      function tFilter(alias: string): string {
+        return tenantIsDefault
+          ? `(${alias}.tenant_id IS NULL OR ${alias}.tenant_id = $grepTenant)`
+          : `${alias}.tenant_id = $grepTenant`;
+      }
 
       function matchExpr(field: string): string {
         if (isRegex) {
@@ -637,7 +653,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
 
       if (nodeTypes.includes('episodic')) {
         const scopeFilter = args.scope ? ' AND e.task CONTAINS $grepScope' : '';
-        const cypher = `MATCH (e:Episodic) WHERE (${matchExpr('e.content')} OR ${matchExpr('e.task')})${scopeFilter} RETURN e ORDER BY e.created_at DESC`;
+        const cypher = `MATCH (e:Episodic) WHERE (${matchExpr('e.content')} OR ${matchExpr('e.task')})${scopeFilter} AND ${tFilter('e')} RETURN e ORDER BY e.created_at DESC`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
@@ -661,7 +677,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
 
       if (nodeTypes.includes('semantic')) {
         const scopeFilter = args.scope ? ' AND $grepScope IN s.tags' : '';
-        const cypher = `MATCH (s:Semantic) WHERE ${matchExpr('s.content')}${scopeFilter} RETURN s ORDER BY s.confidence DESC`;
+        const cypher = `MATCH (s:Semantic) WHERE ${matchExpr('s.content')}${scopeFilter} AND ${tFilter('s')} RETURN s ORDER BY s.confidence DESC`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
@@ -680,7 +696,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         const scopeFilter = args.scope ? ' AND f.scope = $grepScope' : '';
         // By default only search active facts — invalidated facts are historical noise
         const statusFilter = ` AND f.status = 'active'`;
-        const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter}${statusFilter} RETURN f ORDER BY f.updated_at DESC`;
+        const cypher = `MATCH (f:Fact) WHERE (${matchExpr('f.subject')} OR ${matchExpr('f.predicate')} OR ${matchExpr('f.object')})${scopeFilter}${statusFilter} AND ${tFilter('f')} RETURN f ORDER BY f.updated_at DESC`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
@@ -704,7 +720,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
 
       if (nodeTypes.includes('block')) {
         const scopeFilter = args.scope ? ' AND b.scope = $grepScope' : '';
-        const cypher = `MATCH (b:MemoryBlock) WHERE (${matchExpr('b.content')} OR ${matchExpr('b.name')})${scopeFilter} RETURN b ORDER BY b.updated_at DESC`;
+        const cypher = `MATCH (b:MemoryBlock) WHERE (${matchExpr('b.content')} OR ${matchExpr('b.name')})${scopeFilter} AND ${tFilter('b')} RETURN b ORDER BY b.updated_at DESC`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
@@ -733,7 +749,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
             ? 'any(a IN COALESCE(ent.aliases, []) WHERE a CONTAINS $grepPattern)'
             : 'any(a IN COALESCE(ent.aliases, []) WHERE toLower(a) CONTAINS $grepPatternLower)';
         const descMatch = `ent.description IS NOT NULL AND ${matchExpr('ent.description')}`;
-        const cypher = `MATCH (ent:Entity) WHERE ${matchExpr('ent.name')} OR (${descMatch}) OR ${aliasMatch} RETURN ent`;
+        const cypher = `MATCH (ent:Entity) WHERE (${matchExpr('ent.name')} OR (${descMatch}) OR ${aliasMatch}) AND ${tFilter('ent')} RETURN ent`;
         try {
           const rows = await scopedQuery.rawCypher(cypher, perTypeLimit, grepParams);
           for (const row of rows) {
@@ -995,7 +1011,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         ].filter(Boolean).join('. ') + '.';
 
         try {
-          await memoryBlockService.insert(projectTag, 'project_state', projectStateText);
+          await memoryBlockService.insert(projectTag, 'project_state', projectStateText, undefined, tenantId);
           blocksSeeded++;
         } catch (err: unknown) {
           // Non-fatal — block may already exist
@@ -1003,7 +1019,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
 
         const personaText = `Agent working on ${projectName}. Domain: ${domain}. Languages: ${scan.languages.join(', ')}.`;
         try {
-          await memoryBlockService.insert(projectTag, 'persona', personaText);
+          await memoryBlockService.insert(projectTag, 'persona', personaText, undefined, tenantId);
           blocksSeeded++;
         } catch (err: unknown) {
           // Non-fatal
@@ -1050,7 +1066,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_read] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.read(scope, args.block, args.session_id);
+      const block = await memoryBlockService.read(scope, args.block, args.session_id, tenantId);
       if (!block) {
         return textContent(JSON.stringify({ found: false, block: args.block }));
       }
@@ -1063,7 +1079,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_insert] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.insert(scope, args.block, args.text, args.session_id);
+      const block = await memoryBlockService.insert(scope, args.block, args.text, args.session_id, tenantId);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
@@ -1073,7 +1089,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_replace] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.replace(scope, args.block, args.old_text, args.new_text, args.session_id);
+      const block = await memoryBlockService.replace(scope, args.block, args.old_text, args.new_text, args.session_id, tenantId);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
@@ -1083,7 +1099,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_rewrite] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.rewrite(scope, args.block, args.content, args.session_id);
+      const block = await memoryBlockService.rewrite(scope, args.block, args.content, args.session_id, tenantId);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
@@ -1093,7 +1109,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_promote] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier, args.session_id);
+      const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier, args.session_id, tenantId);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier }));
     },
 
@@ -1103,13 +1119,13 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
         console.warn('[berry_memory_archive] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
-      const content = await memoryBlockService.archive(scope, args.block, args.session_id);
+      const content = await memoryBlockService.archive(scope, args.block, args.session_id, tenantId);
       return textContent(JSON.stringify({ ok: true, block: args.block, archived_length: content.length }));
     },
 
     async berry_timeline(args) {
       if (!factStore) throw new Error('FactStore not initialised');
-      const tl = await factStore.timeline(args.entity);
+      const tl = await factStore.timeline(args.entity, tenantId);
       const facts = args.limit ? tl.facts.slice(0, args.limit) : tl.facts;
 
       const lines: string[] = [
@@ -1131,7 +1147,7 @@ export function buildToolHandlers(container: ServiceContainer = defaultContainer
 
     async berry_fact_diff(args) {
       if (!factStore) throw new Error('FactStore not initialised');
-      const d = await factStore.diff(args.entity, args.from, args.to);
+      const d = await factStore.diff(args.entity, args.from, args.to, tenantId);
 
       const lines: string[] = [
         `# Fact Diff: ${d.entity}`,

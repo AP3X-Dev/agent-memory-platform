@@ -53,7 +53,7 @@ describe('MemoryBlockService.read', () => {
 
     const result = await service.read('project:test', 'persona');
     expect(result).toBe(block);
-    expect(redis.get).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    expect(redis.get).toHaveBeenCalledWith('project:test', 'persona', undefined, undefined);
     expect(neo4j.get).not.toHaveBeenCalled();
   });
 
@@ -65,7 +65,7 @@ describe('MemoryBlockService.read', () => {
 
     const result = await service.read('project:test', 'persona');
     expect(result).toBe(block);
-    expect(neo4j.get).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    expect(neo4j.get).toHaveBeenCalledWith('project:test', 'persona', undefined, undefined);
   });
 
   it('returns null when block not found in either store', async () => {
@@ -83,7 +83,7 @@ describe('MemoryBlockService.read', () => {
     const service = new MemoryBlockService(redis, neo4j);
 
     await service.read('project:test', 'working_state', 'sess-1');
-    expect(redis.get).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
+    expect(redis.get).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1', undefined);
   });
 });
 
@@ -217,7 +217,7 @@ describe('MemoryBlockService.promote', () => {
     const result = await service.promote('project:test', 'working_state', 'working', 'core', 'sess-1');
     expect(result.tier).toBe('core');
     expect(result.session_id).toBeUndefined();
-    expect(redis.delete).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
+    expect(redis.delete).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1', undefined);
   });
 
   it('throws when block not found', async () => {
@@ -262,8 +262,8 @@ describe('MemoryBlockService.archive', () => {
 
     const content = await service.archive('project:test', 'persona');
     expect(content).toBe('important data');
-    expect(redis.delete).toHaveBeenCalledWith('project:test', 'persona', undefined);
-    expect(neo4j.delete).toHaveBeenCalledWith('project:test', 'persona', undefined);
+    expect(redis.delete).toHaveBeenCalledWith('project:test', 'persona', undefined, undefined);
+    expect(neo4j.delete).toHaveBeenCalledWith('project:test', 'persona', undefined, undefined);
   });
 
   it('throws when block not found', async () => {
@@ -303,8 +303,8 @@ describe('MemoryBlockService.listBlocks', () => {
     const service = new MemoryBlockService(redis, neo4j);
 
     await service.listBlocks('project:test', 'core', 'sess-1');
-    expect(redis.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1');
-    expect(neo4j.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1');
+    expect(redis.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1', undefined);
+    expect(neo4j.list).toHaveBeenCalledWith('project:test', 'core', 'sess-1', undefined);
   });
 });
 
@@ -349,7 +349,7 @@ describe('MemoryBlockService.promote with sessionId', () => {
 
     const result = await service.promote('project:test', 'persona', 'working', 'core', 'sess-promo');
     expect(result.tier).toBe('core');
-    expect(redis.get).toHaveBeenCalledWith('project:test', 'persona', 'sess-promo');
+    expect(redis.get).toHaveBeenCalledWith('project:test', 'persona', 'sess-promo', undefined);
   });
 
   it('strips session_id when promoting to core', async () => {
@@ -452,7 +452,7 @@ describe('MemoryBlockService.read caches Neo4j fallback in Redis', () => {
 
     const result = await service.read('project:test', 'persona');
     expect(result).toBe(block);
-    expect(redis.set).toHaveBeenCalledWith(block);
+    expect(redis.set).toHaveBeenCalledWith(block, undefined);
   });
 
   it('does not write to Redis when block not found in either store', async () => {

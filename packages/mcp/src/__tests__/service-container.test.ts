@@ -95,10 +95,13 @@ describe('Multi-tenant default-deny gate', () => {
     const loaded = await captured['berry_load']({ task: 't' });
     expect(loaded.content[0].text).toBe('CTX');
 
-    // …a not-yet-scoped tool is refused (default-deny), not executed.
-    expect(TENANT_SAFE_TOOLS.has('berry_grep')).toBe(false);
-    const grep = await captured['berry_grep']({ pattern: 'x' });
-    expect(grep.content[0].text).toMatch(/not available in multi-tenant mode/i);
+    // grep is now tenant-scoped, so it IS in the safe set and runs.
+    expect(TENANT_SAFE_TOOLS.has('berry_grep')).toBe(true);
+
+    // …a not-yet-scoped admin tool (raw Cypher) is refused (default-deny).
+    expect(TENANT_SAFE_TOOLS.has('berry_query')).toBe(false);
+    const q = await captured['berry_query']({ query: 'MATCH (n) RETURN n', limit: 5 });
+    expect(q.content[0].text).toMatch(/not available in multi-tenant mode/i);
   });
 
   it('does NOT gate in single-tenant mode (default)', async () => {

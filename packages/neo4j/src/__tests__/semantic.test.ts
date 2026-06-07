@@ -108,6 +108,33 @@ describe('SemanticStore', () => {
     expect(fetched!.signal_count).toBe(node.signal_count);
     expect(fetched!.decay_class).toBe(node.decay_class);
     expect(fetched!.tags).toEqual(node.tags);
+    // No tenant specified → defaults to 'default'
+    expect(fetched!.tenant_id).toBe('default');
+  });
+
+  it('should persist a non-default tenant_id and round-trip it', async () => {
+    if (!neo4jAvailable) return;
+    const node = { ...makeSemanticNode('tenant'), tenant_id: 'acme' };
+    const id = await store.create(node);
+    createdIds.push(id);
+
+    const fetched = await store.getById(id);
+    expect(fetched).not.toBeNull();
+    expect(fetched!.tenant_id).toBe('acme');
+  });
+
+  it('should carry the tenant_id forward when superseding', async () => {
+    if (!neo4jAvailable) return;
+    const oldNode = { ...makeSemanticNode('supersede-tenant-old'), tenant_id: 'acme' };
+    const oldId = await store.create(oldNode);
+    createdIds.push(oldId);
+
+    const newNode = { ...makeSemanticNode('supersede-tenant-new'), tenant_id: 'acme' };
+    const newId = await store.supersede(oldId, newNode);
+    createdIds.push(newId);
+
+    const fetched = await store.getById(newId);
+    expect(fetched!.tenant_id).toBe('acme');
   });
 
   it('should return null for a non-existent id', async () => {

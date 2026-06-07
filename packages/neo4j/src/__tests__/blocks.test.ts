@@ -187,4 +187,60 @@ describe('BlockStore (Neo4j)', () => {
     expect(names).toContain('combo-a');
     expect(names).not.toContain('combo-b');
   });
+
+  it('isolates blocks by tenant: get/list/delete cannot cross tenants', async () => {
+    if (!neo4jAvailable) return;
+    // NOTE: the DB still carries the single-tenant unique constraint
+    // memblock_scope_name = (scope, name). Until the caller widens it to include
+    // tenant_id, two tenants cannot share an identical (scope, name) node — so
+    // this test uses one tenant-stamped node per (scope, name) and proves that
+    // ONLY the owning tenant (and never another) can see/list/delete it.
+    await store.save(makeBlock({ id: 'tenant-acme', name: 'acme-block', content: 'acme data' }), 'acme');
+    await store.save(makeBlock({ id: 'tenant-globex', name: 'globex-block', content: 'globex data' }), 'globex');
+
+    // get is tenant-scoped: each tenant sees only its own block
+    expect((await store.get(TEST_SCOPE, 'acme-block', undefined, 'acme'))?.content).toBe('acme data');
+    expect((await store.get(TEST_SCOPE, 'globex-block', undefined, 'globex'))?.content).toBe('globex data');
+
+    // a tenant CANNOT see another tenant's block
+    expect(await store.get(TEST_SCOPE, 'acme-block', undefined, 'globex')).toBeNull();
+    expect(await store.get(TEST_SCOPE, 'globex-block', undefined, 'acme')).toBeNull();
+    // a third, unrelated tenant sees nothing
+    expect(await store.get(TEST_SCOPE, 'acme-block', undefined, 'initech')).toBeNull();
+
+    // list is tenant-scoped: acme sees acme-block but not globex-block
+    const acmeList = await store.list(TEST_SCOPE, undefined, undefined, 'acme');
+    const acmeNames = acmeList.map((b) => b.name);
+    expect(acmeNames).toContain('acme-block');
+    expect(acmeNames).not.toContain('globex-block');
+
+    // delete is tenant-scoped: globex cannot delete acme's block
+    await store.delete(TEST_SCOPE, 'acme-block', undefined, 'globex');
+    expect(await store.get(TEST_SCOPE, 'acme-block', undefined, 'acme')).not.toBeNull();
+    // the owning tenant can delete it
+    await store.delete(TEST_SCOPE, 'acme-block', undefined, 'acme');
+    expect(await store.get(TEST_SCOPE, 'acme-block', undefined, 'acme')).toBeNull();
+  });
+
+  it('default tenant still matches legacy blocks with no tenant_id', async () => {
+    if (!neo4jAvailable) return;
+    // Simulate a legacy block written before multi-tenancy (no tenant_id property).
+    const session = driver.session();
+    try {
+      const now = new Date().toISOString();
+      await session.run(
+        `CREATE (b:MemoryBlock {scope: $scope, name: $name, id: $id, tier: 'core',
+          content: 'legacy data', created_at: $now, updated_at: $now})`,
+        { scope: TEST_SCOPE, name: 'legacy-block', id: 'legacy-1', now },
+      );
+    } finally {
+      await session.close();
+    }
+    // Default tenant (undefined → DEFAULT_TENANT) must still find the legacy NULL-tenant block.
+    const found = await store.get(TEST_SCOPE, 'legacy-block');
+    expect(found?.content).toBe('legacy data');
+    // A non-default tenant must NOT see the legacy block.
+    const isolated = await store.get(TEST_SCOPE, 'legacy-block', undefined, 'acme');
+    expect(isolated).toBeNull();
+  });
 });

@@ -4,10 +4,11 @@ import type {
   ConsolidationProposal,
   StreamSignal,
   SemanticNode,
+  EpisodicNode,
   AMPConfig,
   FactNode,
 } from './types.js';
-import { SIGNAL_WEIGHTS } from './types.js';
+import { SIGNAL_WEIGHTS, DEFAULT_TENANT } from './types.js';
 import { extractFacts } from './extract.js';
 
 // ─── Runtime validators ──────────────────────────────────────────────────────
@@ -53,6 +54,7 @@ function parseSemanticNode(raw: Record<string, unknown>, label: string): Semanti
     updated_at: raw.updated_at,
     decay_class: raw.decay_class as SemanticNode['decay_class'],
     tags: raw.tags as string[],
+    ...(typeof raw.tenant_id === 'string' && raw.tenant_id !== '' ? { tenant_id: raw.tenant_id } : {}),
     ...(Array.isArray(raw.embedding) ? { embedding: raw.embedding as number[] } : {}),
   };
 }
@@ -100,6 +102,10 @@ function parsePartialSemanticNode(raw: Record<string, unknown>, label: string): 
       throw new Error(`${label}: invalid "tags"`);
     result.tags = raw.tags as string[];
   }
+  if ('tenant_id' in raw) {
+    if (typeof raw.tenant_id !== 'string') throw new Error(`${label}: invalid "tenant_id"`);
+    result.tenant_id = raw.tenant_id;
+  }
 
   return result;
 }
@@ -145,6 +151,27 @@ export interface ConsolidationNeo4jLayer {
     getById(id: string): Promise<SemanticNode | null>;
     updateConfidence(id: string, confidence: number): Promise<void>;
     supersede(oldId: string, newNode: SemanticNode): Promise<string>;
+    /**
+     * Promote an episodic memory into a new Semantic node.
+     * `tenantId` (optional, defaults to the node's tenant_id, then DEFAULT_TENANT)
+     * stamps the new Semantic so a non-default tenant can retrieve its own
+     * consolidated knowledge. Optional for backward compatibility — layers that
+     * don't implement it simply have no promote path.
+     */
+    promoteFromEpisodic?(
+      episodicId: string,
+      newNode: SemanticNode,
+      tenantId?: string,
+    ): Promise<string>;
+  };
+  /**
+   * Optional episodic accessor. When present, the engine reads source episodes'
+   * `tenant_id` to determine which tenant a promoted Semantic node belongs to.
+   * Optional for backward compatibility — without it, promoted semantics fall
+   * back to DEFAULT_TENANT.
+   */
+  episodic?: {
+    getById(id: string): Promise<EpisodicNode | null>;
   };
   fact?: ConsolidationFactLayer;
 }
@@ -326,7 +353,9 @@ export class ConsolidationEngine {
 
   private async _applyProposal(proposal: ConsolidationProposal): Promise<boolean> {
     try {
-      if (proposal.type === 'supersede') {
+      if (proposal.type === 'promote') {
+        return await this._applyPromoteProposal(proposal);
+      } else if (proposal.type === 'supersede') {
         const before = parseSemanticNode(proposal.before, 'proposal.before');
         const after = parsePartialSemanticNode(proposal.after, 'proposal.after');
 
@@ -339,6 +368,9 @@ export class ConsolidationEngine {
           updated_at: new Date().toISOString(),
           decay_class: after.decay_class ?? before.decay_class,
           tags: after.tags ?? before.tags ?? [],
+          // Carry the tenant forward: the superseding node belongs to the same
+          // tenant as the node it replaces (after-side wins if it specifies one).
+          tenant_id: after.tenant_id ?? before.tenant_id ?? DEFAULT_TENANT,
         };
 
         await this.neo4j.semantic.supersede(before.id, newNode);
@@ -375,6 +407,93 @@ export class ConsolidationEngine {
       );
       return false;
     }
+  }
+
+  // ─── Private: apply promote proposal ───────────────────────────────────────
+
+  /**
+   * Promote source episodic memory into a new Semantic node.
+   *
+   * The new Semantic's tenant is derived from the SOURCE episodes
+   * (`proposal.affected_ids`, which for a promote proposal are episodic IDs).
+   * Consolidation runs per scope, so all source episodes should share one
+   * tenant; we use their common tenant, and fall back to DEFAULT_TENANT when no
+   * episodic accessor is wired, episodes carry no tenant, or tenants are mixed.
+   */
+  private async _applyPromoteProposal(proposal: ConsolidationProposal): Promise<boolean> {
+    if (!this.neo4j.semantic.promoteFromEpisodic) {
+      console.error(
+        `[consolidation] _applyPromoteProposal: layer has no promoteFromEpisodic; skipping ${proposal.id}`,
+      );
+      return false;
+    }
+
+    const after = parsePartialSemanticNode(proposal.after, 'proposal.after');
+    const sourceEpisodeIds = proposal.affected_ids;
+    const tenantId = await this._deriveTenantFromEpisodes(sourceEpisodeIds, after.tenant_id);
+
+    const now = new Date().toISOString();
+    const newNode: SemanticNode = {
+      id: after.id ?? nanoid(),
+      content: after.content ?? '',
+      confidence: after.confidence ?? 0.5,
+      signal_count: after.signal_count ?? 1,
+      created_at: after.created_at ?? now,
+      updated_at: after.updated_at ?? now,
+      decay_class: after.decay_class ?? 'stable',
+      tags: after.tags ?? [],
+      tenant_id: tenantId,
+    };
+
+    // Promote against the first source episode (PROMOTED_FROM provenance edge).
+    const anchorEpisodeId = sourceEpisodeIds[0];
+    if (!anchorEpisodeId) {
+      console.error(
+        `[consolidation] _applyPromoteProposal: proposal ${proposal.id} has no source episodes`,
+      );
+      return false;
+    }
+
+    const newId = await this.neo4j.semantic.promoteFromEpisodic(anchorEpisodeId, newNode, tenantId);
+    await this.redis.cache.invalidateByNodeId(newId);
+
+    // Extract facts from the promoted content for traceability.
+    await this._extractAndStoreFacts(newNode.content, newId, sourceEpisodeIds);
+
+    return true;
+  }
+
+  /**
+   * Determine the tenant for a set of source episodes.
+   *
+   * Precedence: an explicit `preferred` tenant (e.g. from the proposal's after
+   * side) wins; otherwise the episodes' common tenant; otherwise DEFAULT_TENANT.
+   * A mix of distinct tenants (which shouldn't happen — consolidation is
+   * per-scope) also falls back to DEFAULT_TENANT rather than leaking across
+   * tenants.
+   */
+  private async _deriveTenantFromEpisodes(
+    episodeIds: string[],
+    preferred?: string,
+  ): Promise<string> {
+    if (typeof preferred === 'string' && preferred !== '') return preferred;
+
+    const accessor = this.neo4j.episodic;
+    if (!accessor || episodeIds.length === 0) return DEFAULT_TENANT;
+
+    const tenants = new Set<string>();
+    for (const id of episodeIds) {
+      try {
+        const ep = await accessor.getById(id);
+        if (ep) tenants.add(ep.tenant_id ?? DEFAULT_TENANT);
+      } catch {
+        // Non-critical: a missing/unreadable episode just doesn't contribute.
+      }
+    }
+
+    if (tenants.size === 1) return [...tenants][0]!;
+    // No episodes resolved, or a mix of tenants — default rather than leak.
+    return DEFAULT_TENANT;
   }
 
   // ─── Private: fact extraction ──────────────────────────────────────────────

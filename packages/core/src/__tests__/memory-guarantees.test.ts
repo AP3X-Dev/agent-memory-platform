@@ -60,7 +60,7 @@ describe('Guarantee: load() excludes stale/invalidated knowledge', () => {
 
     const result = await svc.load({ task: 'auth design', entities: ['auth'], tags: ['project:test'], max_tokens: 4000 });
 
-    expect(getActive).toHaveBeenCalledWith('auth', undefined);
+    expect(getActive).toHaveBeenCalledWith('auth', undefined, undefined);
     expect(result.markdown).toContain('ACTIVEMARKER');
     // An invalidated fact (one we never return from getActive) cannot appear.
     expect(result.markdown).not.toContain('INVALIDMARKER');

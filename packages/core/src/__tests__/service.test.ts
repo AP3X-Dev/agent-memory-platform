@@ -678,7 +678,7 @@ describe('AMPService.store — real-time fact extraction', () => {
     expect(result.duplicate).toBe(false);
     expect(result.id).toBeTruthy();
     expect(mockExtractFacts).toHaveBeenCalledWith(input.content, 'test-key', undefined); // 3rd arg = config.models?.extraction
-    expect(factLayer.findBySubjectPredicate).toHaveBeenCalledWith('auth-module', 'uses');
+    expect(factLayer.findBySubjectPredicate).toHaveBeenCalledWith('auth-module', 'uses', 'default');
     expect(factLayer.create).toHaveBeenCalledOnce();
     // Verify the created fact
     const createdFact = (factLayer.create as ReturnType<typeof vi.fn>).mock.calls[0][0] as FactNode;

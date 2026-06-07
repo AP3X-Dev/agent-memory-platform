@@ -18,6 +18,8 @@ export const EXTRACTION_GROUP = 'extractors';
 export interface ExtractionJob {
   episodeId: string;
   content: string;
+  /** Tenant the source episode belongs to (defaults to 'default'). */
+  tenantId?: string;
   /** Retry count; 0 on first enqueue. */
   attempt?: number;
 }
@@ -61,6 +63,7 @@ export class ExtractionQueue {
       EXTRACTION_STREAM, '*',
       'episodeId', job.episodeId,
       'content', job.content,
+      'tenantId', job.tenantId ?? 'default',
       'attempt', String(job.attempt ?? 0),
     );
     if (!id) throw new Error('XADD returned null');
@@ -73,6 +76,7 @@ export class ExtractionQueue {
       id: msgId,
       episodeId: o['episodeId'] ?? '',
       content: o['content'] ?? '',
+      tenantId: o['tenantId'] ?? 'default',
       attempt: Number(o['attempt'] ?? '0'),
     };
   }
@@ -119,6 +123,7 @@ export class ExtractionQueue {
       EXTRACTION_DLQ, '*',
       'episodeId', job.episodeId,
       'content', job.content,
+      'tenantId', job.tenantId ?? 'default',
       'attempt', String(job.attempt),
       'error', error.slice(0, 500),
       'failed_at', new Date().toISOString(),
@@ -147,7 +152,7 @@ export class ExtractionQueue {
     let moved = 0;
     for (const [msgId, fields] of res) {
       const o = parseFields(fields);
-      await this.enqueue({ episodeId: o['episodeId'] ?? '', content: o['content'] ?? '', attempt: 0 });
+      await this.enqueue({ episodeId: o['episodeId'] ?? '', content: o['content'] ?? '', tenantId: o['tenantId'] ?? 'default', attempt: 0 });
       await this.redis.xdel(EXTRACTION_DLQ, msgId);
       moved++;
     }

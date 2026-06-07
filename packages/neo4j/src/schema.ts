@@ -9,7 +9,10 @@ const CONSTRAINTS: string[] = [
   'CREATE CONSTRAINT entity_id IF NOT EXISTS FOR (e:Entity) REQUIRE e.id IS UNIQUE',
   'CREATE CONSTRAINT agent_id IF NOT EXISTS FOR (a:Agent) REQUIRE a.id IS UNIQUE',
   'CREATE CONSTRAINT model_id IF NOT EXISTS FOR (m:Model) REQUIRE m.id IS UNIQUE',
-  'CREATE CONSTRAINT memblock_scope_name IF NOT EXISTS FOR (b:MemoryBlock) REQUIRE (b.scope, b.name) IS UNIQUE',
+  // Tenant-aware uniqueness: two tenants may hold a block with the same
+  // (scope, name). Migration 0004 drops the legacy (scope, name) constraint on
+  // existing graphs; fresh graphs get this one directly.
+  'CREATE CONSTRAINT memblock_scope_name_tenant IF NOT EXISTS FOR (b:MemoryBlock) REQUIRE (b.scope, b.name, b.tenant_id) IS UNIQUE',
   'CREATE CONSTRAINT fact_id IF NOT EXISTS FOR (f:Fact) REQUIRE f.id IS UNIQUE',
 ];
 
