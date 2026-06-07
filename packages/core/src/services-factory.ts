@@ -19,14 +19,14 @@ import {
   ConsolidationQueue,
   DistributedLock,
   BlockStore as RedisBlockStore,
-} from '@amp/redis';
+} from '@memberry/redis';
 import {
   createNeo4jDriver,
   EpisodicStore,
   ScopedQuery,
   FactStore,
   BlockStore as Neo4jBlockStore,
-} from '@amp/neo4j';
+} from '@memberry/neo4j';
 import { AMPService } from './service.js';
 import { MemoryBlockService } from './blocks.js';
 import { OpenAIEmbedding } from './embedding.js';

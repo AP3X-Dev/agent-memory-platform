@@ -1,7 +1,7 @@
 /**
- * @amp/graph MCP tool registration.
+ * @memberry/graph MCP tool registration.
  *
- * Follows the established satellite-package pattern (see @amp/wiki tools.ts):
+ * Follows the established satellite-package pattern (see @memberry/wiki tools.ts):
  *  - services injected via a module-level `setGraphServiceInstances()` singleton
  *    called from bootstrap.ts (NOT passed as registration args);
  *  - `registerGraphTools(server)` takes ONLY the server and reads the singletons;

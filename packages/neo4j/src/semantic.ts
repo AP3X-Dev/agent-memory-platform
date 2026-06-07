@@ -1,6 +1,6 @@
 // packages/neo4j/src/semantic.ts
 import { type Driver } from 'neo4j-driver';
-import type { SemanticNode } from '@amp/core';
+import type { SemanticNode } from '@memberry/core';
 import { temporalSetClause } from './temporal-edges.js';
 
 export class SemanticStore {

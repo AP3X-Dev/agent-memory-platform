@@ -16,7 +16,7 @@ import {
   getConfigStatus,
   type HooksStatus,
   type ConfigStatus,
-} from '@amp/core';
+} from '@memberry/core';
 
 const execFileAsync = promisify(execFile);
 

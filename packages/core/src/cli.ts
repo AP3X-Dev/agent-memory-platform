@@ -4,8 +4,8 @@
 // Usage: npx amp <command> [options]
 
 import { execFileSync } from 'child_process';
-import { createNeo4jDriver } from '@amp/neo4j';
-import { createRedisClient } from '@amp/redis';
+import { createNeo4jDriver } from '@memberry/neo4j';
+import { createRedisClient } from '@memberry/redis';
 import { exportAll, exportFiltered } from './export.js';
 import { importFromPath, type ImportStrategy } from './import.js';
 import { runHookCommand } from './cli/hook.js';

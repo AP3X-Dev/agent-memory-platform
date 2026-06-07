@@ -17,7 +17,7 @@ const hasInfra = !!process.env['NEO4J_URI'] && !!process.env['REDIS_URL'];
 describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
   let handles: BootstrapHandles;
   let coreHandlers: import('../tools.js').ToolHandlers;
-  let wikiHandlers: import('@amp/wiki').WikiToolHandlers;
+  let wikiHandlers: import('@memberry/wiki').WikiToolHandlers;
   let tmpDir: string;
   let tmpOutputDir: string;
   let originalAllowDir: string | undefined;
@@ -33,7 +33,7 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
 
     const { bootstrap } = await import('../bootstrap.js');
     const { buildToolHandlers } = await import('../tools.js');
-    const { buildWikiToolHandlers } = await import('@amp/wiki');
+    const { buildWikiToolHandlers } = await import('@memberry/wiki');
 
     handles = await bootstrap();
     coreHandlers = buildToolHandlers();

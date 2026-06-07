@@ -1,6 +1,6 @@
 // packages/redis/src/blocks.ts
 import type { Redis } from 'ioredis';
-import type { MemoryBlock, MemoryTier } from '@amp/core';
+import type { MemoryBlock, MemoryTier } from '@memberry/core';
 
 const WORKING_TTL = 86400; // 24 hours
 

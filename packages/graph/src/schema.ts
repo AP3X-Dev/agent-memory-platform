@@ -1,5 +1,5 @@
 /**
- * Graph-analysis schema setup for @amp/graph.
+ * Graph-analysis schema setup for @memberry/graph.
  *
  * Mirrors the idempotent `CREATE ... IF NOT EXISTS` loop used by
  * `packages/neo4j/src/schema.ts`. Migration on existing graphs is purely

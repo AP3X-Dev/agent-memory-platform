@@ -18,7 +18,7 @@ import { expandQuery } from './expand.js';
 import { computeQueryStats, lexicalTextScore, adaptiveWeights, inferSourceTypeBoost } from './scoring.js';
 import { classifyIntent } from './intent.js';
 import type { QueryIntent } from './intent.js';
-import type { EmbeddingProvider, LlmClient, ChatMessage } from '@amp/core';
+import type { EmbeddingProvider, LlmClient, ChatMessage } from '@memberry/core';
 
 // ─── Dependency interfaces ───────────────────────────────────────────────────
 

@@ -8,12 +8,12 @@ import { randomUUID } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { registerTools, TOOL_NAMES } from './tools.js';
 import type { ToolRegistry } from './tools.js';
-import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@amp/research';
-import { registerArchTools, ARCH_TOOL_NAMES } from '@amp/arch';
-import { registerCodeTools, CODE_TOOL_NAMES } from '@amp/code';
-import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@amp/retrieval';
-import { registerWikiTools, WIKI_TOOL_NAMES } from '@amp/wiki';
-import { registerGraphTools, GRAPH_TOOL_NAMES } from '@amp/graph';
+import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@memberry/research';
+import { registerArchTools, ARCH_TOOL_NAMES } from '@memberry/arch';
+import { registerCodeTools, CODE_TOOL_NAMES } from '@memberry/code';
+import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@memberry/retrieval';
+import { registerWikiTools, WIKI_TOOL_NAMES } from '@memberry/wiki';
+import { registerGraphTools, GRAPH_TOOL_NAMES } from '@memberry/graph';
 
 // ─── Public types ─────────────────────────────────────────────────────────────
 

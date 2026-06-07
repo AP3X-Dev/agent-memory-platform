@@ -3,7 +3,7 @@
 // Routes queries to the optimal retrieval strategy.
 // Ported from Context-Engine scripts/intent_classifier.py
 
-import type { EmbeddingProvider } from '@amp/core';
+import type { EmbeddingProvider } from '@memberry/core';
 
 // ─── Intent types ────────────────────────────────────────────────────────────
 

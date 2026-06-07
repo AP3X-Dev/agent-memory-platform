@@ -1,5 +1,5 @@
 // packages/neo4j/src/schema.ts
-import { EMBEDDING_DIM } from "@amp/core";
+import { EMBEDDING_DIM } from "@memberry/core";
 import { type Driver } from 'neo4j-driver';
 
 const CONSTRAINTS: string[] = [

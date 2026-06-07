@@ -1,9 +1,9 @@
 // packages/mcp/src/bootstrap.ts
 // Wires up Redis, Neo4j, embedding, and core services from environment variables.
 
-import { DistributedLock, ProposalStore } from '@amp/redis';
-import { initSchema, SemanticStore, ProvenanceTraversal } from '@amp/neo4j';
-import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine } from '@amp/core';
+import { DistributedLock, ProposalStore } from '@memberry/redis';
+import { initSchema, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine } from '@memberry/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -14,7 +14,7 @@ import {
   ContradictionDetector,
   ResearchConsolidation,
   setResearchServiceInstances,
-} from '@amp/research';
+} from '@memberry/research';
 import {
   initArchSchema,
   ArchEntityStore,
@@ -24,7 +24,7 @@ import {
   DriftDetector,
   ArchContextBuilder,
   setArchServiceInstances,
-} from '@amp/arch';
+} from '@memberry/arch';
 import {
   initCodeSchema,
   CodeIndexer,
@@ -33,12 +33,12 @@ import {
   CodeWatcher,
   extractFilePaths,
   setCodeServiceInstances,
-} from '@amp/code';
+} from '@memberry/code';
 import {
   UnifiedAssembler,
   FeedbackTracker,
   setRetrievalServiceInstances,
-} from '@amp/retrieval';
+} from '@memberry/retrieval';
 import {
   WikiCompiler,
   IngestionService,
@@ -47,8 +47,8 @@ import {
   DefaultDocumentConverter,
   CachingDocumentConverter,
   setWikiServiceInstances,
-} from '@amp/wiki';
-import type { CompileInput, CompileV2Result } from '@amp/wiki';
+} from '@memberry/wiki';
+import type { CompileInput, CompileV2Result } from '@memberry/wiki';
 import {
   initGraphSchema,
   GraphSnapshotService,
@@ -57,7 +57,7 @@ import {
   PrImpactService,
   GitHubCliProvider,
   setGraphServiceInstances,
-} from '@amp/graph';
+} from '@memberry/graph';
 
 export interface BootstrapHandles {
   /** Call to disconnect Redis and Neo4j cleanly. */
@@ -73,7 +73,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const exportPath = process.env['AMP_EXPORT_PATH'] ?? './.amp';
 
   // Build the shared core load/store kit through the single construction path
-  // used by both the MCP server and the CLI hook commands (@amp/core
+  // used by both the MCP server and the CLI hook commands (@memberry/core
   // services-factory). The factory builds clients lazily and does not own the
   // schema lifecycle — the server connects-and-verifies below.
   const core = createCoreServices({ neo4jUri, neo4jUser, neo4jPassword, redisUrl, openaiKey, exportPath });

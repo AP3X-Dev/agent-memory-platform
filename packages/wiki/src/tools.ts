@@ -322,7 +322,7 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
     'Compile the AMP knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
     AmpCompileSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     handlers.amp_compile,
   ));

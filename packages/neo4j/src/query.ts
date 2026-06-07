@@ -1,6 +1,6 @@
 // packages/neo4j/src/query.ts
 import neo4j, { type Driver } from 'neo4j-driver';
-import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@amp/core';
+import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@memberry/core';
 import { activeRelationshipFilter } from './temporal-edges.js';
 
 export interface QueryScope {

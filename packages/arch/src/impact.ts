@@ -3,7 +3,7 @@
 
 import { type Driver } from 'neo4j-driver';
 import type { ImpactResult } from './types.js';
-import { activeRelationshipFilter } from '@amp/neo4j';
+import { activeRelationshipFilter } from '@memberry/neo4j';
 
 export class ImpactAnalyzer {
   constructor(private driver: Driver) {}

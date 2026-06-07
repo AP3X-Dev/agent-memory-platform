@@ -1,5 +1,5 @@
 // packages/research/src/index.ts
-// Barrel exports for @amp/research
+// Barrel exports for @memberry/research
 
 // Types
 export type {

@@ -140,7 +140,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!relationStore) throw new Error('Arch services not initialised');
@@ -170,7 +170,7 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
       project_name: z.string().max(2000).optional().describe('Project name for scoping duplicate entity names'),
     },
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!aspectStore) throw new Error('Arch services not initialised');

@@ -1,6 +1,6 @@
 // packages/redis/src/session.ts
 import type { Redis } from 'ioredis';
-import type { SessionState } from '@amp/core';
+import type { SessionState } from '@memberry/core';
 
 const SESSION_TTL = 3600;
 

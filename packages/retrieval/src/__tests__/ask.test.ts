@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { UnifiedAssembler } from '../assembler.js';
 import type { UnifiedContext } from '../types.js';
-import type { LlmClient } from '@amp/core';
+import type { LlmClient } from '@memberry/core';
 
 function fakeLlm(chat: LlmClient['chat'], available = true): LlmClient {
   return { available, chat, modelFor: (t) => `m-${t}` };

@@ -10,7 +10,7 @@ import {
   activeRelationshipFilter,
   invalidateRelationship,
 } from '../temporal-edges.js';
-import type { EpisodicNode, SemanticNode } from '@amp/core';
+import type { EpisodicNode, SemanticNode } from '@memberry/core';
 
 const NEO4J_URI = process.env.NEO4J_URI || 'bolt://localhost:7687';
 const NEO4J_USER = process.env.NEO4J_USER || 'neo4j';

@@ -8,8 +8,8 @@ import { describe, it, expect, vi } from 'vitest';
 import { ConsolidationEngine } from '../consolidation.js';
 import type { ConsolidationRedisLayer, ConsolidationNeo4jLayer } from '../consolidation.js';
 import type { AMPConfig, SemanticNode, StreamSignal, ConsolidationProposal } from '../types.js';
-import { GDSAlgorithms } from '@amp/neo4j';
-import type { SimilarPair, RankedNode, CommunityNode } from '@amp/neo4j';
+import { GDSAlgorithms } from '@memberry/neo4j';
+import type { SimilarPair, RankedNode, CommunityNode } from '@memberry/neo4j';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

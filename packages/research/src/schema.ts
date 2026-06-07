@@ -1,6 +1,6 @@
 // packages/research/src/schema.ts
 // Additional Neo4j constraints and indexes for the research domain.
-// Additive — does not modify any existing schema from @amp/neo4j.
+// Additive — does not modify any existing schema from @memberry/neo4j.
 
 import { type Driver } from 'neo4j-driver';
 

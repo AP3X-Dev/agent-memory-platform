@@ -3,7 +3,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import type { Driver, Session, Result } from 'neo4j-driver';
-import type { ExtractionProvider } from '@amp/core';
+import type { ExtractionProvider } from '@memberry/core';
 
 // ─── Mock node:fs/promises at module level (hoisted by vitest) ──────────────
 

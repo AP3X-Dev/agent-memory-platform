@@ -164,7 +164,7 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     'Initialize a new research campaign. Creates campaign entity and returns campaign_id. Call once at the start of a new research session.',
     ResearchInitSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!campaignStore) throw new Error('Research services not initialised');
@@ -210,7 +210,7 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     'Log an experiment result. Creates an Experiment node in the graph with full provenance: parent link, component edges, campaign membership. Returns experiment ID and whether consolidation should run.',
     ResearchLogSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!experimentStore || !campaignStore) throw new Error('Research services not initialised');
@@ -368,7 +368,7 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     'Run research-specific consolidation. Detects patterns in experiment history (component leverage, exhausted directions, crash patterns, combo synergies) and creates/updates semantic nodes. Call every 10 experiments or on session wrap-up.',
     ResearchConsolidateSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!researchConsolidation || !campaignStore) throw new Error('Research services not initialised');

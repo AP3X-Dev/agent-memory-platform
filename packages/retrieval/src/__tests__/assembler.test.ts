@@ -2,7 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { UnifiedAssembler, type AssemblerCodeLayer, type AssemblerMemoryLayer } from '../assembler.js';
 import type { FeedbackRedisLayer } from '../feedback.js';
-import type { EmbeddingProvider } from '@amp/core';
+import type { EmbeddingProvider } from '@memberry/core';
 import type { RetrievalResult } from '../types.js';
 
 // ─── Mock modules ────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 // packages/neo4j/src/episodic.ts
 import { type Driver } from 'neo4j-driver';
-import type { EpisodicNode, Signal } from '@amp/core';
+import type { EpisodicNode, Signal } from '@memberry/core';
 import { temporalSetClause } from './temporal-edges.js';
 
 export class EpisodicStore {
