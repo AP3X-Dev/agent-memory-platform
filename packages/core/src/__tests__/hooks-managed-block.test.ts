@@ -31,7 +31,24 @@ describe('managed block', () => {
     expect(updated).toContain('keep me');
     expect(updated).toContain('NEW');
     expect(updated).not.toContain('OLD');
-    expect((updated.match(/AMP:BEGIN/g) ?? []).length).toBe(1);
+    expect((updated.match(/MEMBERRY:BEGIN/g) ?? []).length).toBe(1);
+  });
+
+  it('replaces a legacy AMP: managed block in place (no duplicate)', () => {
+    // A block written by a pre-rebrand version, with the old brand + command text.
+    const legacy =
+      '# Doc\n\nkeep me\n\n' +
+      '<!-- AMP:BEGIN (managed by `amp context materialize` — do not edit by hand) -->\n' +
+      'OLD BODY\n' +
+      '<!-- AMP:END -->\n';
+    const updated = replaceManagedBlock(legacy, 'NEW BODY');
+    expect(updated).toContain('keep me');
+    expect(updated).toContain('NEW BODY');
+    expect(updated).not.toContain('OLD BODY');
+    // Old block was matched + replaced with the new MEMBERRY marker — not duplicated.
+    expect((updated.match(/:BEGIN/g) ?? []).length).toBe(1);
+    expect(updated).toContain('MEMBERRY:BEGIN');
+    expect(updated).not.toContain('AMP:BEGIN');
   });
 
   it('creates a block in an empty file', () => {

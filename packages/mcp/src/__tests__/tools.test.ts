@@ -373,7 +373,7 @@ describe('berry_resolve handler', () => {
   it('throws on invalid URI', async () => {
     const handlers = buildToolHandlers();
     await expect(handlers.berry_resolve({ uri: 'not-an-amp-uri' })).rejects.toThrow(
-      'Invalid AMP URI',
+      'Invalid MemBerry URI',
     );
   });
 

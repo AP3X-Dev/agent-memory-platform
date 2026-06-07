@@ -13,6 +13,11 @@ describe('parseAmpUri', () => {
     expect(result).toEqual({ type: 'tag', name: 'brand-voice' });
   });
 
+  it('parses the canonical memberry:// scheme', () => {
+    expect(parseAmpUri('memberry://entity/ClientX')).toEqual({ type: 'entity', name: 'ClientX' });
+    expect(parseAmpUri('memberry://tag/brand-voice')).toEqual({ type: 'tag', name: 'brand-voice' });
+  });
+
   it('parses entity names with spaces preserved', () => {
     const result = parseAmpUri('amp://entity/Acme Corp');
     expect(result).toEqual({ type: 'entity', name: 'Acme Corp' });
