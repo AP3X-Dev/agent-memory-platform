@@ -25,6 +25,7 @@ import {
   EpisodicStore,
   ScopedQuery,
   FactStore,
+  AuditLogStore,
   BlockStore as Neo4jBlockStore,
 } from '@memberry/neo4j';
 import { AMPService } from './service.js';
@@ -61,6 +62,8 @@ export interface CoreServices {
   episodic: EpisodicStore;
   scopedQuery: ScopedQuery;
   factStore: FactStore;
+  /** Append-only mutation audit trail. */
+  audit: AuditLogStore;
   embedding: EmbeddingProvider;
   /** Shared chat-completion client (NullLlmClient when no API key). */
   llm: LlmClient;
@@ -84,9 +87,18 @@ function resolveEnv(env: CoreServicesEnv = {}): Required<CoreServicesEnv> {
   };
 }
 
-/** Build a zero-vector embedding provider (used when no OpenAI key is set). */
-function zeroEmbedding(): EmbeddingProvider {
+/**
+ * Build a *disabled* embedding provider for when no OpenAI key is set.
+ *
+ * It still returns zero vectors so writes never crash, but `available: false`
+ * tells every retrieval path to SKIP vector search entirely and rank on
+ * deterministic lexical/fulltext signals instead. This is the difference
+ * between "no semantic search" (correct) and "semantic search over noise"
+ * (the old behaviour, which silently returned random results).
+ */
+function disabledEmbedding(): EmbeddingProvider {
   return {
+    available: false,
     embed: async () => new Array(EMBEDDING_DIM).fill(0),
     embedBatch: async (texts: string[]) => texts.map(() => new Array(EMBEDDING_DIM).fill(0)),
   };
@@ -112,7 +124,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
   const scopedQuery = new ScopedQuery(driver);
   const factStore = new FactStore(driver);
 
-  const embedding: EmbeddingProvider = openaiKey ? new OpenAIEmbedding(openaiKey) : zeroEmbedding();
+  const embedding: EmbeddingProvider = openaiKey ? new OpenAIEmbedding(openaiKey) : disabledEmbedding();
 
   // Per-task model overrides from env (MEMBERRY_MODEL_*); omitted keys fall back to DEFAULT_MODELS.
   const models: NonNullable<AMPConfig['models']> = {};
@@ -123,6 +135,9 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
   const mDream = readEnv('MEMBERRY_MODEL_DREAM');
   if (mDream) models.dream = mDream;
 
+  const readonlyMode = readEnv('MEMBERRY_READONLY') === 'true';
+  const redactOnIngest = readEnv('MEMBERRY_REDACT_ON_INGEST') === 'true';
+
   const config: AMPConfig = {
     redis: { url: redisUrl },
     neo4j: { uri: neo4jUri, user: neo4jUser, password: neo4jPassword },
@@ -130,6 +145,8 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     cache: { defaultTTL: 300, contextTTL: 300, embeddingTTL: 86400 },
     consolidation: { autoApply: false, signalThreshold: 3 },
     exportPath,
+    readonly: readonlyMode,
+    redactOnIngest,
     ...(Object.keys(models).length > 0 ? { models } : {}),
   };
 
@@ -143,7 +160,8 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
       await cache.invalidateByScope(scope);
     },
   };
-  const memoryBlocks = new MemoryBlockService(redisBlockStore, neo4jBlockStore, cacheInvalidator);
+  const memoryBlocks = new MemoryBlockService(redisBlockStore, neo4jBlockStore, cacheInvalidator, readonlyMode);
+  const audit = new AuditLogStore(driver);
 
   const ampService = new AMPService(
     { cache, embeddings, dedup, signals, queue },
@@ -151,6 +169,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     embedding,
     config,
     memoryBlocks,
+    audit,
   );
 
   return {
@@ -164,6 +183,7 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
     episodic,
     scopedQuery,
     factStore,
+    audit,
     embedding,
     llm,
     serialQueue,

@@ -131,6 +131,10 @@ export interface AMPConfig {
   cache: { defaultTTL: number; contextTTL: number; embeddingTTL: number };
   consolidation: { autoApply: boolean; signalThreshold: number };
   exportPath: string;
+  /** When true, all write paths (store, block mutations) are rejected. Set via MEMBERRY_READONLY. */
+  readonly?: boolean;
+  /** When true, episode content/task is secret-redacted before persistence. Set via MEMBERRY_REDACT_ON_INGEST. */
+  redactOnIngest?: boolean;
   /**
    * Per-task chat-completion model selection (see packages/core/src/llm.ts).
    * Omitted keys fall back to DEFAULT_MODELS. Sourced from AMP_MODEL_* env vars.
@@ -147,6 +151,35 @@ export interface AMPConfig {
 export interface EmbeddingProvider {
   embed(text: string): Promise<number[]>;
   embedBatch(texts: string[]): Promise<number[][]>;
+  /**
+   * Whether semantic vector search is usable with this provider.
+   * `false` signals a degraded/no-key provider whose vectors are meaningless
+   * (e.g. all-zeros): callers MUST skip vector queries and fall back to
+   * deterministic lexical/fulltext retrieval rather than ranking on noise.
+   * `undefined` is treated as available (real providers and test mocks).
+   */
+  readonly available?: boolean;
+}
+
+// === Audit ===
+
+/** A mutation an actor performed, for the append-only audit trail. */
+export interface AuditEntry {
+  /** Who performed the action (agent/token identity). */
+  actor: string;
+  /** What happened: store | block_insert | block_replace | block_rewrite | block_promote | block_archive | consolidate | bootstrap | ... */
+  action: string;
+  /** Project/scope the mutation targeted, if known. */
+  scope?: string;
+  /** The id of the node/block affected, if known. */
+  target_id?: string;
+  /** Free-text detail (e.g. block name, task summary). Never include secrets. */
+  detail?: string;
+}
+
+/** Append-only audit sink. Implementations must never throw into the caller's path. */
+export interface AuditSink {
+  append(entry: AuditEntry): Promise<void>;
 }
 
 export interface ExtractionProvider {
@@ -165,8 +198,31 @@ export const SIGNAL_WEIGHTS: Record<SignalType, number> = {
 };
 
 export const RECENCY_DECAY_DAYS = 7;
-/** OpenAI text-embedding-3-small default dimension. Used across all vector indexes. */
-export const EMBEDDING_DIM = 1536;
+
+/** Default embedding dimension (OpenAI text-embedding-3-small). */
+export const DEFAULT_EMBEDDING_DIM = 1536;
+
+function resolveEmbeddingDim(): number {
+  const raw = process.env['MEMBERRY_EMBEDDING_DIM'] ?? process.env['AMP_EMBEDDING_DIM'];
+  if (!raw) return DEFAULT_EMBEDDING_DIM;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 8 || n > 12288) {
+    console.error(
+      `[memberry] Ignoring invalid MEMBERRY_EMBEDDING_DIM="${raw}" ` +
+      `(must be an integer in 8..12288); using ${DEFAULT_EMBEDDING_DIM}.`,
+    );
+    return DEFAULT_EMBEDDING_DIM;
+  }
+  return n;
+}
+
+/**
+ * Embedding dimension used across all Neo4j vector indexes.
+ * Defaults to 1536 (text-embedding-3-small); override with MEMBERRY_EMBEDDING_DIM
+ * to pin a deployment to a different model (e.g. 3072 for text-embedding-3-large).
+ * Changing this requires recreating the vector indexes — verifySchema() detects drift.
+ */
+export const EMBEDDING_DIM = resolveEmbeddingDim();
 // === Temporal Facts ===
 
 export type FactStatus = 'active' | 'invalidated' | 'disputed' | 'tentative';

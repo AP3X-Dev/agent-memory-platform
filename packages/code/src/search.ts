@@ -193,6 +193,9 @@ export class CodeSearch {
     limit: number,
     options?: { language?: string; file_path?: string; kind?: string },
   ): Promise<CodeSearchResult[]> {
+    // No usable embeddings → skip dense vector search; fulltext + deterministic
+    // lexical-vector search still run and carry the fused result.
+    if (this.embedding.available === false) return [];
     try {
       const queryEmbedding = await this.embedding.embed(query);
       const candidateLimit = candidateLimitForPostFilters(limit, options);
@@ -288,6 +291,7 @@ export class CodeSearch {
     limit: number,
     asOf?: string,
   ): Promise<CodeSearchResult[]> {
+    if (this.embedding.available === false) return [];
     try {
       const queryEmbedding = await this.embedding.embed(query);
       const semanticLimit = Math.min(limit, 10);

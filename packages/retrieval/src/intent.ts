@@ -160,8 +160,10 @@ export async function classifyIntent(
   const rulesResult = classifyByRules(query);
   if (rulesResult) return rulesResult;
 
-  // Step 2: Embedding-based classification (if provider available)
-  if (embedding) {
+  // Step 2: Embedding-based classification (only when embeddings are usable —
+  // a disabled/no-key provider returns zero vectors that collapse cosine
+  // similarity to 0, so we skip straight to the deterministic fallback).
+  if (embedding && embedding.available !== false) {
     try {
       const embResult = await classifyByEmbedding(query, embedding);
       if (embResult) return embResult;

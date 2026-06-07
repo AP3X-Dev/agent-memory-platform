@@ -14,12 +14,14 @@ import type {
   EmbeddingProvider,
   AMPConfig,
   MemoryBlock,
+  AuditSink,
 } from './types.js';
 import { rankMemories, rankFacts, budgetTokens, estimateTokens } from './ranking.js';
 import type { RedisBlockLayer, Neo4jBlockLayer } from './blocks.js';
 import { MemoryBlockService } from './blocks.js';
 import { extractFacts, isTransientError } from './extract.js';
 import { CARD_BLOCK_NAMES } from './types.js';
+import { redactSecrets } from './redact.js';
 import { readEnv } from './config/settings.js';
 
 // ─── Dependency interfaces (injected, not concrete imports) ──────────────────
@@ -100,6 +102,7 @@ export class AMPService {
     private embedding: EmbeddingProvider,
     private config: AMPConfig,
     blocks?: BlocksLayer,
+    private audit?: AuditSink,
   ) {
     this.blocks = blocks;
   }
@@ -363,6 +366,22 @@ export class AMPService {
   // ─── STORE ─────────────────────────────────────────────────────────────────
 
   async store(input: EpisodeInput): Promise<{ id: string; duplicate: boolean }> {
+    // 0a. Read-only guard — reject writes when the deployment is read-only.
+    if (this.config.readonly) {
+      throw new Error('MemBerry is in read-only mode (MEMBERRY_READONLY=true); berry_store is disabled.');
+    }
+
+    // 0b. Secret redaction at the ingest boundary (opt-in). Redacting before
+    // hashing/embedding/persistence keeps credentials out of the store entirely
+    // rather than relying on export-time redaction as the only defense.
+    if (this.config.redactOnIngest) {
+      input = {
+        ...input,
+        content: redactSecrets(input.content),
+        ...(input.task ? { task: redactSecrets(input.task) } : {}),
+      };
+    }
+
     // 1. Atomic dedup check-and-mark (prevents TOCTOU race between isDuplicate/markSeen)
     const contentHash = createHash('sha256').update(input.content).digest('hex');
     const isDup = await this.redis.dedup.checkAndMark(input.agent_id, contentHash);
@@ -463,6 +482,17 @@ export class AMPService {
       // Detach from the request path — caller gets response without waiting for extraction.
       // _extractFactsBackground handles its own retries and error logging internally.
       void this._extractFactsBackground(factLayer, apiKey, input.content, episodeId);
+    }
+
+    // 8. Audit trail (best-effort, never blocks the response).
+    if (this.audit) {
+      void this.audit.append({
+        actor: input.agent_id,
+        action: 'store',
+        scope: scope ?? undefined,
+        target_id: id,
+        detail: input.task?.slice(0, 200),
+      }).catch(() => { /* AuditLogStore already logs; never fail store() */ });
     }
 
     return { id, duplicate: false };
@@ -610,6 +640,10 @@ export class AMPService {
     text: string,
     limit: number,
   ): Promise<Array<SemanticNode & { score: number }>> {
+    // Skip vector search when embeddings are unavailable (no API key): querying
+    // the index with zero vectors yields uniform cosine scores and arbitrary
+    // ordering. Returning [] lets scoped + graph-expanded retrieval carry load().
+    if (this.embedding.available === false) return [];
     try {
       const emb = await this._getEmbedding(text);
       return await this.neo4j.query.byVector(emb, limit);

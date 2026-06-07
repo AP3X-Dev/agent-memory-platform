@@ -34,8 +34,16 @@ export class MemoryBlockService {
     private redisBlocks: RedisBlockLayer,
     private neo4jBlocks: Neo4jBlockLayer,
     cacheInvalidator?: CacheInvalidator,
+    private readonlyMode = false,
   ) {
     this.cacheInvalidator = cacheInvalidator;
+  }
+
+  /** Reject mutations when the deployment is read-only. */
+  private _assertWritable(): void {
+    if (this.readonlyMode) {
+      throw new Error('MemBerry is in read-only mode (MEMBERRY_READONLY=true); memory block writes are disabled.');
+    }
   }
 
   private async _invalidateContext(scope: string): Promise<void> {
@@ -206,6 +214,7 @@ export class MemoryBlockService {
   }
 
   async archive(scope: string, name: string, sessionId?: string): Promise<string> {
+    this._assertWritable();
     const block = await this.read(scope, name, sessionId);
     if (!block) {
       throw new Error(`Block "${name}" not found in scope "${scope}"`);
@@ -266,6 +275,7 @@ export class MemoryBlockService {
   // ─── Private helpers ───────────────────────────────────────────────────────
 
   private async _persist(block: MemoryBlock): Promise<void> {
+    this._assertWritable();
     // Write to Neo4j first (source of truth) for core tier
     if (block.tier === 'core') {
       await this.neo4jBlocks.save(block);

@@ -5,6 +5,8 @@ import type { EmbeddingProvider } from './types.js';
 export class OpenAIEmbedding implements EmbeddingProvider {
   private client: OpenAI;
   private model = 'text-embedding-3-small';
+  /** Real provider: semantic vector search is usable. */
+  readonly available = true;
 
   constructor(apiKey: string) {
     this.client = new OpenAI({ apiKey });
