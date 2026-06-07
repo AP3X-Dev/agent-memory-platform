@@ -106,6 +106,11 @@ npm run dev
 }
 ```
 
+**Codex (streamable HTTP):**
+```bash
+codex mcp add memberry --url http://localhost:3101/mcp --bearer-token-env-var MEMBERRY_API_TOKEN
+```
+
 **Claude Code (stdio):**
 ```json
 {

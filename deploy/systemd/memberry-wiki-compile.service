@@ -1,0 +1,10 @@
+[Unit]
+Description=MemBerry Wiki Recompile
+After=network.target docker.service
+
+[Service]
+Type=oneshot
+User=cerebro
+WorkingDirectory=/home/cerebro/projects/amp
+ExecStart=/usr/bin/npx tsx packages/wiki/src/cli.ts compile --output /home/cerebro/projects/amp/wiki
+EnvironmentFile=/etc/memberry/env

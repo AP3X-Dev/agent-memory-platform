@@ -1,0 +1,17 @@
+[Unit]
+Description=MemBerry Wiki Viewer
+After=network.target docker.service memberry-mcp.service
+
+[Service]
+Type=simple
+User=cerebro
+WorkingDirectory=/home/cerebro/projects/amp
+ExecStartPre=/usr/bin/npx tsx packages/wiki/src/cli.ts compile --output /home/cerebro/projects/amp/wiki
+ExecStart=/usr/bin/npx tsx packages/wiki/src/cli.ts serve --output /home/cerebro/projects/amp/wiki --port 3200
+Restart=always
+RestartSec=10
+EnvironmentFile=/etc/memberry/env
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
