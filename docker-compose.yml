@@ -1,6 +1,14 @@
-# AMP infrastructure — Neo4j only.
-# Redis is shared from ~/infra (cerebro-redis), bound to 127.0.0.1 with requirepass.
-# MCP server runs via systemd (memberry-mcp.service), not Docker.
+# MemBerry local infrastructure — self-contained.
+#
+# Brings up everything MemBerry needs (Neo4j + Redis) with compose-managed
+# volumes, so a fresh clone works with no external setup (no ~/infra dependency,
+# no pre-created named volumes).
+#
+# Passwords default to clearly-non-production values and can be overridden via a
+# local .env file:
+#   NEO4J_PASSWORD=...      (also put it in NEO4J_PASSWORD for the MCP server)
+#   REDIS_PASSWORD=...      (must match the password in REDIS_URL)
+# See .env.example.
 
 services:
   neo4j:
@@ -13,18 +21,37 @@ services:
       - neo4j_data:/data
       - neo4j_plugins:/plugins
     environment:
-      NEO4J_AUTH: neo4j/amp-memory-2026
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:-memberry-local-dev}
       NEO4J_PLUGINS: '["apoc", "graph-data-science"]'
       NEO4J_dbms_security_procedures_unrestricted: "apoc.*,gds.*"
       NEO4J_dbms_memory_heap_initial__size: "256m"
       NEO4J_dbms_memory_heap_max__size: "512m"
       NEO4J_dbms_memory_pagecache_size: "256m"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:7474 >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: memberry-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-memberry-local-dev}", "--appendonly", "yes"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_PASSWORD:-memberry-local-dev}\" ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
     restart: unless-stopped
 
 volumes:
   neo4j_data:
-    name: amp_neo4j_data
-    external: true
   neo4j_plugins:
-    name: amp_neo4j_plugins
-    external: true
+  redis_data:

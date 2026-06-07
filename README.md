@@ -80,17 +80,21 @@ On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki,
 git clone https://github.com/AP3X-Dev/memberry.git
 cd memberry
 
-# Start the knowledge graph
-docker compose up -d
-
-# Configure
-cp .env.example .env
-# Edit .env with your Neo4j password
-
-# Install and run
-npm install
-npm run dev
+cp .env.example .env   # then set OPENAI_API_KEY (defaults are fine for local infra)
+npm run setup          # brings up Docker infra (Neo4j + Redis), installs, builds, smoke-tests
 ```
+
+`npm run setup` is self-contained: it starts the bundled Neo4j + Redis via
+`docker compose`, waits for them to be healthy, runs `npm ci && npm run build`,
+then runs a smoke test. It's idempotent — safe to re-run.
+
+Run the server from compiled artifacts:
+
+```bash
+npm start              # node packages/mcp/dist/server.js
+```
+
+Prefer hot reload during development? Use `npm run dev` instead.
 
 ### Connect to Your Agent
 

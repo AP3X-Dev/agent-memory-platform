@@ -1,14 +1,35 @@
 {
   "files": [],
   "references": [
-    { "path": "packages/core" },
-    { "path": "packages/neo4j" },
-    { "path": "packages/redis" },
-    { "path": "packages/research" },
-    { "path": "packages/arch" },
-    { "path": "packages/code" },
-    { "path": "packages/retrieval" },
-    { "path": "packages/graph" },
-    { "path": "packages/mcp" }
+    {
+      "path": "packages/core"
+    },
+    {
+      "path": "packages/neo4j"
+    },
+    {
+      "path": "packages/redis"
+    },
+    {
+      "path": "packages/research"
+    },
+    {
+      "path": "packages/arch"
+    },
+    {
+      "path": "packages/code"
+    },
+    {
+      "path": "packages/retrieval"
+    },
+    {
+      "path": "packages/graph"
+    },
+    {
+      "path": "packages/wiki"
+    },
+    {
+      "path": "packages/mcp"
+    }
   ]
 }
