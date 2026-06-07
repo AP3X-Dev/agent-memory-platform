@@ -6,7 +6,7 @@
 // deployments need. None of this touches setServiceInstances().
 
 import { describe, it, expect, vi } from 'vitest';
-import { buildToolHandlers, createServiceContainer, registerTools, TENANT_SAFE_TOOLS } from '../tools.js';
+import { buildToolHandlers, createServiceContainer, registerTools, TENANT_SAFE_TOOLS, coreContainerForTenant, setTenantContainer } from '../tools.js';
 import type { IAMPService } from '../tools.js';
 
 function ampReturning(markdown: string): IAMPService {
@@ -51,6 +51,21 @@ describe('ServiceContainer dependency injection', () => {
   it('defaults tenantId to "default"', () => {
     expect(createServiceContainer().tenantId).toBe('default');
     expect(createServiceContainer({ tenantId: 'acme' }).tenantId).toBe('acme');
+  });
+});
+
+describe('Graduation seam (tenant → dedicated datastore)', () => {
+  it('routes a tenant with a dedicated container to its own services; others share the default', () => {
+    const dedicated = ampReturning('DEDICATED');
+    setTenantContainer('acme', { ampService: dedicated });
+
+    const acme = coreContainerForTenant('acme');
+    expect(acme.tenantId).toBe('acme');
+    expect(acme.ampService).toBe(dedicated); // its OWN service
+
+    const other = coreContainerForTenant('globex');
+    expect(other.tenantId).toBe('globex');
+    expect(other.ampService).not.toBe(dedicated); // shared default path, not acme's
   });
 });
 

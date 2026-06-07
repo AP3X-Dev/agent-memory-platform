@@ -7,6 +7,9 @@ export {
   setServiceInstances,
   buildToolHandlers,
   createServiceContainer,
+  coreContainerForTenant,
+  setTenantContainer,
+  TENANT_SAFE_TOOLS,
   TOOL_NAMES,
   DOMAIN_DESCRIPTIONS,
 } from './tools.js';

@@ -19,6 +19,13 @@ import { computeQueryStats, lexicalTextScore, adaptiveWeights, inferSourceTypeBo
 import { classifyIntent } from './intent.js';
 import type { QueryIntent } from './intent.js';
 import type { EmbeddingProvider, LlmClient, ChatMessage } from '@memberry/core';
+import { tenantWhere, resolveTenant, TENANT_PARAM } from '@memberry/neo4j';
+
+// Tenant-scoped options: RetrievalOptions lives in ./types.js (shared shape), but
+// the assembler threads an optional tenantId through every direct memory/graph
+// query. We extend the shared type locally so the live retrieval path is
+// tenant-isolated (berry_context / berry_ask) the same way every other read is.
+type TenantRetrievalOptions = RetrievalOptions & { tenantId?: string };
 
 // ─── Dependency interfaces ───────────────────────────────────────────────────
 
@@ -29,7 +36,7 @@ export interface AssemblerCodeLayer {
 }
 
 export interface AssemblerMemoryLayer {
-  load(scope: { task: string; entities?: string[]; tags?: string[]; max_tokens?: number; temporal?: { time_mode?: string; as_of?: string; from?: string; to?: string; include_invalidated?: boolean } }): Promise<{
+  load(scope: { task: string; entities?: string[]; tags?: string[]; max_tokens?: number; tenantId?: string; temporal?: { time_mode?: string; as_of?: string; from?: string; to?: string; include_invalidated?: boolean } }): Promise<{
     markdown: string; tokens: number; sources: string[];
   }>;
 }
@@ -119,6 +126,7 @@ export class UnifiedAssembler {
       tag_scope?: string[];
       project_name?: string;
       as_of?: string;
+      tenantId?: string;
     } = {},
   ): Promise<AskResult> {
     if (!this.llm || !this.llm.available) {
@@ -134,6 +142,7 @@ export class UnifiedAssembler {
       tag_scope: opts.tag_scope,
       project_name: opts.project_name,
       as_of: opts.as_of,
+      tenantId: opts.tenantId,
     });
     const evidence = ctx.sections.flatMap((s) => s.items);
     if (evidence.length === 0) {
@@ -180,8 +189,8 @@ export class UnifiedAssembler {
    * - 'ranked': Hybrid search + RRF fusion + feedback boosts. Best for exploration.
    * - 'deterministic': Yggdrasil 5-step algorithm. Same graph → same output. Best for architecture queries.
    */
-  async assemble(task: string, options?: Partial<RetrievalOptions>): Promise<UnifiedContext> {
-    const opts: RetrievalOptions = {
+  async assemble(task: string, options?: Partial<TenantRetrievalOptions>): Promise<UnifiedContext> {
+    const opts: TenantRetrievalOptions = {
       strategy: options?.strategy ?? 'auto',
       include_code: options?.include_code ?? true,
       include_arch: options?.include_arch ?? true,
@@ -191,6 +200,7 @@ export class UnifiedAssembler {
       tag_scope: options?.tag_scope,
       project_name: options?.project_name,
       as_of: options?.as_of,
+      tenantId: resolveTenant(options?.tenantId),
     };
 
     // Auto strategy: classify intent and route accordingly
@@ -257,10 +267,11 @@ export class UnifiedAssembler {
 
   private async assembleRanked(
     task: string,
-    opts: RetrievalOptions,
+    opts: TenantRetrievalOptions,
     intent: QueryIntent = 'HYBRID',
   ): Promise<UnifiedContext> {
     const lists: RetrievalResult[][] = [];
+    const tenant = resolveTenant(opts.tenantId);
 
     // Intent-aware query expansion
     const expansion = expandQuery(task, intent);
@@ -316,6 +327,7 @@ export class UnifiedAssembler {
           entities: opts.entity_scope,
           tags: memoryTagScope,
           max_tokens: Math.floor(opts.max_tokens / 3),
+          tenantId: tenant,
           ...(opts.as_of ? { temporal: { as_of: opts.as_of } } : {}),
         })
           .then((ctx) => { lists.push(parseMemoryMarkdown(ctx.markdown, ctx.sources)); })
@@ -381,7 +393,11 @@ export class UnifiedAssembler {
 
   // ─── Deterministic assembly ────────────────────────────────────────────
 
-  private async assembleDeterministic(task: string, opts: RetrievalOptions): Promise<UnifiedContext> {
+  private async assembleDeterministic(task: string, opts: TenantRetrievalOptions): Promise<UnifiedContext> {
+    // NOTE: DeterministicAssembler (deterministic.ts) owns its own Neo4j queries
+    // and is out of scope for this change. Its entity/aspect/semantic queries are
+    // NOT yet tenant-filtered. Tenant is resolved here and intended to be threaded
+    // into DeterministicAssembler.assemble when that file is made tenant-aware.
     const sections = await this.deterministic.assemble(task, {
       entity_scope: opts.entity_scope,
       project_name: opts.project_name,
@@ -405,7 +421,7 @@ export class UnifiedAssembler {
 
   // ─── Arch entity search ────────────────────────────────────────────────
 
-  private async searchArchEntities(task: string, opts: RetrievalOptions): Promise<RetrievalResult[]> {
+  private async searchArchEntities(task: string, opts: TenantRetrievalOptions): Promise<RetrievalResult[]> {
     const session = this.driver.session();
     try {
       // Fulltext search on entity architectural properties
@@ -413,18 +429,22 @@ export class UnifiedAssembler {
         .replace(/[+\-&|!(){}[\]^"~*?:\\/]/g, '\\$&')
         .replace(/\b(AND|OR|NOT|TO)\b/g, '"$1"');
       const projectName = normalizeProjectName(opts.project_name);
+      const tenant = resolveTenant(opts.tenantId);
       const result = await session.run(
         `CALL db.index.fulltext.queryNodes('entity_arch_content', $query)
          YIELD node AS e, score
-         WHERE $projectName IS NULL
-            OR toLower(COALESCE(e.name, '')) = toLower($projectName)
-            OR EXISTS {
-              MATCH (project:Entity)-[:CONTAINS*0..]->(e)
-              WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
-            }
+         WHERE ${tenantWhere('e', tenant)}
+           AND (
+             $projectName IS NULL
+             OR toLower(COALESCE(e.name, '')) = toLower($projectName)
+             OR EXISTS {
+               MATCH (project:Entity)-[:CONTAINS*0..]->(e)
+               WHERE toLower(COALESCE(project.name, '')) = toLower($projectName)
+             }
+           )
          RETURN e, score
          ORDER BY score DESC LIMIT 15`,
-        { query: `${escaped}*`, projectName },
+        { query: `${escaped}*`, projectName, [TENANT_PARAM]: tenant },
       );
 
       return result.records.map((r) => {

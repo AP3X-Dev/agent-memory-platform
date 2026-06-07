@@ -293,6 +293,63 @@ describe('UnifiedAssembler', () => {
       expect(params.projectName).toBe('AMP');
     });
 
+    it('tenant-scopes the ranked architecture query and binds the tenant param', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        tenantId: 'acme',
+        include_code: false,
+        include_memory: false,
+      });
+
+      const archCall = driver.mockSession.run.mock.calls.find(
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('entity_arch_content'),
+      );
+
+      expect(archCall).toBeDefined();
+      const [query, params] = archCall as [string, Record<string, unknown>];
+      // Non-default tenant → strict equality predicate ANDed into the WHERE.
+      expect(query).toContain('e.tenant_id = $tenantId');
+      expect(params.tenantId).toBe('acme');
+    });
+
+    it('defaults the architecture query to the default tenant (also matches legacy NULL)', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        include_code: false,
+        include_memory: false,
+      });
+
+      const archCall = driver.mockSession.run.mock.calls.find(
+        (call: unknown[]) => typeof call[0] === 'string' && (call[0] as string).includes('entity_arch_content'),
+      );
+
+      expect(archCall).toBeDefined();
+      const [query, params] = archCall as [string, Record<string, unknown>];
+      // Default tenant → also matches legacy rows with no tenant_id.
+      expect(query).toContain('e.tenant_id IS NULL OR e.tenant_id = $tenantId');
+      expect(params.tenantId).toBe('default');
+    });
+
+    it('threads tenantId into the memory layer load scope', async () => {
+      await assembler.assemble('test', {
+        strategy: 'ranked',
+        tenantId: 'acme',
+        entity_scope: ['AuthService'],
+      });
+
+      expect(memoryLayer.load).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'acme' }),
+      );
+    });
+
+    it('defaults the memory layer load scope to the default tenant', async () => {
+      await assembler.assemble('test', { strategy: 'ranked' });
+
+      expect(memoryLayer.load).toHaveBeenCalledWith(
+        expect.objectContaining({ tenantId: 'default' }),
+      );
+    });
+
     it('skips oversized ranked results and keeps later items that fit the token budget', async () => {
       codeLayer.search = vi.fn().mockResolvedValue([
         {

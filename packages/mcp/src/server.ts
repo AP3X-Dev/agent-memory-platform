@@ -12,7 +12,7 @@ import { DEFAULT_TENANT } from '@memberry/core';
 import { registerResearchTools, RESEARCH_TOOL_NAMES } from '@memberry/research';
 import { registerArchTools, ARCH_TOOL_NAMES } from '@memberry/arch';
 import { registerCodeTools, CODE_TOOL_NAMES } from '@memberry/code';
-import { registerRetrievalTools, RETRIEVAL_TOOL_NAMES } from '@memberry/retrieval';
+import { registerRetrievalTools, retrievalContainerForTenant, RETRIEVAL_TOOL_NAMES } from '@memberry/retrieval';
 import { registerWikiTools, WIKI_TOOL_NAMES } from '@memberry/wiki';
 import { registerGraphTools, GRAPH_TOOL_NAMES } from '@memberry/graph';
 import { readEnv } from '@memberry/core';
@@ -130,9 +130,19 @@ function registerAllTools(
   const container = opts.multiTenant ? coreContainerForTenant(opts.tenantId ?? DEFAULT_TENANT) : undefined;
   registerTools(server, toolRegistry, container, { multiTenant: opts.multiTenant });
 
-  // Satellite + retrieval domains are not yet tenant-scoped, so they are only
-  // registered for single-tenant sessions. A tenant-bound session gets just the
-  // default-deny core set (load/store + gateway) until Phase 2 scopes them.
+  // Retrieval (berry_context / berry_ask) IS tenant-scoped, so it is registered
+  // for tenant sessions too — bound to the session's tenant. (berry_feedback is
+  // Tier 2 and stays disabled by default.)
+  const retrievalContainer = opts.multiTenant
+    ? retrievalContainerForTenant(opts.tenantId ?? DEFAULT_TENANT)
+    : undefined;
+  const retrievalResult = registerRetrievalTools(server, retrievalContainer);
+  const existingRetrieval = toolRegistry.get('retrieval') ?? [];
+  existingRetrieval.push(...retrievalResult.tier2);
+  toolRegistry.set('retrieval', existingRetrieval);
+
+  // The remaining satellite domains are not yet tenant-scoped, so they are only
+  // registered for single-tenant sessions (withheld from tenant sessions).
   if (!opts.multiTenant) {
     const researchHandles = registerResearchTools(server);
     toolRegistry.set('research', researchHandles);
@@ -142,12 +152,6 @@ function registerAllTools(
 
     const codeHandles = registerCodeTools(server);
     toolRegistry.set('code', codeHandles);
-
-    const retrievalResult = registerRetrievalTools(server);
-    // berry_context is Tier 1, berry_feedback is Tier 2
-    const existingRetrieval = toolRegistry.get('retrieval') ?? [];
-    existingRetrieval.push(...retrievalResult.tier2);
-    toolRegistry.set('retrieval', existingRetrieval);
 
     const wikiHandles = registerWikiTools(server);
     toolRegistry.set('wiki', wikiHandles);

@@ -4,7 +4,7 @@
 import { DistributedLock, ProposalStore } from '@memberry/redis';
 import { runMigrations, checkVectorIndexDimensions, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
 import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, buildExtractionConsumer, readEnv } from '@memberry/core';
-import { setServiceInstances } from './tools.js';
+import { setServiceInstances, setTenantContainer } from './tools.js';
 import {
   initResearchSchema,
   ExperimentStore,
@@ -357,6 +357,38 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   // store() enqueues extraction jobs to a Redis Stream; this long-lived worker
   // drains them, so extraction survives a process restart (orphaned jobs are
   // reclaimed via XAUTOCLAIM) and permanent failures land in a dead-letter queue.
+  // ─── Per-tenant dedicated datastores (graduation seam) ──────────────────────
+  // MEMBERRY_TENANT_DATASTORES = {"acme":{"neo4jUri":"bolt://...","neo4jPassword":"...","redisUrl":"redis://..."}}
+  // Tenants listed here get their OWN Neo4j/Redis (physical isolation); all other
+  // tenants share this instance with a tenant_id filter (logical isolation).
+  const dedicatedTenantCores: Array<{ close(): Promise<void> }> = [];
+  const tenantDatastoresRaw = readEnv('MEMBERRY_TENANT_DATASTORES');
+  if (tenantDatastoresRaw) {
+    let map: Record<string, { neo4jUri?: string; neo4jUser?: string; neo4jPassword?: string; redisUrl?: string; openaiKey?: string }>;
+    try {
+      map = JSON.parse(tenantDatastoresRaw);
+    } catch (err) {
+      throw new Error(`MEMBERRY_TENANT_DATASTORES is not valid JSON: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    for (const [tenant, ds] of Object.entries(map)) {
+      const tcore = createCoreServices({
+        neo4jUri: ds.neo4jUri, neo4jUser: ds.neo4jUser, neo4jPassword: ds.neo4jPassword,
+        redisUrl: ds.redisUrl, openaiKey: ds.openaiKey ?? openaiKey, exportPath,
+      });
+      await tcore.redis.ping();
+      await tcore.driver.getServerInfo();
+      await runMigrations(tcore.driver);
+      setTenantContainer(tenant, {
+        ampService: tcore.ampService,
+        scopedQuery: tcore.scopedQuery,
+        memoryBlockService: tcore.memoryBlocks,
+        factStore: tcore.factStore,
+      });
+      dedicatedTenantCores.push(tcore);
+      console.error(`[memberry-mcp] tenant "${tenant}" bound to a dedicated datastore`);
+    }
+  }
+
   const extractionConsumer = buildExtractionConsumer(core);
   await extractionConsumer.start();
   try {
@@ -381,6 +413,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   return {
     async shutdown() {
       try { await extractionConsumer.stop(); } catch { /* best-effort */ }
+      for (const tc of dedicatedTenantCores) { try { await tc.close(); } catch { /* already closed */ } }
       try { codeWatcherService.stopAll(); } catch { /* best-effort */ }
       try { await redis.quit(); } catch { /* already closed */ }
       try { await driver.close(); } catch { /* already closed */ }

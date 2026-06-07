@@ -4,6 +4,7 @@
 import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
+import { DEFAULT_TENANT } from '@memberry/core';
 import type { UnifiedContext, RetrievalStrategy } from './types.js';
 
 // ─── Service interface (injected) ────────────────────────────────────────────
@@ -19,6 +20,7 @@ export interface IUnifiedAssembler {
     tag_scope?: string[];
     project_name?: string;
     as_of?: string;
+    tenantId?: string;
   }): Promise<UnifiedContext>;
   renderMarkdown(ctx: UnifiedContext): string;
   ask(question: string, options?: {
@@ -27,6 +29,7 @@ export interface IUnifiedAssembler {
     tag_scope?: string[];
     project_name?: string;
     as_of?: string;
+    tenantId?: string;
   }): Promise<{
     answer: string;
     cited_ids: string[];
@@ -58,6 +61,8 @@ export interface IFeedbackTracker {
 export interface RetrievalServiceContainer {
   assembler: IUnifiedAssembler | null;
   feedbackTracker: IFeedbackTracker | null;
+  /** Tenant this container's tools are bound to. Threaded into every assemble/ask. */
+  tenantId: string;
 }
 
 /** Build a container, defaulting any service not supplied to null. */
@@ -65,11 +70,17 @@ export function createRetrievalContainer(partial: Partial<RetrievalServiceContai
   return {
     assembler: partial.assembler ?? null,
     feedbackTracker: partial.feedbackTracker ?? null,
+    tenantId: partial.tenantId ?? DEFAULT_TENANT,
   };
 }
 
 /** Process-default container, populated by setRetrievalServiceInstances() at bootstrap. */
 const defaultContainer: RetrievalServiceContainer = createRetrievalContainer();
+
+/** A retrieval container bound to a tenant, reusing the shared assembler. */
+export function retrievalContainerForTenant(tenantId: string): RetrievalServiceContainer {
+  return { ...defaultContainer, tenantId };
+}
 
 export function setRetrievalServiceInstances(services: {
   assembler: IUnifiedAssembler;
@@ -105,7 +116,7 @@ export function registerRetrievalTools(
   // Destructure once into closure-captured locals. Handlers reference these by
   // the same names they used as module globals, so their bodies are unchanged —
   // but each call to registerRetrievalTools can now be bound to a different container.
-  const { assembler, feedbackTracker } = container;
+  const { assembler, feedbackTracker, tenantId } = container;
   const tier1: RegisteredTool[] = [];
   const tier2: RegisteredTool[] = [];
 
@@ -129,8 +140,13 @@ export function registerRetrievalTools(
     { readOnlyHint: true, idempotentHint: true } satisfies ToolAnnotations,
     async (args) => {
       if (!assembler) throw new Error('Retrieval services not initialised');
+      // Tenant safety: the deterministic strategy queries un-tenant-stamped
+      // Entity/Aspect nodes, so it is not safe for a named tenant. Force the
+      // ranked path (memory is tenant-filtered; arch entities strict-match to
+      // empty for a named tenant — no cross-tenant leak).
+      const strategy = tenantId !== DEFAULT_TENANT ? 'ranked' : (args.strategy as RetrievalStrategy);
       const ctx = await assembler.assemble(args.task, {
-        strategy: args.strategy as RetrievalStrategy,
+        strategy,
         include_code: args.include_code,
         include_arch: args.include_arch,
         include_memory: args.include_memory,
@@ -139,6 +155,7 @@ export function registerRetrievalTools(
         tag_scope: args.tag_scope,
         project_name: args.project_name,
         as_of: args.as_of,
+        tenantId,
       });
       const md = assembler.renderMarkdown(ctx);
       return textContent(md);
@@ -167,6 +184,7 @@ export function registerRetrievalTools(
         tag_scope: args.tag_scope,
         project_name: args.project_name,
         as_of: args.as_of,
+        tenantId,
       });
       const lines = [
         `# Answer`,

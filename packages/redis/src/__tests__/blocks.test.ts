@@ -52,13 +52,13 @@ describe('BlockStore (Redis)', () => {
 
   beforeEach(async () => {
     if (!redisAvailable) return;
-    const keys = await redis.keys(`amp:block:${TEST_SCOPE}:*`);
+    const keys = await redis.keys(`amp:block:default:${TEST_SCOPE}:*`);
     if (keys.length) await redis.del(...keys);
   });
 
   afterAll(async () => {
     if (redisAvailable) {
-      const keys = await redis.keys(`amp:block:${TEST_SCOPE}:*`);
+      const keys = await redis.keys(`amp:block:default:${TEST_SCOPE}:*`);
       if (keys.length) await redis.del(...keys);
     }
     await redis.quit().catch(() => {});
@@ -82,7 +82,7 @@ describe('BlockStore (Redis)', () => {
     if (!redisAvailable) return;
     const block = makeBlock();
     await store.set(block);
-    const ttl = await redis.ttl(`amp:block:${TEST_SCOPE}:persona`);
+    const ttl = await redis.ttl(`amp:block:default:${TEST_SCOPE}:persona`);
     expect(ttl).toBe(-1); // no expiry
   });
 
@@ -94,7 +94,7 @@ describe('BlockStore (Redis)', () => {
       session_id: 'sess-1',
     });
     await store.set(block);
-    const ttl = await redis.ttl(`amp:block:${TEST_SCOPE}:sess-1:working_state`);
+    const ttl = await redis.ttl(`amp:block:default:${TEST_SCOPE}:sess-1:working_state`);
     expect(ttl).toBeGreaterThan(86300);
     expect(ttl).toBeLessThanOrEqual(86400);
   });
@@ -179,7 +179,7 @@ describe('BlockStore (Redis)', () => {
   it('should return null on corrupted JSON in get()', async () => {
     if (!redisAvailable) return;
     // Write corrupted data directly
-    await redis.set(`amp:block:${TEST_SCOPE}:corrupted`, '{not valid json!!!');
+    await redis.set(`amp:block:default:${TEST_SCOPE}:corrupted`, '{not valid json!!!');
     const result = await store.get(TEST_SCOPE, 'corrupted');
     expect(result).toBeNull();
   });
@@ -189,7 +189,7 @@ describe('BlockStore (Redis)', () => {
     // Write a valid block
     await store.set(makeBlock({ id: 'valid-1', name: 'valid' }));
     // Write corrupted data directly
-    await redis.set(`amp:block:${TEST_SCOPE}:corrupted`, 'not json at all');
+    await redis.set(`amp:block:default:${TEST_SCOPE}:corrupted`, 'not json at all');
     const blocks = await store.list(TEST_SCOPE);
     // Should only return the valid block, not crash
     expect(blocks.length).toBeGreaterThanOrEqual(1);

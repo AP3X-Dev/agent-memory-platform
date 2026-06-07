@@ -4,7 +4,8 @@
 // Usage: npx amp <command> [options]
 
 import { execFileSync } from 'child_process';
-import { createNeo4jDriver } from '@memberry/neo4j';
+import { createNeo4jDriver, TenantAdmin } from '@memberry/neo4j';
+import { writeFileSync } from 'fs';
 import { createRedisClient } from '@memberry/redis';
 import { exportAll, exportFiltered } from './export.js';
 import { importFromPath, type ImportStrategy } from './import.js';
@@ -196,6 +197,35 @@ async function runExtraction(positionals: string[], _flags: Record<string, strin
   }
 }
 
+async function runTenant(positionals: string[], flags: Record<string, string | boolean>): Promise<void> {
+  const sub = positionals[0] ?? 'stats';
+  const tenant = typeof flags['tenant'] === 'string' ? (flags['tenant'] as string) : '';
+  if (!tenant) throw new Error('Pass a tenant: --tenant <name>');
+  const core = createCoreServices();
+  try {
+    const admin = new TenantAdmin(core.driver);
+    if (sub === 'export') {
+      const data = await admin.export(tenant);
+      const out = typeof flags['out'] === 'string' ? (flags['out'] as string) : '';
+      if (out) { writeFileSync(out, JSON.stringify(data, null, 2)); console.log(`Exported tenant "${tenant}" to ${out}`); }
+      else console.log(JSON.stringify(data, null, 2));
+    } else if (sub === 'delete') {
+      if (flags['yes'] !== true) {
+        const c = await admin.stats(tenant);
+        console.error(`Refusing to delete without --yes. Tenant "${tenant}" has:`, JSON.stringify(c));
+        return;
+      }
+      const removed = await admin.delete(tenant);
+      console.log(`Deleted tenant "${tenant}":`, JSON.stringify(removed));
+    } else {
+      // stats (default)
+      console.log(JSON.stringify(await admin.stats(tenant), null, 2));
+    }
+  } finally {
+    await core.close();
+  }
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
@@ -231,6 +261,11 @@ async function main(): Promise<void> {
       await runExtraction(positionals, flags);
       break;
 
+    case 'tenant':
+      // `memberry tenant stats|export|delete --tenant <name> [--out f] [--yes]`
+      await runTenant(positionals, flags);
+      break;
+
     case 'hook':
       // `memberry hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
       await runHookCommand(positionals);
@@ -258,6 +293,7 @@ async function main(): Promise<void> {
       console.error('Background memory commands:');
       console.error('  dream      [--scope project:x] [--max-entities N] [--no-cards]');
       console.error('  extraction status|replay   (durable fact-extraction queue: counts / replay dead-letters)');
+      console.error('  tenant stats|export|delete --tenant <name> [--out file] [--yes]   (per-tenant admin)');
       console.error('');
       console.error('Agent hook commands:');
       console.error('  hooks install --agent claude|codex|hermes [--scope project|global] [--refresh wrapper|timer] [--with-mcp]');

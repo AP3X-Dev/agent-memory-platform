@@ -120,9 +120,21 @@ export function createServiceContainer(partial: Partial<ServiceContainer> = {}):
 /** Process-default container, populated by setServiceInstances() at bootstrap. */
 const defaultContainer: ServiceContainer = createServiceContainer();
 
-/** A container bound to a specific tenant, reusing the process-default services. */
+/**
+ * Graduation seam: tenants with a dedicated datastore get their own service
+ * container (Option C — physical isolation for that tenant); all others share
+ * the process-default services with a tenant_id filter (Option A — logical).
+ */
+const tenantContainers = new Map<string, ServiceContainer>();
+
+/** Register a dedicated service set for a tenant (built from its own datastore). */
+export function setTenantContainer(tenantId: string, services: Partial<ServiceContainer>): void {
+  tenantContainers.set(tenantId, createServiceContainer({ ...services, tenantId }));
+}
+
+/** A container bound to a tenant: its dedicated services if registered, else the shared defaults. */
 export function coreContainerForTenant(tenantId: string): ServiceContainer {
-  return { ...defaultContainer, tenantId };
+  return tenantContainers.get(tenantId) ?? { ...defaultContainer, tenantId };
 }
 
 /**
@@ -138,6 +150,8 @@ export const TENANT_SAFE_TOOLS: ReadonlySet<string> = new Set([
   'berry_memory_read', 'berry_memory_insert', 'berry_memory_replace',
   'berry_memory_rewrite', 'berry_memory_promote', 'berry_memory_archive',
   'berry_timeline', 'berry_fact_diff',
+  // Registered by the retrieval package (tenant-bound); listed here for docs.
+  'berry_context', 'berry_ask',
   'berry_tools',
 ]);
 

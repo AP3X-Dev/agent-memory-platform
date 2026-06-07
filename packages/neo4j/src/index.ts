@@ -17,6 +17,8 @@ export type { ProvenanceNode } from './provenance.js';
 export { ScopedQuery, validateReadOnlyCypher } from './query.js';
 export type { QueryScope } from './query.js';
 export { tenantWhere, resolveTenant, isDefaultTenant, TENANT_PARAM } from './tenant.js';
+export { TenantAdmin } from './tenant-admin.js';
+export type { TenantCounts, TenantExport } from './tenant-admin.js';
 export { GDSAlgorithms } from './gds.js';
 export { BlockStore } from './blocks.js';
 export { FactStore } from './fact.js';

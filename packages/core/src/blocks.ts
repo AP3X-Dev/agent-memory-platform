@@ -1,7 +1,7 @@
 // packages/core/src/blocks.ts
 import { nanoid } from 'nanoid';
 import type { MemoryBlock, MemoryTier } from './types.js';
-import { DEFAULT_BLOCKS, DEFAULT_TENANT } from './types.js';
+import { DEFAULT_BLOCKS } from './types.js';
 
 export const MAX_BLOCK_SIZE = 50_000;
 
@@ -56,31 +56,13 @@ export class MemoryBlockService {
     }
   }
 
-  /**
-   * Redis-cache tenant handling (defense in depth).
-   *
-   * The RedisBlockLayer key is scope+name[+session] and is NOT tenant-namespaced
-   * yet, so for a non-default tenant a naive cache read could surface (or get
-   * polluted by) another tenant's block sharing the same key. tenantId is now
-   * threaded into every redisBlocks call so a follow-up can namespace the key;
-   * until then, Neo4j (which IS tenant-filtered) is the source of truth and we
-   * BYPASS the Redis cache entirely whenever the tenant is non-default. The
-   * default tenant keeps full caching (its behavior is unchanged).
-   */
-  private _cacheEnabledFor(tenantId?: string): boolean {
-    const t = (tenantId ?? '').trim();
-    return t.length === 0 || t === DEFAULT_TENANT;
-  }
-
   async read(scope: string, name: string, sessionId?: string, tenantId?: string): Promise<MemoryBlock | null> {
-    const cacheEnabled = this._cacheEnabledFor(tenantId);
-    // Try Redis first (default tenant only — see _cacheEnabledFor), fall back to Neo4j
-    if (cacheEnabled) {
-      const cached = await this.redisBlocks.get(scope, name, sessionId, tenantId);
-      if (cached) return cached;
-    }
+    // The Redis key is tenant-namespaced, so the cache is safe for every tenant.
+    // Try Redis first, fall back to Neo4j.
+    const cached = await this.redisBlocks.get(scope, name, sessionId, tenantId);
+    if (cached) return cached;
     const block = await this.neo4jBlocks.get(scope, name, sessionId, tenantId);
-    if (block && cacheEnabled) {
+    if (block) {
       // Cache-aside: write back to Redis on cache miss
       try {
         await this.redisBlocks.set(block, tenantId);
@@ -250,12 +232,10 @@ export class MemoryBlockService {
   }
 
   async listBlocks(scope: string, tier?: MemoryTier, sessionId?: string, tenantId?: string): Promise<MemoryBlock[]> {
-    // For a non-default tenant the Redis cache is not tenant-namespaced, so we
-    // rely solely on the tenant-filtered Neo4j list (source of truth). The
-    // default tenant continues to merge both stores (Redis wins on conflict).
-    const cacheEnabled = this._cacheEnabledFor(tenantId);
+    // The Redis key is tenant-namespaced, so the cache is safe for every tenant.
+    // Merge both stores (Redis wins on conflict).
     const [redisBlocks, neo4jBlocks] = await Promise.all([
-      cacheEnabled ? this.redisBlocks.list(scope, tier, sessionId, tenantId) : Promise.resolve<MemoryBlock[]>([]),
+      this.redisBlocks.list(scope, tier, sessionId, tenantId),
       this.neo4jBlocks.list(scope, tier, sessionId, tenantId),
     ]);
 
@@ -329,12 +309,9 @@ export class MemoryBlockService {
    * Throws if another writer modified the block between our read and write.
    */
   private async _persistWithVersionCheck(block: MemoryBlock, expectedVersion: string, tenantId?: string): Promise<void> {
-    // Re-read current state to detect concurrent modification. For non-default
-    // tenants the Redis cache is bypassed (not tenant-namespaced), so read from
-    // the tenant-filtered Neo4j source of truth instead.
-    const current = this._cacheEnabledFor(tenantId)
-      ? await this.redisBlocks.get(block.scope, block.name, block.session_id, tenantId)
-      : await this.neo4jBlocks.get(block.scope, block.name, block.session_id, tenantId);
+    // Re-read current state to detect concurrent modification. The Redis key is
+    // tenant-namespaced, so the cache is safe for every tenant.
+    const current = await this.redisBlocks.get(block.scope, block.name, block.session_id, tenantId);
     if (current && current.updated_at !== expectedVersion) {
       throw new Error(
         `Concurrent modification detected on block "${block.name}": ` +

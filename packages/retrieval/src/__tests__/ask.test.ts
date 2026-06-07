@@ -57,6 +57,16 @@ describe('UnifiedAssembler.ask (dialectic retrieval)', () => {
     expect(chat.mock.calls[0]![1]).toMatchObject({ model: 'm-extraction', maxTokens: 256 });
   });
 
+  it('forwards the tenantId into the retrieval assemble call', async () => {
+    const chat = vi.fn().mockResolvedValue(JSON.stringify({ answer: 'ok', cited: [] }));
+    const a = makeAssembler(fakeLlm(chat));
+    const assembleSpy = vi.spyOn(a, 'assemble').mockResolvedValue(ctxWith(['a']));
+
+    await a.ask('q', { level: 'low', tenantId: 'acme' });
+
+    expect(assembleSpy.mock.calls[0]![1]).toMatchObject({ strategy: 'ranked', tenantId: 'acme' });
+  });
+
   it('returns a no-evidence answer without calling the LLM when retrieval is empty', async () => {
     const chat = vi.fn();
     const a = makeAssembler(fakeLlm(chat));

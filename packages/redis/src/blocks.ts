@@ -4,18 +4,19 @@ import type { MemoryBlock, MemoryTier } from '@memberry/core';
 
 const WORKING_TTL = 86400; // 24 hours
 
-function keyFor(scope: string, name: string, sessionId?: string): string {
+function keyFor(scope: string, name: string, sessionId?: string, tenantId?: string): string {
+  const tenant = tenantId || 'default';
   if (sessionId) {
-    return `amp:block:${scope}:${sessionId}:${name}`;
+    return `amp:block:${tenant}:${scope}:${sessionId}:${name}`;
   }
-  return `amp:block:${scope}:${name}`;
+  return `amp:block:${tenant}:${scope}:${name}`;
 }
 
 export class BlockStore {
   constructor(private redis: Redis) {}
 
-  async get(scope: string, name: string, sessionId?: string): Promise<MemoryBlock | null> {
-    const raw = await this.redis.get(keyFor(scope, name, sessionId));
+  async get(scope: string, name: string, sessionId?: string, tenantId?: string): Promise<MemoryBlock | null> {
+    const raw = await this.redis.get(keyFor(scope, name, sessionId, tenantId));
     if (!raw) return null;
     try {
       return JSON.parse(raw) as MemoryBlock;
@@ -25,8 +26,9 @@ export class BlockStore {
     }
   }
 
-  async set(block: MemoryBlock): Promise<void> {
-    const key = keyFor(block.scope, block.name, block.session_id);
+  async set(block: MemoryBlock, tenantId?: string): Promise<void> {
+    const tenant = tenantId || block.tenant_id || 'default';
+    const key = keyFor(block.scope, block.name, block.session_id, tenant);
     const json = JSON.stringify(block);
     if (block.tier === 'working') {
       await this.redis.setex(key, WORKING_TTL, json);
@@ -35,8 +37,9 @@ export class BlockStore {
     }
   }
 
-  async list(scope: string, tier?: MemoryTier, sessionId?: string): Promise<MemoryBlock[]> {
-    const pattern = `amp:block:${scope}:*`;
+  async list(scope: string, tier?: MemoryTier, sessionId?: string, tenantId?: string): Promise<MemoryBlock[]> {
+    const tenant = tenantId || 'default';
+    const pattern = `amp:block:${tenant}:${scope}:*`;
     const blocks: MemoryBlock[] = [];
     let cursor = '0';
 
@@ -77,7 +80,7 @@ export class BlockStore {
     return blocks;
   }
 
-  async delete(scope: string, name: string, sessionId?: string): Promise<void> {
-    await this.redis.del(keyFor(scope, name, sessionId));
+  async delete(scope: string, name: string, sessionId?: string, tenantId?: string): Promise<void> {
+    await this.redis.del(keyFor(scope, name, sessionId, tenantId));
   }
 }
