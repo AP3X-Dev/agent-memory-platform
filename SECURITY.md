@@ -268,16 +268,27 @@ binding is **enforced at the data layer**, not advisory:
   with no `tenant_id`, so enabling tenancy needs no data migration.
 - The assembled-context cache and store dedup are tenant-namespaced.
 - **Default-deny tool surface:** a tenant session is served only tools proven
-  tenant-isolated (`TENANT_SAFE_TOOLS`: load/store/grep/memory\_\*/timeline/fact\_diff).
-  Raw Cypher (`berry_query`) and the not-yet-tenant-scoped satellite/retrieval
-  domains (`berry_context`/`berry_ask`, code/arch/wiki/graph/research) are withheld
-  entirely from tenant sessions.
+  tenant-isolated (`TENANT_SAFE_TOOLS`: load/store/grep/memory\_\*/timeline/
+  fact\_diff/context/ask). `berry_context` forces the `ranked` strategy for named
+  tenants (the `deterministic` path queries un-tenant-stamped entities). Raw Cypher
+  (`berry_query`) and the not-yet-tenant-scoped satellite domains
+  (code/arch/wiki/graph/research) are withheld entirely from tenant sessions.
 
-The cross-tenant guarantee ("tenant A never sees tenant B") is covered by an
-adversarial integration test (`tenant-isolation.regression.test.ts`).
-Single-tenant deployments (no tenant tokens) are unaffected. The admin
-`berry_query` path remains read-only and unscoped — keep the `admin` domain
-disabled in shared deployments.
+**Graduation to physical isolation.** A tenant can be routed to its own
+Neo4j/Redis via `MEMBERRY_TENANT_DATASTORES` (a JSON map of tenant → connection).
+Such a tenant's sessions are bound to a dedicated service container at boot;
+everything else stays on the shared instance with `tenant_id` filtering. This is
+the escape hatch for a high-value/regulated tenant without forking the codebase.
+
+**Per-tenant operations.** `memberry tenant stats|export|delete --tenant <name>`
+counts, exports, or erases a single tenant's memory. `delete` refuses the default
+tenant (which also owns legacy data) and requires `--yes`.
+
+The cross-tenant guarantee ("tenant A never sees tenant B") is covered by
+adversarial integration tests (`tenant-isolation.regression.test.ts`,
+`tenant-admin.test.ts`). Single-tenant deployments (no tenant tokens) are
+unaffected. The admin `berry_query` path remains read-only and unscoped — keep
+the `admin` domain disabled in shared deployments.
 
 ---
 
