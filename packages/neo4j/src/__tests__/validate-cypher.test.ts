@@ -270,4 +270,38 @@ describe('validateReadOnlyCypher', () => {
       validateReadOnlyCypher('USE system MATCH (n) RETURN n'),
     ).toThrow(/administrative keyword "USE"/);
   });
+
+  // ── Hardening: homoglyphs, stacked statements, write-in-subquery ──────────
+
+  it('folds fullwidth/compatibility homoglyphs (NFKC) and catches the keyword', () => {
+    // Fullwidth "ＤＥＬＥＴＥ" normalizes to ASCII "DELETE" under NFKC.
+    expect(() =>
+      validateReadOnlyCypher('MATCH (n) ＤＥＬＥＴＥ n'),
+    ).toThrow(/mutating keyword "DELETE"/);
+  });
+
+  it('rejects stacked statements (embedded semicolon)', () => {
+    expect(() =>
+      validateReadOnlyCypher('MATCH (n) RETURN n ; MATCH (m) RETURN m'),
+    ).toThrow(/multiple statements/);
+  });
+
+  it('rejects a write hidden inside a CALL{} subquery', () => {
+    // CALL{} subqueries are allowed, but a mutating keyword anywhere still trips.
+    expect(() =>
+      validateReadOnlyCypher('CALL { MATCH (n) DETACH DELETE n } RETURN 1'),
+    ).toThrow(/mutating keyword/);
+  });
+
+  it('still allows a single trailing semicolon', () => {
+    expect(() =>
+      validateReadOnlyCypher('MATCH (n) RETURN n;'),
+    ).not.toThrow();
+  });
+
+  it('rejects a write appended after a comment-terminated line', () => {
+    expect(() =>
+      validateReadOnlyCypher('MATCH (n) RETURN n // harmless\nCREATE (x)'),
+    ).toThrow(/mutating keyword "CREATE"/);
+  });
 });

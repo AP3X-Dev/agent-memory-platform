@@ -46,8 +46,15 @@ function stripTrailingSemicolons(cypher: string): string {
  * Throws an error describing the violation when a mutating construct is found.
  */
 export function validateReadOnlyCypher(cypher: string): void {
+  // Step 0: Unicode-normalize (NFKC) so compatibility / fullwidth homoglyphs
+  // (e.g. "ＤＥＬＥＴＥ") fold to ASCII and can't slip past the keyword checks.
+  // (Pure-script homoglyphs like Cyrillic "Е" don't fold here, but they also
+  // aren't valid Cypher keywords to the server, and rawCypher additionally runs
+  // in a server-enforced READ transaction — defense in depth.)
+  const normalized = cypher.normalize('NFKC');
+
   // Step 1: Strip string literals (replace with empty string)
-  let stripped = cypher.replace(/'(?:[^'\\]|\\.)*'/g, '""');
+  let stripped = normalized.replace(/'(?:[^'\\]|\\.)*'/g, '""');
   stripped = stripped.replace(/"(?:[^"\\]|\\.)*"/g, '""');
 
   // Step 2: Strip comments
@@ -57,6 +64,17 @@ export function validateReadOnlyCypher(cypher: string): void {
   // Step 3: Strip parameter references ($word) to prevent false positives
   // e.g. $SET, $DELETE, $REMOVE should not trigger keyword checks
   stripped = stripped.replace(/\$\w+/g, ' ');
+
+  // Step 3.5: Single-statement enforcement. A single trailing ';' is fine, but
+  // an embedded ';' means stacked statements — reject so a read query can't be
+  // suffixed with a write.
+  const withoutTrailingSemis = stripped.replace(/;+\s*$/g, '');
+  if (withoutTrailingSemis.includes(';')) {
+    throw new Error(
+      'Cypher validation failed: multiple statements are not allowed via berry_query. ' +
+      'Submit a single read-only statement.',
+    );
+  }
 
   const adminMatch = stripped.match(ADMINISTRATIVE_COMMAND_RE);
   if (adminMatch) {
@@ -427,10 +445,13 @@ export class ScopedQuery {
   }
 
   async rawCypher(cypher: string, limit: number, params: Record<string, unknown> = {}): Promise<Record<string, unknown>[]> {
-    // Validate that the query is read-only before executing
+    // Layer 1: static validation rejects mutating constructs up front.
     validateReadOnlyCypher(cypher);
 
-    const session = this.driver.session();
+    // Layer 2: server-enforced read mode. Even if validation were bypassed, a
+    // READ transaction makes Neo4j itself reject any write (CREATE/MERGE/SET/…),
+    // so berry_query can never mutate the graph.
+    const session = this.driver.session({ defaultAccessMode: neo4j.session.READ });
     try {
       const safeLimit = normalizeRawCypherLimit(limit);
       const finalCypher = `CALL {\n${stripTrailingSemicolons(cypher)}\n}\nRETURN * LIMIT ${safeLimit}`;
