@@ -4,7 +4,7 @@
 
 import neo4j, { type Driver } from 'neo4j-driver';
 import type { CodeSearchResult, CodeContext } from './types.js';
-import type { EmbeddingProvider } from '@amp/core';
+import type { EmbeddingProvider } from '@memberry/core';
 import { generateLexicalVector } from './vectors.js';
 
 interface CodeContextFilters {
@@ -329,10 +329,10 @@ export class CodeSearch {
 }
 
 // ─── Reciprocal Rank Fusion (generic) ─────────────────────────────────────────
-// Same algorithm as @amp/retrieval's rrfFusion but operates on any
+// Same algorithm as @memberry/retrieval's rrfFusion but operates on any
 // { id: string; score: number } type. The retrieval version adds dynamic k,
 // normalization, feedback boosts, and MMR — this is the lightweight path for
-// direct amp_code_search calls.
+// direct berry_code_search calls.
 
 function rrfFusion<T extends { id: string; score: number }>(
   rankedLists: T[][],

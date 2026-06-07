@@ -7,6 +7,7 @@ import { readFile, readdir, stat } from 'node:fs/promises';
 import { watch, type FSWatcher } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { Marked } from 'marked';
+import { readEnv } from '@memberry/core';
 import type { Driver } from 'neo4j-driver';
 import type { ViewerConfig } from './types.js';
 import { renderSettingsBody, applyHooksTuning, runHooksInstall, getSettingsData, type InstallRequest, type TuningPatch } from './settings.js';
@@ -150,7 +151,7 @@ function topBar(active: string): string {
   return `<div class="topbar">
   <div class="brand">
     <a href="/wiki/_index" class="logo">A</a>
-    <a href="/wiki/_index" class="title">AMP&nbsp;WIKI</a>
+    <a href="/wiki/_index" class="title">MemBerry&nbsp;WIKI</a>
     <span class="stamp">v2.4 · synced ${escapeHtml(compiledStamp)}</span>
   </div>
   <nav>${navHtml}</nav>
@@ -164,12 +165,12 @@ function topBar(active: string): string {
 function footer(totalNodes: number | null = null): string {
   const nodes = totalNodes != null ? `${totalNodes} TOTAL NODES` : 'AUTO-COMPILED FROM NEO4J';
   // Optional right-side label, e.g. the public host of this wiki. Set
-  // AMP_WIKI_PUBLIC_LABEL=foo.example.com to display it. Empty by default
+  // MEMBERRY_WIKI_PUBLIC_LABEL=foo.example.com to display it. Empty by default
   // so deployments don't leak local LAN addresses.
-  const rightLabel = (process.env['AMP_WIKI_PUBLIC_LABEL'] ?? '').trim();
+  const rightLabel = (readEnv('MEMBERRY_WIKI_PUBLIC_LABEL') ?? '').trim();
   const rightSpan = rightLabel ? `<span>${escapeHtml(rightLabel)}</span>` : '';
   return `<div class="footer">
-  <span>AMP WIKI · COMPILED FROM NEO4J · ${escapeHtml(nodes)}</span>
+  <span>MemBerry WIKI · COMPILED FROM NEO4J · ${escapeHtml(nodes)}</span>
   ${rightSpan}
 </div>`;
 }
@@ -188,7 +189,7 @@ function htmlPage(title: string, body: string, sidebar: string = '', opts: PageO
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${escapeHtml(title)} — AMP Wiki</title>
+  <title>${escapeHtml(title)} — MemBerry Wiki</title>
   <style>${CSS}</style>
   <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({ startOnLoad: true, theme: 'dark' });</script>
@@ -489,7 +490,7 @@ function renderOpsHomeBody(
   <div class="hero">
     <div class="stamp">KNOWLEDGE GRAPH · NEO4J · COMPILED ${escapeHtml(compiled)}</div>
     <h1><span class="accent">EVERY</span><br><span class="ghost">THING</span><br><span class="full">WE&nbsp;KNOW</span></h1>
-    <p>Auto-generated from <span class="accent">${stats.projects} projects</span>, <span class="accent">${stats.entities} entities</span>, and <span class="accent">${stats.sessions} sessions</span> of agent work. Rebuilt every 6 hours from the AMP knowledge graph.</p>
+    <p>Auto-generated from <span class="accent">${stats.projects} projects</span>, <span class="accent">${stats.entities} entities</span>, and <span class="accent">${stats.sessions} sessions</span> of agent work. Rebuilt every 6 hours from the MemBerry knowledge graph.</p>
   </div>`;
 
   const graphHtml = `

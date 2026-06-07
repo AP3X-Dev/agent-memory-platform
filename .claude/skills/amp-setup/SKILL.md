@@ -1,13 +1,13 @@
 ---
 name: amp-setup
-description: "Bootstrap AMP persistent memory for the current project. Analyzes the repo, discovers entities and domain tags, writes AMP Memory config to CLAUDE.md, and calls amp_bootstrap to scaffold the knowledge graph. Run once per project. Trigger: user says 'set up amp', 'bootstrap amp', 'init amp', 'configure amp memory'."
-allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, mcp__amp__amp_load, mcp__amp__amp_store, mcp__amp__amp_query, mcp__amp__amp_bootstrap
+description: "Bootstrap MemBerry persistent memory for the current project. Analyzes the repo, discovers entities and domain tags, writes MemBerry Memory config to CLAUDE.md, and calls berry_bootstrap to scaffold the knowledge graph. Run once per project. Trigger: user says 'set up memberry', 'bootstrap memberry', 'init memberry', 'configure memberry memory'."
+allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, mcp__berry__berry_load, mcp__berry__berry_store, mcp__berry__berry_query, mcp__berry__berry_bootstrap
 argument-hint: "[project name] or auto"
 ---
 
-# AMP Setup
+# MemBerry Setup
 
-Bootstrap AMP persistent memory for the current project.
+Bootstrap MemBerry persistent memory for the current project.
 
 ## What This Does
 
@@ -16,16 +16,16 @@ Bootstrap AMP persistent memory for the current project.
 3. Generates domain tags
 4. Forms seed priors from code/architecture observations
 5. Presents findings to the user for confirmation
-6. Writes `## AMP Memory` config section to the project's CLAUDE.md
-7. Calls `amp_bootstrap` to scaffold the knowledge graph
+6. Writes `## MemBerry Memory` config section to the project's CLAUDE.md
+7. Calls `berry_bootstrap` to scaffold the knowledge graph
 
 ## Execution Flow
 
 ### Step 1 — Check for Existing Config
 
-Read the project's CLAUDE.md (or AGENTS.md, GEMINI.md). Look for `## AMP Memory` section.
+Read the project's CLAUDE.md (or AGENTS.md, GEMINI.md). Look for `## MemBerry Memory` section.
 
-- **If found:** Tell the user AMP is already configured. Offer to update entities/tags or re-bootstrap.
+- **If found:** Tell the user MemBerry is already configured. Offer to update entities/tags or re-bootstrap.
 - **If not found:** Proceed to Step 2.
 
 ### Step 2 — Detect Mode
@@ -58,10 +58,10 @@ Show everything discovered. Let the user correct, add, or remove.
 
 ### Step 8 — Write Config
 
-Write `## AMP Memory` section to the project's CLAUDE.md:
+Write `## MemBerry Memory` section to the project's CLAUDE.md:
 
 ```markdown
-## AMP Memory
+## MemBerry Memory
 
 Project: <name>
 Description: <one-line description>
@@ -87,7 +87,7 @@ Priors:
 ### Step 9 — Bootstrap Graph
 
 ```
-amp_bootstrap(
+berry_bootstrap(
   project_name: "<name>",
   project_tag: "project:<kebab-case-name>",
   description: "<description>",
@@ -103,21 +103,21 @@ amp_bootstrap(
 After bootstrap, seed the core memory tier with initial blocks:
 
 ```
-amp_memory_insert(block: "persona", scope: "project:<tag>",
+berry_memory_insert(block: "persona", scope: "project:<tag>",
   text: "Agent working on <name>. Key conventions: <from analysis>.")
 
-amp_memory_insert(block: "project_state", scope: "project:<tag>",
+berry_memory_insert(block: "project_state", scope: "project:<tag>",
   text: "Current state: newly bootstrapped. Key entities: <list>. Domain: <domain>.")
 
-amp_memory_insert(block: "user", scope: "project:<tag>",
+berry_memory_insert(block: "user", scope: "project:<tag>",
   text: "")
 ```
 
-This seeds always-visible core memory blocks that will be included in every `amp_load` response.
+This seeds always-visible core memory blocks that will be included in every `berry_load` response.
 
 ## Important
 
-- Runs **once per project**. `amp_bootstrap` is idempotent.
+- Runs **once per project**. `berry_bootstrap` is idempotent.
 - Project tag format: `project:<kebab-case-name>`.
-- Every future `amp_load`/`amp_store` must include the project tag.
+- Every future `berry_load`/`berry_store` must include the project tag.
 - Default memory blocks (persona, user, current_objective, working_state, project_state, open_questions) are created automatically when first written to.

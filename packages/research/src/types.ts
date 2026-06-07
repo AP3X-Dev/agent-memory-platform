@@ -1,5 +1,5 @@
 // packages/research/src/types.ts
-// Research-specific types — additive to @amp/core types
+// Research-specific types — additive to @memberry/core types
 
 // === Experiment statuses ===
 

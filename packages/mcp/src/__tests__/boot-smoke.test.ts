@@ -2,7 +2,7 @@
 // Regression smoke test: bootstrap() wires every service such that every
 // registered tool handler can be invoked without throwing "X not initialised".
 //
-// Original bug: amp_lint threw "WikiLinter not initialised" because
+// Original bug: berry_lint threw "WikiLinter not initialised" because
 // setWikiServiceInstances was never called from bootstrap.ts. Same class of
 // bug could affect other handlers if a future refactor drops a setter call.
 
@@ -17,13 +17,13 @@ const hasInfra = !!process.env['NEO4J_URI'] && !!process.env['REDIS_URL'];
 describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
   let handles: BootstrapHandles;
   let coreHandlers: import('../tools.js').ToolHandlers;
-  let wikiHandlers: import('@amp/wiki').WikiToolHandlers;
+  let wikiHandlers: import('@memberry/wiki').WikiToolHandlers;
   let tmpDir: string;
   let tmpOutputDir: string;
   let originalAllowDir: string | undefined;
 
   beforeAll(async () => {
-    // amp_compile and amp_ingest validate paths against AMP_INGEST_ALLOW_DIR
+    // berry_compile and berry_ingest validate paths against AMP_INGEST_ALLOW_DIR
     // (or process.cwd() if unset). We point allow-dir at a tmp dir so the
     // tests can never write into a package directory or the repo root.
     tmpDir = mkdtempSync(join(tmpdir(), 'amp-boot-smoke-'));
@@ -33,7 +33,7 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
 
     const { bootstrap } = await import('../bootstrap.js');
     const { buildToolHandlers } = await import('../tools.js');
-    const { buildWikiToolHandlers } = await import('@amp/wiki');
+    const { buildWikiToolHandlers } = await import('@memberry/wiki');
 
     handles = await bootstrap();
     coreHandlers = buildToolHandlers();
@@ -70,9 +70,9 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     }
   }
 
-  it('amp_load handler is wired', async () => {
+  it('berry_load handler is wired', async () => {
     await expectNotInitialiseError(() =>
-      coreHandlers.amp_load({
+      coreHandlers.berry_load({
         task: 'boot smoke',
         tags: ['project:__boot_smoke__'],
         max_tokens: 200,
@@ -80,9 +80,9 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     );
   });
 
-  it('amp_store handler is wired', async () => {
+  it('berry_store handler is wired', async () => {
     await expectNotInitialiseError(() =>
-      coreHandlers.amp_store({
+      coreHandlers.berry_store({
         session_id: `boot-smoke-${Date.now()}`,
         task: '[project:__boot_smoke__] boot smoke task',
         content: '[project:__boot_smoke__] boot smoke content; do not consolidate',
@@ -93,18 +93,18 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     );
   });
 
-  it('amp_grep handler is wired', async () => {
+  it('berry_grep handler is wired', async () => {
     await expectNotInitialiseError(() =>
-      coreHandlers.amp_grep({
+      coreHandlers.berry_grep({
         pattern: '__boot_smoke_no_match__',
         limit: 1,
       }),
     );
   });
 
-  it('amp_compile handler is wired (writes to isolated tmp dir)', async () => {
+  it('berry_compile handler is wired (writes to isolated tmp dir)', async () => {
     await expectNotInitialiseError(() =>
-      wikiHandlers.amp_compile({
+      wikiHandlers.berry_compile({
         project_tag: 'project:__boot_smoke__',
         output_dir: tmpOutputDir,
         emit_graph: false,
@@ -112,7 +112,7 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     );
   });
 
-  it('amp_ingest handler is wired', async () => {
+  it('berry_ingest handler is wired', async () => {
     // Create a tiny note inside the allow-dir so validatePath accepts it.
     // The ingestion may or may not produce findings — we only care that the
     // service is wired (no "IngestionService not initialised").
@@ -120,7 +120,7 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     writeFileSync(notePath, '# Boot Smoke\n\nNothing to see here.\n', 'utf-8');
 
     await expectNotInitialiseError(() =>
-      wikiHandlers.amp_ingest({
+      wikiHandlers.berry_ingest({
         source_path: notePath,
         source_type: 'note',
         project_tag: 'project:__boot_smoke__',
@@ -128,11 +128,11 @@ describe.skipIf(!hasInfra)('bootstrap() boot smoke', () => {
     );
   });
 
-  it('amp_lint handler is wired (regression: WikiLinter not initialised)', async () => {
+  it('berry_lint handler is wired (regression: WikiLinter not initialised)', async () => {
     // This is THE regression case. Before the bootstrap.ts fix that wired
     // setWikiServiceInstances, this call threw "WikiLinter not initialised".
     await expectNotInitialiseError(() =>
-      wikiHandlers.amp_lint({
+      wikiHandlers.berry_lint({
         project_tag: 'project:__boot_smoke__',
         checks: ['orphan_pages'],
       }),

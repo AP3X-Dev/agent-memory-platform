@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 // packages/core/src/cli.ts
-// AMP CLI — export, import, snapshot commands.
+// MemBerry CLI — export, import, snapshot commands.
 // Usage: npx amp <command> [options]
 
 import { execFileSync } from 'child_process';
-import { createNeo4jDriver } from '@amp/neo4j';
-import { createRedisClient } from '@amp/redis';
+import { createNeo4jDriver } from '@memberry/neo4j';
+import { createRedisClient } from '@memberry/redis';
 import { exportAll, exportFiltered } from './export.js';
 import { importFromPath, type ImportStrategy } from './import.js';
 import { runHookCommand } from './cli/hook.js';
@@ -117,7 +117,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
   const message =
     typeof flags['message'] === 'string'
       ? flags['message']
-      : `AMP snapshot ${new Date().toISOString().slice(0, 10)}`;
+      : `MemBerry snapshot ${new Date().toISOString().slice(0, 10)}`;
 
   // 1. Run full export
   await runExport({ path: snapshotPath });
@@ -201,22 +201,22 @@ async function main(): Promise<void> {
       break;
 
     case 'dream':
-      // `amp dream --scope project:x` — background gap-filling + abductive hypotheses.
+      // `memberry dream --scope project:x` — background gap-filling + abductive hypotheses.
       await runDream(flags);
       break;
 
     case 'hook':
-      // `amp hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
+      // `memberry hook <agent> <event>` — harness-driven, JSON over stdin/stdout.
       await runHookCommand(positionals);
       break;
 
     case 'context':
-      // `amp context materialize ...`
+      // `memberry context materialize ...`
       await runContextCommand(positionals[0] ?? '', flags);
       break;
 
     case 'hooks':
-      // `amp hooks <install|uninstall|status> ...`
+      // `memberry hooks <install|uninstall|status> ...`
       await runHooksCommand(positionals[0] ?? '', flags);
       break;
 

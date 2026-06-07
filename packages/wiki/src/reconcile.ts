@@ -15,8 +15,8 @@
 
 import neo4j, { type Driver } from 'neo4j-driver';
 import { nanoid } from 'nanoid';
-import { SemanticStore, EpisodicStore } from '@amp/neo4j';
-import type { SemanticNode } from '@amp/core';
+import { SemanticStore, EpisodicStore } from '@memberry/neo4j';
+import type { SemanticNode } from '@memberry/core';
 import { CLAIM_ANCHOR_RE } from './renderers.js';
 
 // Section headings that are NOT domain claim sections — text typed under these is

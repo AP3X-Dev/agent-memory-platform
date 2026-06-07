@@ -4,7 +4,7 @@
 // Usage: npx tsx packages/wiki/src/cli.ts <command> [options]
 
 import { readFile } from 'node:fs/promises';
-import { createNeo4jDriver } from '@amp/neo4j';
+import { createNeo4jDriver } from '@memberry/neo4j';
 import { WikiCompiler } from './compile.js';
 import { initWikiSchema } from './ingest.js';
 import { WikiLinter } from './lint.js';

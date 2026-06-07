@@ -18,7 +18,7 @@ import { expandQuery } from './expand.js';
 import { computeQueryStats, lexicalTextScore, adaptiveWeights, inferSourceTypeBoost } from './scoring.js';
 import { classifyIntent } from './intent.js';
 import type { QueryIntent } from './intent.js';
-import type { EmbeddingProvider, LlmClient, ChatMessage } from '@amp/core';
+import type { EmbeddingProvider, LlmClient, ChatMessage } from '@memberry/core';
 
 // ─── Dependency interfaces ───────────────────────────────────────────────────
 
@@ -34,7 +34,7 @@ export interface AssemblerMemoryLayer {
   }>;
 }
 
-// ─── Dialectic (amp_ask) ─────────────────────────────────────────────────────
+// ─── Dialectic (berry_ask) ─────────────────────────────────────────────────────
 
 export type AskLevel = 'minimal' | 'low' | 'medium' | 'high' | 'max';
 
@@ -58,7 +58,7 @@ const ASK_LEVELS: Record<AskLevel, { retrievalTokens: number; synthTokens: numbe
   max: { retrievalTokens: 16000, synthTokens: 2000, task: 'synthesis' },
 };
 
-const ASK_SYSTEM_PROMPT = `You are AMP's memory analyst. Answer the question USING ONLY the numbered evidence.
+const ASK_SYSTEM_PROMPT = `You are MemBerry's memory analyst. Answer the question USING ONLY the numbered evidence.
 - Combine facts when needed and state the inference explicitly.
 - Cite the evidence numbers you used.
 - If the evidence is insufficient or conflicting, say so plainly. Do not invent facts.
@@ -107,7 +107,7 @@ export class UnifiedAssembler {
   }
 
   /**
-   * Dialectic retrieval (amp_ask): retrieve ranked evidence, then synthesize a
+   * Dialectic retrieval (berry_ask): retrieve ranked evidence, then synthesize a
    * cited answer instead of returning raw chunks. Reasoning level trades
    * latency/cost for depth. Throws if no LLM is configured.
    */
@@ -122,7 +122,7 @@ export class UnifiedAssembler {
     } = {},
   ): Promise<AskResult> {
     if (!this.llm || !this.llm.available) {
-      throw new Error('amp_ask requires an LLM client — set OPENAI_API_KEY');
+      throw new Error('berry_ask requires an LLM client — set OPENAI_API_KEY');
     }
     const level: AskLevel = opts.level ?? 'medium';
     const cfg = ASK_LEVELS[level];

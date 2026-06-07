@@ -1,4 +1,4 @@
-// @amp/graph — graph analytics, reporting, and export over the AMP Neo4j graph.
+// @memberry/graph — graph analytics, reporting, and export over the MemBerry Neo4j graph.
 
 // Types
 export * from './types.js';

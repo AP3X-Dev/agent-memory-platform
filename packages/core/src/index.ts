@@ -30,6 +30,7 @@ export {
   saveSettings,
   getSettingsPath,
   resolveNumber,
+  readEnv,
   DEFAULT_SETTINGS,
 } from './config/settings.js';
 export type { AmpSettings, HookSettings, ResolvedNumber, SettingSource } from './config/settings.js';

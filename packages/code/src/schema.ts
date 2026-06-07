@@ -1,4 +1,4 @@
-import { EMBEDDING_DIM } from "@amp/core";
+import { EMBEDDING_DIM } from "@memberry/core";
 // packages/code/src/schema.ts
 // Additive Neo4j schema for code intelligence.
 

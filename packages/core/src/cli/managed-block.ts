@@ -1,22 +1,18 @@
 // packages/core/src/cli/managed-block.ts
 //
 // Owns a fenced region inside an agent's static context file (AGENTS.md,
-// .hermes.md, ...). `amp context materialize` rewrites only the region between
-// the markers, leaving the human-authored content around it untouched. Pure and
-// unit-tested; no I/O here.
+// .hermes.md, ...). `memberry context materialize` rewrites only the region
+// between the markers, leaving the human-authored content around it untouched.
+// Pure and unit-tested; no I/O here.
 
-export const BLOCK_BEGIN = '<!-- AMP:BEGIN (managed by `amp context materialize` — do not edit by hand) -->';
-export const BLOCK_END = '<!-- AMP:END -->';
+export const BLOCK_BEGIN = '<!-- MEMBERRY:BEGIN (managed by `memberry context materialize` — do not edit by hand) -->';
+export const BLOCK_END = '<!-- MEMBERRY:END -->';
 
-// Matches the whole managed region including the markers, tolerant of surrounding
-// whitespace. [\s\S] so it spans newlines without the `s` flag.
-const BLOCK_RE = new RegExp(
-  `${escapeRegExp(BLOCK_BEGIN)}[\\s\\S]*?${escapeRegExp(BLOCK_END)}`,
-);
-
-function escapeRegExp(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+// Match the managed region by its marker tags only — tolerant of the inner
+// description text, surrounding whitespace, AND the legacy `AMP:` brand, so a
+// block written by a pre-rebrand version is found and replaced (not
+// duplicated). [\s\S] spans newlines without the `s` flag.
+const BLOCK_RE = /<!-- (?:AMP|MEMBERRY):BEGIN\b[\s\S]*?<!-- (?:AMP|MEMBERRY):END -->/;
 
 /** Wrap a rendered body in the begin/end markers. */
 export function wrapManagedBlock(body: string): string {

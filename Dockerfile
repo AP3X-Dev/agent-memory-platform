@@ -1,6 +1,6 @@
 FROM node:20-alpine
 
-RUN addgroup -S amp && adduser -S amp -G amp
+RUN addgroup -S memberry && adduser -S memberry -G memberry
 
 WORKDIR /app
 
@@ -19,9 +19,9 @@ RUN npm ci --production
 COPY packages/ packages/
 COPY tsconfig.json tsconfig.build.json ./
 
-RUN chown -R amp:amp /app
+RUN chown -R memberry:memberry /app
 
-USER amp
+USER memberry
 
 EXPOSE 3101
 

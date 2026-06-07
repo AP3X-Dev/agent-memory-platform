@@ -1,6 +1,6 @@
 // packages/redis/src/cache.ts
 import type { Redis } from 'ioredis';
-import type { MemoryContext } from '@amp/core';
+import type { MemoryContext } from '@memberry/core';
 
 export class ContextCache {
   constructor(private redis: Redis) {}

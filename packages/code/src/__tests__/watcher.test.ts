@@ -47,9 +47,9 @@ describe('extractFilePaths', () => {
   });
 
   it('extracts paths with @ in scoped package names', () => {
-    const content = 'Refactored @amp/core/src/service.ts';
+    const content = 'Refactored @memberry/core/src/service.ts';
     const paths = extractFilePaths(content);
-    expect(paths).toContain('@amp/core/src/service.ts');
+    expect(paths).toContain('@memberry/core/src/service.ts');
   });
 
   it('handles tsx and jsx extensions', () => {

@@ -4,7 +4,7 @@
 // Retrieval-recall evaluation on the STANDARD LongMemEval-S benchmark (Wu et al. 2024).
 // For each question, the "memory" is 54 multi-session chat histories; the system must
 // surface the gold evidence session(s) in its top-k recall. This is the retrieval task
-// LongMemEval analyzes, run with AMP's REAL ranking (reusing the MemBench AMP adapter:
+// LongMemEval analyzes, run with MemBerry's REAL ranking (reusing the MemBench MemBerry adapter:
 // rrfFusion + provenance + inferred-supersession) vs a BM25 baseline.
 //
 // Deterministic, no LLM. Metric: Recall@k (gold answer_session_id present in top-k) +
@@ -71,7 +71,7 @@ async function main() {
   const sample = all.filter((_, i) => i % step === 0).slice(0, numQ);
 
   const adapters: Record<string, MemorySystemAdapter> = {
-    AMP: new AmpAdapter(),
+    MemBerry: new AmpAdapter(),
     'Keyword(BM25)': new KeywordAdapter(),
     NaiveRecency: new NaiveRecencyAdapter(),
   };
@@ -104,11 +104,11 @@ async function main() {
   for (const name of Object.keys(adapters)) {
     console.log(`${name.padEnd(16)}${mean(agg[name].recall).toFixed(3).padEnd(12)}${mean(agg[name].mrr).toFixed(3)}`);
   }
-  console.log('\n--- Recall@' + k + ' by category (AMP vs BM25) ---');
+  console.log('\n--- Recall@' + k + ' by category (MemBerry vs BM25) ---');
   for (const cat of Object.keys(byCat).sort()) {
-    const a = mean(byCat[cat].AMP ?? []);
+    const a = mean(byCat[cat].MemBerry ?? []);
     const b = mean(byCat[cat]['Keyword(BM25)'] ?? []);
-    console.log(`  ${cat.padEnd(26)} AMP ${a.toFixed(2)}  BM25 ${b.toFixed(2)}  Δ ${(a - b >= 0 ? '+' : '') + (a - b).toFixed(2)}`);
+    console.log(`  ${cat.padEnd(26)} MemBerry ${a.toFixed(2)}  BM25 ${b.toFixed(2)}  Δ ${(a - b >= 0 ? '+' : '') + (a - b).toFixed(2)}`);
   }
 }
 

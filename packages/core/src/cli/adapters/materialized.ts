@@ -2,7 +2,7 @@
 //
 // Materialized adapter for agents that only read a static context file at
 // startup (Codex → AGENTS.md, Hermes → .hermes.md/AGENTS.md). There is
-// no dynamic hook callback, so `amp context materialize` writes AMP's load
+// no dynamic hook callback, so `memberry context materialize` writes MemBerry's load
 // output into a fenced managed block that the agent picks up for free. This is
 // session-start-equivalent injection only; the rendered header shows the refresh
 // time so staleness is visible.
@@ -18,7 +18,7 @@ import { replaceManagedBlock } from '../managed-block.js';
 export type MaterializeAgent = 'codex' | 'hermes';
 
 // Candidate context files per agent, in priority order. We deliberately exclude
-// CLAUDE.md: it holds the AMP Memory config and is read by Claude too, so we must
+// CLAUDE.md: it holds the MemBerry Memory config and is read by Claude too, so we must
 // not inject our managed block there. For Hermes ("first match wins":
 // .hermes.md → AGENTS.md → CLAUDE.md) we target .hermes.md/AGENTS.md so an
 // existing AGENTS.md is appended-to (and still read) rather than shadowed.
@@ -52,7 +52,7 @@ export interface MaterializeOptions {
 export interface MaterializeResult {
   file: string;
   scope: string;
-  /** false when AMP was unavailable and an empty/placeholder block was written. */
+  /** false when MemBerry was unavailable and an empty/placeholder block was written. */
   loaded: boolean;
   bytes: number;
 }
@@ -68,9 +68,9 @@ export function resolveTargetFile(agent: MaterializeAgent, cwd: string, explicit
 }
 
 function renderBody(markdown: string | null, scopeTag: string, now: Date): string {
-  const header = `## Memory Context (AMP)\n_Refreshed: ${now.toISOString()}; scope: ${scopeTag}_`;
+  const header = `## Memory Context (MemBerry)\n_Refreshed: ${now.toISOString()}; scope: ${scopeTag}_`;
   if (!markdown || markdown.trim() === '') {
-    return `${header}\n\n_No memory context available (AMP unreachable or empty)._`;
+    return `${header}\n\n_No memory context available (MemBerry unreachable or empty)._`;
   }
   return `${header}\n\n${markdown.trim()}`;
 }

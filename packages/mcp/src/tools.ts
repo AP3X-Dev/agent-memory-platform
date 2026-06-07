@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
-import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
+import type { LoadScope, MemoryContext, EpisodeInput, MemoryTier, FactTimeline, FactDiff, TemporalOptions } from '@memberry/core';
 import { parseAmpUri, uriToLoadScope } from './uri.js';
 import { scanCodebase, type CodebaseScan } from './codebase-scanner.js';
 
@@ -114,12 +114,12 @@ export function setServiceInstances(services: {
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
 export const TOOL_NAMES = [
-  'amp_load', 'amp_store', 'amp_grep', 'amp_query', 'amp_consolidate', 'amp_resolve', 'amp_bootstrap',
-  'amp_ingest_codebase', 'amp_provenance',
-  'amp_memory_read', 'amp_memory_insert', 'amp_memory_replace', 'amp_memory_rewrite',
-  'amp_memory_promote', 'amp_memory_archive',
-  'amp_timeline', 'amp_fact_diff',
-  'amp_tools',
+  'berry_load', 'berry_store', 'berry_grep', 'berry_query', 'berry_consolidate', 'berry_resolve', 'berry_bootstrap',
+  'berry_ingest_codebase', 'berry_provenance',
+  'berry_memory_read', 'berry_memory_insert', 'berry_memory_replace', 'berry_memory_rewrite',
+  'berry_memory_promote', 'berry_memory_archive',
+  'berry_timeline', 'berry_fact_diff',
+  'berry_tools',
 ] as const;
 
 // ─── Progressive disclosure types ────────────────────────────────────────────
@@ -133,7 +133,7 @@ export type ToolDomain =
 /** The full domain registry: maps domain name → registered tool handles. */
 export type ToolRegistry = Map<ToolDomain, RegisteredTool[]>;
 
-/** Domain metadata for the amp_tools list action. */
+/** Domain metadata for the berry_tools list action. */
 export interface DomainInfo {
   domain: ToolDomain;
   description: string;
@@ -150,24 +150,24 @@ export const DOMAIN_DESCRIPTIONS: Record<ToolDomain, string> = {
   code: 'Code intelligence: index, search, AST-grep, symbols, deps, context, file watcher',
   arch: 'Architecture: register, relate, aspects, impact, drift, context',
   wiki: 'Wiki: compile, ingest, lint',
-  retrieval: 'Retrieval feedback (amp_context stays in Tier 1)',
+  retrieval: 'Retrieval feedback (berry_context stays in Tier 1)',
   graph: 'Graph analytics: deterministic, project-scoped graph audit report',
 };
 
 /** Which core tools go into which Tier 2 domain. */
 export const CORE_DOMAIN_TOOLS: Record<string, ToolDomain> = {
-  amp_memory_replace: 'memory',
-  amp_memory_rewrite: 'memory',
-  amp_memory_promote: 'memory',
-  amp_memory_archive: 'memory',
-  amp_timeline: 'temporal',
-  amp_fact_diff: 'temporal',
-  amp_query: 'admin',
-  amp_consolidate: 'admin',
-  amp_bootstrap: 'admin',
-  amp_resolve: 'admin',
-  amp_ingest_codebase: 'admin',
-  amp_provenance: 'admin',
+  berry_memory_replace: 'memory',
+  berry_memory_rewrite: 'memory',
+  berry_memory_promote: 'memory',
+  berry_memory_archive: 'memory',
+  berry_timeline: 'temporal',
+  berry_fact_diff: 'temporal',
+  berry_query: 'admin',
+  berry_consolidate: 'admin',
+  berry_bootstrap: 'admin',
+  berry_resolve: 'admin',
+  berry_ingest_codebase: 'admin',
+  berry_provenance: 'admin',
 };
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -226,7 +226,7 @@ const AmpConsolidateSchema = {
 };
 
 const AmpResolveSchema = {
-  uri: z.string().max(500).describe('AMP URI to resolve (amp://entity/Name or amp://tag/name)'),
+  uri: z.string().max(500).describe('MemBerry URI to resolve (memberry://entity/Name or memberry://tag/name)'),
   max_tokens: z.number().int().positive().optional().default(2000).describe('Max tokens for resolved content'),
   stage_context: z.string().max(2000).optional().describe('Current stage description for relevance ranking'),
 };
@@ -339,7 +339,7 @@ const AmpGrepSchema = {
 };
 
 const AmpProvenanceSchema = {
-  semantic_id: z.string().max(200).describe('Semantic node ID to trace (e.g. "amp-sem-xyz"). Get IDs from amp_load/amp_grep results.'),
+  semantic_id: z.string().max(200).describe('Semantic node ID to trace (e.g. "amp-sem-xyz"). Get IDs from berry_load/berry_grep results.'),
 };
 
 // ─── Handler implementations ─────────────────────────────────────────────────
@@ -347,14 +347,14 @@ const AmpProvenanceSchema = {
 type ToolResult = Promise<{ content: Array<{ type: 'text'; text: string }> }>;
 
 export type ToolHandlers = {
-  amp_load: (args: {
+  berry_load: (args: {
     task: string;
     entities?: string[];
     tags?: string[];
     max_tokens?: number;
     temporal?: TemporalOptions;
   }) => ToolResult;
-  amp_store: (args: {
+  berry_store: (args: {
     session_id: string;
     task: string;
     content: string;
@@ -365,7 +365,7 @@ export type ToolHandlers = {
     scope?: string;
     tags?: string[];
   }) => ToolResult;
-  amp_grep: (args: {
+  berry_grep: (args: {
     pattern: string;
     regex?: boolean;
     node_types?: Array<'episodic' | 'semantic' | 'fact' | 'block' | 'entity'>;
@@ -373,20 +373,20 @@ export type ToolHandlers = {
     case_sensitive?: boolean;
     limit?: number;
   }) => ToolResult;
-  amp_query: (args: { query: string; limit?: number }) => ToolResult;
-  amp_provenance: (args: { semantic_id: string }) => ToolResult;
-  amp_consolidate: (args: {
+  berry_query: (args: { query: string; limit?: number }) => ToolResult;
+  berry_provenance: (args: { semantic_id: string }) => ToolResult;
+  berry_consolidate: (args: {
     action: 'run' | 'status' | 'review' | 'dream';
     scope?: string;
     proposal_id?: string;
     decision?: 'approve' | 'reject';
   }) => ToolResult;
-  amp_resolve: (args: {
+  berry_resolve: (args: {
     uri: string;
     max_tokens?: number;
     stage_context?: string;
   }) => ToolResult;
-  amp_bootstrap: (args: {
+  berry_bootstrap: (args: {
     project_name: string;
     project_tag: string;
     description: string;
@@ -395,7 +395,7 @@ export type ToolHandlers = {
     semantic_seeds?: Array<{ claim: string; domain: string; confidence?: number; about?: string[]; tags?: string[] }>;
     agents?: Array<{ id: string; name: string; type: string }>;
   }) => ToolResult;
-  amp_ingest_codebase: (args: {
+  berry_ingest_codebase: (args: {
     path: string;
     project_name?: string;
     project_tag?: string;
@@ -404,14 +404,14 @@ export type ToolHandlers = {
     languages?: Array<'typescript' | 'javascript' | 'python' | 'go' | 'rust'>;
     exclude_patterns?: string[];
   }) => ToolResult;
-  amp_memory_read: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_insert: (args: { block: string; text: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_replace: (args: { block: string; old_text: string; new_text: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_rewrite: (args: { block: string; content: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string; session_id?: string }) => ToolResult;
-  amp_memory_archive: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
-  amp_timeline: (args: { entity: string; include_episodes?: boolean; limit?: number }) => ToolResult;
-  amp_fact_diff: (args: { entity: string; from: string; to: string }) => ToolResult;
+  berry_memory_read: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
+  berry_memory_insert: (args: { block: string; text: string; scope?: string; session_id?: string }) => ToolResult;
+  berry_memory_replace: (args: { block: string; old_text: string; new_text: string; scope?: string; session_id?: string }) => ToolResult;
+  berry_memory_rewrite: (args: { block: string; content: string; scope?: string; session_id?: string }) => ToolResult;
+  berry_memory_promote: (args: { block: string; from_tier: MemoryTier; to_tier: MemoryTier; scope?: string; session_id?: string }) => ToolResult;
+  berry_memory_archive: (args: { block: string; scope?: string; session_id?: string }) => ToolResult;
+  berry_timeline: (args: { entity: string; include_episodes?: boolean; limit?: number }) => ToolResult;
+  berry_fact_diff: (args: { entity: string; from: string; to: string }) => ToolResult;
 };
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -427,7 +427,7 @@ function normalizeBoundedPositiveInt(value: number | undefined, defaultValue: nu
 
 export function buildToolHandlers(): ToolHandlers {
   return {
-    async amp_load(args) {
+    async berry_load(args) {
       if (!ampService) throw new Error('AMPService not initialised');
       const scope: LoadScope = {
         task: args.task,
@@ -440,7 +440,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(ctx.markdown);
     },
 
-    async amp_store(args) {
+    async berry_store(args) {
       if (!ampService) throw new Error('AMPService not initialised');
       const input: EpisodeInput = {
         session_id: args.session_id,
@@ -461,7 +461,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(`id:${result.id}`);
     },
 
-    async amp_grep(args) {
+    async berry_grep(args) {
       if (!scopedQuery) throw new Error('ScopedQuery not initialised');
 
       const pattern = args.pattern;
@@ -740,7 +740,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(lines.join('\n'));
     },
 
-    async amp_query(args) {
+    async berry_query(args) {
       if (!scopedQuery) throw new Error('ScopedQuery not initialised');
 
       const limit = args.limit ?? 10;
@@ -748,7 +748,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(JSON.stringify(rows, null, 2));
     },
 
-    async amp_provenance(args) {
+    async berry_provenance(args) {
       if (!provenanceTraversal) throw new Error('ProvenanceTraversal not initialised');
       const [origin, supersessions] = await Promise.all([
         provenanceTraversal.traceOrigin(args.semantic_id),
@@ -780,7 +780,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(lines.join('\n'));
     },
 
-    async amp_consolidate(args) {
+    async berry_consolidate(args) {
       if (!consolidationEngine) throw new Error('ConsolidationEngine not initialised');
       switch (args.action) {
         case 'run': {
@@ -820,7 +820,7 @@ export function buildToolHandlers(): ToolHandlers {
       }
     },
 
-    async amp_resolve(args) {
+    async berry_resolve(args) {
       if (!ampService) throw new Error('AMPService not initialised');
       const parsed = parseAmpUri(args.uri);
       const scopeParts = uriToLoadScope(parsed);
@@ -834,7 +834,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(ctx.markdown);
     },
 
-    async amp_bootstrap(args) {
+    async berry_bootstrap(args) {
       if (!bootstrapService) throw new Error('BootstrapGraphService not initialised');
       const result = await bootstrapService.bootstrap({
         project_name: args.project_name,
@@ -848,7 +848,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(JSON.stringify(result, null, 2));
     },
 
-    async amp_ingest_codebase(args) {
+    async berry_ingest_codebase(args) {
       if (!bootstrapService) throw new Error('BootstrapGraphService not initialised');
 
       const absPath = args.path;
@@ -981,10 +981,10 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(lines.join('\n'));
     },
 
-    async amp_memory_read(args) {
+    async berry_memory_read(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_read] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_read] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.read(scope, args.block, args.session_id);
@@ -994,57 +994,57 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(JSON.stringify(block, null, 2));
     },
 
-    async amp_memory_insert(args) {
+    async berry_memory_insert(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_insert] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_insert] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.insert(scope, args.block, args.text, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
-    async amp_memory_replace(args) {
+    async berry_memory_replace(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_replace] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_replace] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.replace(scope, args.block, args.old_text, args.new_text, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
-    async amp_memory_rewrite(args) {
+    async berry_memory_rewrite(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_rewrite] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_rewrite] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.rewrite(scope, args.block, args.content, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier, length: block.content.length }));
     },
 
-    async amp_memory_promote(args) {
+    async berry_memory_promote(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_promote] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_promote] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const block = await memoryBlockService.promote(scope, args.block, args.from_tier, args.to_tier, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: block.name, tier: block.tier }));
     },
 
-    async amp_memory_archive(args) {
+    async berry_memory_archive(args) {
       if (!memoryBlockService) throw new Error('MemoryBlockService not initialised');
       if (!args.scope) {
-        console.warn('[amp_memory_archive] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
+        console.warn('[berry_memory_archive] No scope provided — using "default". Pass a project tag (e.g. "project:my-project") for proper scoping.');
       }
       const scope = args.scope ?? 'default';
       const content = await memoryBlockService.archive(scope, args.block, args.session_id);
       return textContent(JSON.stringify({ ok: true, block: args.block, archived_length: content.length }));
     },
 
-    async amp_timeline(args) {
+    async berry_timeline(args) {
       if (!factStore) throw new Error('FactStore not initialised');
       const tl = await factStore.timeline(args.entity);
       const facts = args.limit ? tl.facts.slice(0, args.limit) : tl.facts;
@@ -1066,7 +1066,7 @@ export function buildToolHandlers(): ToolHandlers {
       return textContent(lines.join('\n'));
     },
 
-    async amp_fact_diff(args) {
+    async berry_fact_diff(args) {
       if (!factStore) throw new Error('FactStore not initialised');
       const d = await factStore.diff(args.entity, args.from, args.to);
 
@@ -1135,7 +1135,7 @@ export interface RegisteredToolSet {
 }
 
 /**
- * Register core AMP tools on the given server.
+ * Register core MemBerry tools on the given server.
  * Returns handles grouped by tier for progressive disclosure.
  */
 export function registerTools(
@@ -1156,152 +1156,152 @@ export function registerTools(
   // ─── Tier 1 — always enabled ─────────────────────────────────────────────
 
   tier1.push(server.tool(
-    'amp_load',
+    'berry_load',
     'Load memory context for a task. Returns assembled markdown ready for the context window.',
     AmpLoadSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_load,
+    handlers.berry_load,
   ));
 
   tier1.push(server.tool(
-    'amp_store',
+    'berry_store',
     'Store an episodic memory. Returns the new episode ID.',
     AmpStoreSchema,
     ANN_WRITE,
-    handlers.amp_store,
+    handlers.berry_store,
   ));
 
   tier1.push(server.tool(
-    'amp_memory_read',
+    'berry_memory_read',
     'Read a memory block by name. Returns the block content, tier, and metadata.',
     AmpMemoryReadSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_memory_read,
+    handlers.berry_memory_read,
   ));
 
   tier1.push(server.tool(
-    'amp_memory_insert',
+    'berry_memory_insert',
     'Append text to a memory block. Creates the block if it does not exist.',
     AmpMemoryInsertSchema,
     ANN_WRITE,
-    handlers.amp_memory_insert,
+    handlers.berry_memory_insert,
   ));
 
   tier1.push(server.tool(
-    'amp_grep',
+    'berry_grep',
     'Search memory content by text pattern (exact string or regex) across all node types: episodic, semantic, fact, block, entity. Returns matched snippets with context.',
     AmpGrepSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_grep,
+    handlers.berry_grep,
   ));
 
   // ─── Tier 2 — memory domain ──────────────────────────────────────────────
 
   addToDomain('memory', server.tool(
-    'amp_memory_replace',
+    'berry_memory_replace',
     'Find and replace text within a memory block. Throws if old_text is not found.',
     AmpMemoryReplaceSchema,
     ANN_WRITE,
-    handlers.amp_memory_replace,
+    handlers.berry_memory_replace,
   ));
 
   addToDomain('memory', server.tool(
-    'amp_memory_rewrite',
+    'berry_memory_rewrite',
     'Overwrite the entire content of a memory block. Creates the block if it does not exist.',
     AmpMemoryRewriteSchema,
     ANN_WRITE,
-    handlers.amp_memory_rewrite,
+    handlers.berry_memory_rewrite,
   ));
 
   addToDomain('memory', server.tool(
-    'amp_memory_promote',
+    'berry_memory_promote',
     'Change the tier of a memory block (e.g. working → core). Promoting to core persists to Neo4j.',
     AmpMemoryPromoteSchema,
     ANN_WRITE,
-    handlers.amp_memory_promote,
+    handlers.berry_memory_promote,
   ));
 
   addToDomain('memory', server.tool(
-    'amp_memory_archive',
+    'berry_memory_archive',
     'Archive a memory block: returns its content for the caller to store as an episodic entry, then deletes the block.',
     AmpMemoryArchiveSchema,
     ANN_DESTRUCTIVE,
-    handlers.amp_memory_archive,
+    handlers.berry_memory_archive,
   ));
 
   // ─── Tier 2 — temporal domain ────────────────────────────────────────────
 
   addToDomain('temporal', server.tool(
-    'amp_timeline',
+    'berry_timeline',
     'Chronological fact history for an entity. Shows all facts with creation, invalidation, dispute, and supersession events ordered by time.',
     AmpTimelineSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_timeline,
+    handlers.berry_timeline,
   ));
 
   addToDomain('temporal', server.tool(
-    'amp_fact_diff',
+    'berry_fact_diff',
     'Show what facts changed about an entity between two timestamps. Returns added, invalidated, and changed facts.',
     AmpFactDiffSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_fact_diff,
+    handlers.berry_fact_diff,
   ));
 
   // ─── Tier 2 — admin domain ───────────────────────────────────────────────
 
   addToDomain('admin', server.tool(
-    'amp_query',
+    'berry_query',
     'Run a raw Cypher query against the Neo4j knowledge graph. Returns JSON rows.',
     AmpQuerySchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_query,
+    handlers.berry_query,
   ));
 
   addToDomain('admin', server.tool(
-    'amp_consolidate',
+    'berry_consolidate',
     'Manage memory consolidation: run a consolidation pass, check status, or review a proposal.',
     AmpConsolidateSchema,
     ANN_WRITE,
-    handlers.amp_consolidate,
+    handlers.berry_consolidate,
   ));
 
   addToDomain('admin', server.tool(
-    'amp_bootstrap',
-    'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that amp_store/amp_load/amp_consolidate have structure to work with.',
+    'berry_bootstrap',
+    'Bootstrap the knowledge graph for a project. Creates Entity nodes (project, modules, services, components), Agent nodes, seed Semantic principles, and CONTAINS/ABOUT relationships. Idempotent — safe to run multiple times. Call this ONCE when first working with a new project to seed the graph so that berry_store/berry_load/berry_consolidate have structure to work with.',
     AmpBootstrapSchema,
     ANN_IDEMPOTENT,
-    handlers.amp_bootstrap,
+    handlers.berry_bootstrap,
   ));
 
   addToDomain('admin', server.tool(
-    'amp_resolve',
-    'Resolve an AMP URI (amp://entity/Name or amp://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
+    'berry_resolve',
+    'Resolve an MemBerry URI (memberry://entity/Name or memberry://tag/name) to rendered markdown. Use for loading Layer 3 reference material referenced in MWP stage CONTEXT.md files.',
     AmpResolveSchema,
     ANN_READONLY,
-    handlers.amp_resolve,
+    handlers.berry_resolve,
   ));
 
   addToDomain('admin', server.tool(
-    'amp_ingest_codebase',
-    'One-shot codebase ingestion: scans repo structure, bootstraps the knowledge graph with project/module entities, indexes all source code via tree-sitter, and seeds memory blocks. Use for first-time project setup. Combines amp_bootstrap + amp_code_index + memory seeding in one call.',
+    'berry_ingest_codebase',
+    'One-shot codebase ingestion: scans repo structure, bootstraps the knowledge graph with project/module entities, indexes all source code via tree-sitter, and seeds memory blocks. Use for first-time project setup. Combines berry_bootstrap + berry_code_index + memory seeding in one call.',
     AmpIngestCodebaseSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
-    handlers.amp_ingest_codebase,
+    handlers.berry_ingest_codebase,
   ));
 
   addToDomain('admin', server.tool(
-    'amp_provenance',
-    'Trace the full lifecycle of a semantic memory node: its origin lineage (PROMOTED_FROM the episode it was consolidated from, and any SUPERSEDES chain) plus its supersession history (the predecessors it replaced, with their confidence). Use to audit where a piece of knowledge came from and how it evolved. Pass a semantic_id from amp_load/amp_grep results.',
+    'berry_provenance',
+    'Trace the full lifecycle of a semantic memory node: its origin lineage (PROMOTED_FROM the episode it was consolidated from, and any SUPERSEDES chain) plus its supersession history (the predecessors it replaced, with their confidence). Use to audit where a piece of knowledge came from and how it evolved. Pass a semantic_id from berry_load/berry_grep results.',
     AmpProvenanceSchema,
     ANN_READONLY_IDEMPOTENT,
-    handlers.amp_provenance,
+    handlers.berry_provenance,
   ));
 
-  // ─── Tier 1 — amp_tools gateway ──────────────────────────────────────────
+  // ─── Tier 1 — berry_tools gateway ──────────────────────────────────────────
 
   tier1.push(server.tool(
-    'amp_tools',
-    'Progressive disclosure gateway. List available tool domains and enable/disable them on demand. Tier 1 tools (amp_load, amp_store, amp_grep, amp_memory_read, amp_memory_insert, amp_context, amp_tools) are always available. All other tools are grouped into domains that start disabled to reduce context window pollution.',
+    'berry_tools',
+    'Progressive disclosure gateway. List available tool domains and enable/disable them on demand. Tier 1 tools (berry_load, berry_store, berry_grep, berry_memory_read, berry_memory_insert, berry_context, berry_tools) are always available. All other tools are grouped into domains that start disabled to reduce context window pollution.',
     AmpToolsSchema,
     ANN_READONLY_IDEMPOTENT,
     async (args: { action: 'list' | 'enable' | 'disable'; domain?: string }) => {
@@ -1400,20 +1400,20 @@ export function registerTools(
  * that every registered tool is accounted for as either Tier 1 or a domain tool.
  */
 export const ALWAYS_ON_TOOL_NAMES = [
-  'amp_load', 'amp_store', 'amp_grep', 'amp_memory_read', 'amp_memory_insert',
-  'amp_tools', 'amp_context', 'amp_ask',
+  'berry_load', 'berry_store', 'berry_grep', 'berry_memory_read', 'berry_memory_insert',
+  'berry_tools', 'berry_context', 'berry_ask',
 ] as const;
 
-/** Map of domain → tool names, for listing in amp_tools. */
+/** Map of domain → tool names, for listing in berry_tools. */
 export const DOMAIN_TOOL_NAMES_MAP: Record<ToolDomain, string[]> = {
-  memory: ['amp_memory_replace', 'amp_memory_rewrite', 'amp_memory_promote', 'amp_memory_archive'],
-  temporal: ['amp_timeline', 'amp_fact_diff'],
-  admin: ['amp_query', 'amp_consolidate', 'amp_bootstrap', 'amp_resolve', 'amp_ingest_codebase', 'amp_provenance'],
-  research: ['amp_research_init', 'amp_research_log', 'amp_research_context', 'amp_research_tree', 'amp_research_contradictions', 'amp_research_consolidate'],
-  code: ['amp_code_index', 'amp_code_search', 'amp_code_ast_grep', 'amp_code_symbols', 'amp_code_deps', 'amp_code_context', 'amp_code_watch'],
-  arch: ['amp_arch_register', 'amp_arch_relate', 'amp_arch_aspect', 'amp_impact', 'amp_arch_drift', 'amp_arch_context'],
-  wiki: ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'],
-  retrieval: ['amp_feedback'],
-  graph: ['amp_graph_report', 'amp_graph_export', 'amp_pr_impact', 'amp_pr_conflicts'],
+  memory: ['berry_memory_replace', 'berry_memory_rewrite', 'berry_memory_promote', 'berry_memory_archive'],
+  temporal: ['berry_timeline', 'berry_fact_diff'],
+  admin: ['berry_query', 'berry_consolidate', 'berry_bootstrap', 'berry_resolve', 'berry_ingest_codebase', 'berry_provenance'],
+  research: ['berry_research_init', 'berry_research_log', 'berry_research_context', 'berry_research_tree', 'berry_research_contradictions', 'berry_research_consolidate'],
+  code: ['berry_code_index', 'berry_code_search', 'berry_code_ast_grep', 'berry_code_symbols', 'berry_code_deps', 'berry_code_context', 'berry_code_watch'],
+  arch: ['berry_arch_register', 'berry_arch_relate', 'berry_arch_aspect', 'berry_impact', 'berry_arch_drift', 'berry_arch_context'],
+  wiki: ['berry_compile', 'berry_ingest', 'berry_lint', 'berry_braindump', 'berry_wiki_sync'],
+  retrieval: ['berry_feedback'],
+  graph: ['berry_graph_report', 'berry_graph_export', 'berry_pr_impact', 'berry_pr_conflicts'],
 };
 

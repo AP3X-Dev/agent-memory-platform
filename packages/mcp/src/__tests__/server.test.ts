@@ -45,32 +45,44 @@ describe('createAMPServer', () => {
     const amp = createAMPServer();
     expect(amp.toolNames).toBeDefined();
     // Core tools
-    expect(amp.toolNames).toContain('amp_load');
-    expect(amp.toolNames).toContain('amp_store');
-    expect(amp.toolNames).toContain('amp_query');
-    expect(amp.toolNames).toContain('amp_consolidate');
-    expect(amp.toolNames).toContain('amp_resolve');
-    expect(amp.toolNames).toContain('amp_bootstrap');
+    expect(amp.toolNames).toContain('berry_load');
+    expect(amp.toolNames).toContain('berry_store');
+    expect(amp.toolNames).toContain('berry_query');
+    expect(amp.toolNames).toContain('berry_consolidate');
+    expect(amp.toolNames).toContain('berry_resolve');
+    expect(amp.toolNames).toContain('berry_bootstrap');
     // Progressive disclosure gateway
-    expect(amp.toolNames).toContain('amp_tools');
+    expect(amp.toolNames).toContain('berry_tools');
     // Retrieval tier 1
-    expect(amp.toolNames).toContain('amp_context');
+    expect(amp.toolNames).toContain('berry_context');
     // Wiki tools (registered but disabled by default)
-    expect(amp.toolNames).toContain('amp_compile');
-    expect(amp.toolNames).toContain('amp_ingest');
-    expect(amp.toolNames).toContain('amp_lint');
+    expect(amp.toolNames).toContain('berry_compile');
+    expect(amp.toolNames).toContain('berry_ingest');
+    expect(amp.toolNames).toContain('berry_lint');
     // Extension tools registered from research, arch, code, retrieval, wiki
     expect(amp.toolNames.length).toBeGreaterThanOrEqual(6);
   });
 
-  it('amp_provenance is registered and discoverable in the admin domain', () => {
+  it('REBRAND-GUARD: the tool surface is exactly 49 berry_* tools with no legacy amp_* names', () => {
     const amp = createAMPServer();
-    expect(amp.toolNames).toContain('amp_provenance');
-    expect(DOMAIN_TOOL_NAMES_MAP.admin).toContain('amp_provenance');
+    const names = [...amp.toolNames];
+    // Clean cutover: every tool is canonical berry_*; no amp_* survives.
+    expect(names.every((n) => n.startsWith('berry_'))).toBe(true);
+    expect(names.some((n) => n.startsWith('amp_'))).toBe(false);
+    // 8 always-on (Tier 1) + 41 on-demand (Tier 2) = 49.
+    expect(names.length).toBe(49);
+    expect(ALWAYS_ON_TOOL_NAMES.length).toBe(8);
+    expect(Object.values(DOMAIN_TOOL_NAMES_MAP).flat().length).toBe(41);
+  });
+
+  it('berry_provenance is registered and discoverable in the admin domain', () => {
+    const amp = createAMPServer();
+    expect(amp.toolNames).toContain('berry_provenance');
+    expect(DOMAIN_TOOL_NAMES_MAP.admin).toContain('berry_provenance');
   });
 
   it('DRIFT-GUARD: every registered tool is either Tier 1 or listed in DOMAIN_TOOL_NAMES_MAP', () => {
-    // The amp_tools(action:"list") gateway reads DOMAIN_TOOL_NAMES_MAP. If a tool
+    // The berry_tools(action:"list") gateway reads DOMAIN_TOOL_NAMES_MAP. If a tool
     // is registered (server.tool) but missing from the map AND not Tier 1, an
     // agent can never discover it via the gateway. This guards both directions:
     // no registered tool is unlisted, and no map entry is a phantom.
@@ -112,7 +124,7 @@ describe('createAMPServer', () => {
       const body = await response.json() as Record<string, unknown>;
       expect(body).toMatchObject({
         status: 'ok',
-        service: 'amp-mcp',
+        service: 'memberry-mcp',
         transport: 'sse',
         active_sessions: 0,
         auth_required: true,
@@ -136,7 +148,7 @@ describe('createAMPServer', () => {
       const body = await authenticated.json() as Record<string, unknown>;
       expect(body).toMatchObject({
         status: 'ready',
-        service: 'amp-mcp',
+        service: 'memberry-mcp',
         transport: 'sse',
         active_sessions: 0,
         auth_required: true,
@@ -181,7 +193,7 @@ describe('createAMPServer', () => {
       expect(initializeBody).toMatchObject({
         jsonrpc: '2.0',
         id: 1,
-        result: { serverInfo: { name: 'amp-mcp' } },
+        result: { serverInfo: { name: 'memberry-mcp' } },
       });
 
       const sessionHeaders = {
@@ -212,7 +224,7 @@ describe('createAMPServer', () => {
 
       expect(tools.status).toBe(200);
       const toolsBody = await tools.json() as { result?: { tools?: Array<{ name?: string }> } };
-      expect(toolsBody.result?.tools?.some((tool) => tool.name === 'amp_load')).toBe(true);
+      expect(toolsBody.result?.tools?.some((tool) => tool.name === 'berry_load')).toBe(true);
     });
   });
 

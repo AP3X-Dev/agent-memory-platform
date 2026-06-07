@@ -1,6 +1,6 @@
 // packages/neo4j/src/blocks.ts
 import { type Driver } from 'neo4j-driver';
-import type { MemoryBlock, MemoryTier } from '@amp/core';
+import type { MemoryBlock, MemoryTier } from '@memberry/core';
 
 export class BlockStore {
   constructor(private driver: Driver) {}

@@ -1,6 +1,6 @@
 // packages/neo4j/src/query.ts
 import neo4j, { type Driver } from 'neo4j-driver';
-import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@amp/core';
+import type { SemanticNode, FactNode, EpisodicNode, TemporalOptions } from '@memberry/core';
 import { activeRelationshipFilter } from './temporal-edges.js';
 
 export interface QueryScope {
@@ -62,7 +62,7 @@ export function validateReadOnlyCypher(cypher: string): void {
   if (adminMatch) {
     throw new Error(
       `Cypher validation failed: query contains administrative keyword "${adminMatch[1].toUpperCase()}". ` +
-      'Only graph read queries are allowed via amp_query.',
+      'Only graph read queries are allowed via berry_query.',
     );
   }
 
@@ -72,7 +72,7 @@ export function validateReadOnlyCypher(cypher: string): void {
     if (re.test(stripped)) {
       throw new Error(
         `Cypher validation failed: query contains mutating keyword "${kw}". ` +
-        'Only read-only queries are allowed via amp_query.',
+        'Only read-only queries are allowed via berry_query.',
       );
     }
   }
@@ -87,7 +87,7 @@ export function validateReadOnlyCypher(cypher: string): void {
   if (callProcRe.test(stripped)) {
     throw new Error(
       'Cypher validation failed: query contains CALL to a stored procedure. ' +
-      'Only read-only queries are allowed via amp_query. ' +
+      'Only read-only queries are allowed via berry_query. ' +
       'CALL {} subqueries are permitted.',
     );
   }

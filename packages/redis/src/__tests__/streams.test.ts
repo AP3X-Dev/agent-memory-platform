@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { createRedisClient } from '../client.js';
 import { SignalStream, EpisodicBuffer } from '../streams.js';
 import type { BufferEvent } from '../streams.js';
-import type { StreamSignal } from '@amp/core';
+import type { StreamSignal } from '@memberry/core';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 

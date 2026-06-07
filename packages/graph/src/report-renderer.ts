@@ -14,7 +14,7 @@ export function renderGraphReport(s: GraphReportSections): string {
   const lines: string[] = [];
 
   // 1. Header
-  lines.push('# AMP Graph Report');
+  lines.push('# MemBerry Graph Report');
   lines.push('');
   lines.push(`- **Project:** ${graph.project_name ?? '(all projects)'}`);
   lines.push(`- **Project tag:** ${graph.project_tag ?? '(none)'}`);
@@ -166,7 +166,7 @@ export function renderGraphReport(s: GraphReportSections): string {
   // 12. Recommended Actions
   lines.push('## Recommended Actions');
   lines.push('');
-  lines.push('- Run `amp_lint` for orphan/broken-link/contradiction checks.');
+  lines.push('- Run `berry_lint` for orphan/broken-link/contradiction checks.');
   if (c.low_confidence_semantics > 0 || c.contradiction_edges > 0) {
     lines.push('- Review and resolve low-confidence claims and contradictions.');
   }

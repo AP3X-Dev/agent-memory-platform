@@ -59,13 +59,13 @@ export function setCodeServiceInstances(services: {
 // ─── Tool names ──────────────────────────────────────────────────────────────
 
 export const CODE_TOOL_NAMES = [
-  'amp_code_index',
-  'amp_code_search',
-  'amp_code_ast_grep',
-  'amp_code_symbols',
-  'amp_code_deps',
-  'amp_code_context',
-  'amp_code_watch',
+  'berry_code_index',
+  'berry_code_search',
+  'berry_code_ast_grep',
+  'berry_code_symbols',
+  'berry_code_deps',
+  'berry_code_context',
+  'berry_code_watch',
 ] as const;
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
@@ -77,9 +77,9 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 export function registerCodeTools(server: McpServer): RegisteredTool[] {
   const handles: RegisteredTool[] = [];
 
-  // ─── amp_code_index ─────────────────────────────────────────────────────
+  // ─── berry_code_index ─────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_index',
+    'berry_code_index',
     'Index a project or file using tree-sitter AST parsing. Creates Symbol nodes (functions, classes, methods, interfaces, types) and relationship edges (SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, SYMBOL_CONTAINS) in the graph. Incremental: unchanged symbols are skipped via content hash. Supports: TypeScript, JavaScript, Python, Go, Rust, plus structural extraction for SQL (tables/views/functions), Terraform/HCL (resources/modules/variables), and MCP config files (servers, env-safe).',
     {
       path: z.string().max(2000).describe('Absolute path to project directory or single file'),
@@ -117,9 +117,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_search ────────────────────────────────────────────────────
+  // ─── berry_code_search ────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_search',
+    'berry_code_search',
     'Hybrid search across code symbols AND semantic memories. Combines fulltext search (symbol names, signatures, doc comments) with vector search and RRF fusion. Returns blended results ranked by relevance.',
     {
       query: z.string().max(500).describe('Search query (natural language or symbol name)'),
@@ -156,9 +156,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_ast_grep ─────────────────────────────────────────────────
+  // ─── berry_code_ast_grep ─────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_ast_grep',
+    'berry_code_ast_grep',
     'Structural code search powered by ast-grep. Matches AST patterns instead of raw text, returning file/range hits plus captured meta variables. Supports JavaScript, TypeScript, and TSX/JSX files.',
     {
       pattern: z.string().min(1).max(4000).describe('ast-grep pattern, e.g. fetch($URL) or import { $NAME } from $MOD'),
@@ -189,9 +189,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_symbols ───────────────────────────────────────────────────
+  // ─── berry_code_symbols ───────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_symbols',
+    'berry_code_symbols',
     'Query specific symbols in the indexed codebase. Find by file path (all symbols in a file) or by name (across all files). Returns symbol details including kind, signature, doc comment, and line numbers.',
     {
       file_path: z.string().max(2000).optional().describe('Get all symbols in this file'),
@@ -226,9 +226,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_deps ──────────────────────────────────────────────────────
+  // ─── berry_code_deps ──────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_deps',
+    'berry_code_deps',
     'Symbol-level dependency queries. Find what calls a function, what a class inherits from, who imports a module, etc. Traverses SYMBOL_CALLS, SYMBOL_IMPORTS, SYMBOL_INHERITS, and SYMBOL_IMPLEMENTS edges.',
     {
       symbol_name: z.string().max(500).describe('Symbol name to query'),
@@ -278,9 +278,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_context ───────────────────────────────────────────────────
+  // ─── berry_code_context ───────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_context',
+    'berry_code_context',
     'Build code-aware context for a task. Given a task description, returns relevant code symbols AND semantic memories, ranked and token-budgeted. Use this before making code changes to understand the relevant codebase context.',
     {
       task: z.string().max(5000).describe('Task description (natural language)'),
@@ -304,9 +304,9 @@ export function registerCodeTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_code_watch ────────────────────────────────────────────────────
+  // ─── berry_code_watch ────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_code_watch',
+    'berry_code_watch',
     'Start, stop, or check status of the background file watcher that automatically re-indexes source files when they change. Keeps the symbol graph fresh without manual re-indexing.',
     {
       action: z.enum(['start', 'stop', 'status']).describe('start/stop watching or check status'),

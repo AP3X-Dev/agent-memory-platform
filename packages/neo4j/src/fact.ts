@@ -1,7 +1,7 @@
 // packages/neo4j/src/fact.ts
 import { type Driver } from 'neo4j-driver';
 import { nanoid } from 'nanoid';
-import type { FactNode, FactTimeline, FactDiff, TemporalOptions } from '@amp/core';
+import type { FactNode, FactTimeline, FactDiff, TemporalOptions } from '@memberry/core';
 import { EntityResolver } from './entity-resolver.js';
 import { temporalSetClause } from './temporal-edges.js';
 

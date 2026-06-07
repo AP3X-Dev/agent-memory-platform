@@ -91,7 +91,7 @@ async function benchAsync(name: string, fn: () => Promise<void>, iterations = 10
 // ─── Run benchmarks ──────────────────────────────────────────────────────────
 
 async function main() {
-  console.log('\n=== AMP Retrieval Pipeline Benchmark ===\n');
+  console.log('\n=== MemBerry Retrieval Pipeline Benchmark ===\n');
 
   // Generate test data at various scales
   const small = generateResults(50);

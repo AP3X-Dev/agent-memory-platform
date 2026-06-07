@@ -1,5 +1,5 @@
 {
-  "name": "@amp/mcp",
+  "name": "@memberry/mcp",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,15 +11,15 @@
     "start:stdio": "tsx src/server.ts --stdio"
   },
   "dependencies": {
-    "@amp/core": "*",
-    "@amp/redis": "*",
-    "@amp/neo4j": "*",
-    "@amp/research": "*",
-    "@amp/arch": "*",
-    "@amp/code": "*",
-    "@amp/retrieval": "*",
-    "@amp/wiki": "*",
-    "@amp/graph": "*",
+    "@memberry/core": "*",
+    "@memberry/redis": "*",
+    "@memberry/neo4j": "*",
+    "@memberry/research": "*",
+    "@memberry/arch": "*",
+    "@memberry/code": "*",
+    "@memberry/retrieval": "*",
+    "@memberry/wiki": "*",
+    "@memberry/graph": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "zod": "^3.23.0"
   },

@@ -35,8 +35,34 @@ export const DEFAULT_SETTINGS: AmpSettings = {
   },
 };
 
+const warnedLegacyEnv = new Set<string>();
+
+/**
+ * Read an env var by its canonical MEMBERRY_ name, falling back to the legacy
+ * AMP_ name for one deprecation cycle after the rebrand. The new name always
+ * wins; the first use of a legacy name emits a one-time deprecation warning.
+ * Empty strings are treated as unset so a blank override doesn't mask a real
+ * legacy value.
+ */
+export function readEnv(canonical: string): string | undefined {
+  const direct = process.env[canonical];
+  if (direct !== undefined && direct !== '') return direct;
+  if (canonical.startsWith('MEMBERRY_')) {
+    const legacy = `AMP_${canonical.slice('MEMBERRY_'.length)}`;
+    const old = process.env[legacy];
+    if (old !== undefined && old !== '') {
+      if (!warnedLegacyEnv.has(legacy)) {
+        warnedLegacyEnv.add(legacy);
+        console.error(`[memberry] env ${legacy} is deprecated; rename it to ${canonical}.`);
+      }
+      return old;
+    }
+  }
+  return undefined;
+}
+
 export function getSettingsPath(): string {
-  const override = process.env['AMP_SETTINGS_PATH'];
+  const override = readEnv('MEMBERRY_SETTINGS_PATH');
   if (override && override.trim() !== '') return override;
   return path.join(os.homedir(), '.config', 'amp', 'settings.json');
 }
@@ -90,7 +116,7 @@ export interface ResolvedNumber {
 
 /** Resolve a numeric tunable: env var > settings file value > default. */
 export function resolveNumber(envVar: string, fileValue: number, def: number): ResolvedNumber {
-  const raw = Number(process.env[envVar]);
+  const raw = Number(readEnv(envVar));
   if (Number.isFinite(raw) && raw > 0) return { value: raw, source: 'env' };
   if (Number.isFinite(fileValue) && fileValue > 0) return { value: fileValue, source: 'file' };
   return { value: def, source: 'default' };

@@ -16,7 +16,7 @@ export class ArchEntityStore {
 
   /**
    * Enrich an existing Entity node with architectural properties.
-   * Uses SET (not CREATE) — the Entity must already exist from amp_bootstrap.
+   * Uses SET (not CREATE) — the Entity must already exist from berry_bootstrap.
    */
   async setArchProperties(
     entityName: string,

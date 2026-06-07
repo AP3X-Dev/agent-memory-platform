@@ -1,5 +1,5 @@
 // packages/wiki/src/__tests__/path-validation.test.ts
-// Tests for path validation in wiki tool handlers (amp_ingest, amp_compile).
+// Tests for path validation in wiki tool handlers (berry_ingest, berry_compile).
 // Ensures directory traversal attacks are rejected.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -149,10 +149,10 @@ describe('buildWikiToolHandlers path validation', () => {
     });
   });
 
-  describe('amp_ingest', () => {
+  describe('berry_ingest', () => {
     it('rejects source_path outside allowed directory', async () => {
       const handlers = buildWikiToolHandlers();
-      await expect(handlers.amp_ingest({
+      await expect(handlers.berry_ingest({
         source_path: '/etc/passwd',
         source_type: 'article',
         project_tag: 'project:test',
@@ -162,7 +162,7 @@ describe('buildWikiToolHandlers path validation', () => {
 
     it('rejects source_path with directory traversal', async () => {
       const handlers = buildWikiToolHandlers();
-      await expect(handlers.amp_ingest({
+      await expect(handlers.berry_ingest({
         source_path: '../../../etc/shadow',
         source_type: 'article',
         project_tag: 'project:test',
@@ -173,7 +173,7 @@ describe('buildWikiToolHandlers path validation', () => {
     it('allows source_path within cwd', async () => {
       const handlers = buildWikiToolHandlers();
       const validPath = path.join(process.cwd(), 'docs', 'test-file.md');
-      await handlers.amp_ingest({
+      await handlers.berry_ingest({
         source_path: validPath,
         source_type: 'article',
         project_tag: 'project:test',
@@ -182,10 +182,10 @@ describe('buildWikiToolHandlers path validation', () => {
     });
   });
 
-  describe('amp_compile', () => {
+  describe('berry_compile', () => {
     it('rejects output_dir outside allowed directory', async () => {
       const handlers = buildWikiToolHandlers();
-      await expect(handlers.amp_compile({
+      await expect(handlers.berry_compile({
         project_tag: 'project:test',
         output_dir: '/tmp/evil-output',
       })).rejects.toThrow('Path must be within allowed directory');
@@ -194,7 +194,7 @@ describe('buildWikiToolHandlers path validation', () => {
 
     it('rejects output_dir with directory traversal', async () => {
       const handlers = buildWikiToolHandlers();
-      await expect(handlers.amp_compile({
+      await expect(handlers.berry_compile({
         project_tag: 'project:test',
         output_dir: '../../tmp/evil',
       })).rejects.toThrow('Path must be within allowed directory');
@@ -204,7 +204,7 @@ describe('buildWikiToolHandlers path validation', () => {
     it('allows output_dir within cwd', async () => {
       const handlers = buildWikiToolHandlers();
       const validDir = path.join(process.cwd(), 'output', 'wiki');
-      await handlers.amp_compile({
+      await handlers.berry_compile({
         project_tag: 'project:test',
         output_dir: validDir,
       });

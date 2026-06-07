@@ -1,5 +1,5 @@
 // packages/retrieval/src/tools.ts
-// The amp_context MCP tool — unified super-load.
+// The berry_context MCP tool — unified super-load.
 
 import { z } from 'zod';
 import type { McpServer, RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -61,7 +61,7 @@ export function setRetrievalServiceInstances(services: {
 
 // ─── Tool names ──────────────────────────────────────────────────────────────
 
-export const RETRIEVAL_TOOL_NAMES = ['amp_context', 'amp_ask', 'amp_feedback'] as const;
+export const RETRIEVAL_TOOL_NAMES = ['berry_context', 'berry_ask', 'berry_feedback'] as const;
 
 function textContent(text: string): { content: Array<{ type: 'text'; text: string }> } {
   return { content: [{ type: 'text' as const, text }] };
@@ -70,9 +70,9 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 // ─── Tool registration ────────────────────────────────────────────────────────
 
 export interface RetrievalRegisteredTools {
-  /** Tier 1 tool — amp_context, always enabled. */
+  /** Tier 1 tool — berry_context, always enabled. */
   tier1: RegisteredTool[];
-  /** Tier 2 tools — amp_feedback, disabled by default. */
+  /** Tier 2 tools — berry_feedback, disabled by default. */
   tier2: RegisteredTool[];
 }
 
@@ -80,9 +80,9 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
   const tier1: RegisteredTool[] = [];
   const tier2: RegisteredTool[] = [];
 
-  // ─── amp_context (Tier 1) ───────────────────────────────────────────────
+  // ─── berry_context (Tier 1) ───────────────────────────────────────────────
   tier1.push(server.tool(
-    'amp_context',
+    'berry_context',
     'Unified super-load: assembles context combining architecture (hierarchy, dependencies, aspects), code (symbols, signatures, docs), and memory (semantic principles, episodic history) into a single response. Three strategies: "auto" (default — classifies query intent and routes automatically), "ranked" (hybrid search with RRF fusion, query expansion, and feedback boosts — best for exploration), "deterministic" (Yggdrasil-style 5-step assembly — same graph state always produces same output, best for architectural queries). Use this as your primary context-loading tool when you need a complete picture.',
     {
       task: z.string().max(5000).describe('Task description (what you are about to do)'),
@@ -116,10 +116,10 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
     },
   ));
 
-  // ─── amp_ask (Tier 1 — dialectic retrieval) ─────────────────────────────
+  // ─── berry_ask (Tier 1 — dialectic retrieval) ─────────────────────────────
   tier1.push(server.tool(
-    'amp_ask',
-    'Ask a natural-language question about everything in memory and get a synthesized, CITED answer — not raw chunks. Combines facts via explicit inference, says so when evidence is insufficient, and returns the supporting node IDs. reasoning_level (minimal|low|medium|high|max) trades latency/cost for depth. Use this when the answer requires reasoning over multiple memories; use amp_context when you want the raw assembled context.',
+    'berry_ask',
+    'Ask a natural-language question about everything in memory and get a synthesized, CITED answer — not raw chunks. Combines facts via explicit inference, says so when evidence is insufficient, and returns the supporting node IDs. reasoning_level (minimal|low|medium|high|max) trades latency/cost for depth. Use this when the answer requires reasoning over multiple memories; use berry_context when you want the raw assembled context.',
     {
       question: z.string().max(2000).describe('A natural-language question about the user/project/codebase memory'),
       reasoning_level: z.enum(['minimal', 'low', 'medium', 'high', 'max']).optional().default('medium')
@@ -153,10 +153,10 @@ export function registerRetrievalTools(server: McpServer): RetrievalRegisteredTo
     },
   ));
 
-  // ─── amp_feedback (Tier 2 — retrieval domain) ──────────────────────────
+  // ─── berry_feedback (Tier 2 — retrieval domain) ──────────────────────────
   tier2.push(server.tool(
-    'amp_feedback',
-    'Record feedback on retrieval results. Tell AMP which results were useful and which were not. This improves future retrieval rankings over time.',
+    'berry_feedback',
+    'Record feedback on retrieval results. Tell MemBerry which results were useful and which were not. This improves future retrieval rankings over time.',
     {
       result_id: z.string().max(500).describe('ID of the result to give feedback on'),
       was_useful: z.boolean().describe('Whether this result was useful for your task'),

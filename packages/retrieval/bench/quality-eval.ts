@@ -112,7 +112,7 @@ const CORPUS: CorpusDoc[] = [
     content: 'Confidence decays exponentially with time since the last reinforcing signal. Half-lives differ by volatility class: volatile facts decay fast, permanent facts slowly.',
     confidence: 0.8 },
   { id: 'sem-entity-resolution', source_type: 'semantic', title: 'Entity resolution prevents fragmentation',
-    content: 'The entity resolver canonicalizes references by exact match, then case-insensitive, then alias, so "AMP" and "Agent Memory Protocol" map to one entity and knowledge does not fragment.',
+    content: 'The entity resolver canonicalizes references by exact match, then case-insensitive, then alias, so "MemBerry" and "Agent Memory Protocol" map to one entity and knowledge does not fragment.',
     confidence: 0.7 },
 
   // ─ Distractors / outdated (should rank low; one invalidated) ─
@@ -588,7 +588,7 @@ export async function runConflictEval(): Promise<ConflictReport> {
 
 async function main() {
   const verbose = process.argv.includes('--verbose');
-  console.log('\n=== AMP Retrieval QUALITY Evaluation ===\n');
+  console.log('\n=== MemBerry Retrieval QUALITY Evaluation ===\n');
   const report = await runQualityEval();
   const conflict = await runConflictEval();
   console.log(`corpus: ${report.corpusSize} docs | queries: ${report.queryCount} | fuse limit: ${FUSE_LIMIT}\n`);

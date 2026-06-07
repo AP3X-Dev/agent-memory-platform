@@ -1,5 +1,5 @@
 // packages/arch/src/types.ts
-// Architectural graph types — additive to @amp/core Entity types.
+// Architectural graph types — additive to @memberry/core Entity types.
 
 // === Entity categories ===
 

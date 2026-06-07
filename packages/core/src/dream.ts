@@ -85,7 +85,7 @@ const DREAM_CONFIDENCE = 0.3;     // low: a guess, not a known fact
 const CARD_MARKER = '<!-- amp:card auto-generated -->';
 const CARD_MAX_CHARS = 900;
 
-const DREAM_SYSTEM_PROMPT = `You are AMP's background reasoning ("dream") agent. Given what is already known about an entity, propose ABDUCTIVE hypotheses: plausible additional facts that would best explain or connect the known facts. These are guesses to be confirmed later, not assertions.
+const DREAM_SYSTEM_PROMPT = `You are MemBerry's background reasoning ("dream") agent. Given what is already known about an entity, propose ABDUCTIVE hypotheses: plausible additional facts that would best explain or connect the known facts. These are guesses to be confirmed later, not assertions.
 
 Rules:
 - Each hypothesis is a subject-predicate-object triple ABOUT the given entity (use the entity name as the subject).

@@ -1,9 +1,9 @@
 // packages/mcp/src/bootstrap.ts
 // Wires up Redis, Neo4j, embedding, and core services from environment variables.
 
-import { DistributedLock, ProposalStore } from '@amp/redis';
-import { initSchema, SemanticStore, ProvenanceTraversal } from '@amp/neo4j';
-import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine } from '@amp/core';
+import { DistributedLock, ProposalStore } from '@memberry/redis';
+import { initSchema, SemanticStore, ProvenanceTraversal } from '@memberry/neo4j';
+import { ConsolidationEngine, BootstrapGraphService, createCoreServices, buildDreamEngine, readEnv } from '@memberry/core';
 import { setServiceInstances } from './tools.js';
 import {
   initResearchSchema,
@@ -14,7 +14,7 @@ import {
   ContradictionDetector,
   ResearchConsolidation,
   setResearchServiceInstances,
-} from '@amp/research';
+} from '@memberry/research';
 import {
   initArchSchema,
   ArchEntityStore,
@@ -24,7 +24,7 @@ import {
   DriftDetector,
   ArchContextBuilder,
   setArchServiceInstances,
-} from '@amp/arch';
+} from '@memberry/arch';
 import {
   initCodeSchema,
   CodeIndexer,
@@ -33,12 +33,12 @@ import {
   CodeWatcher,
   extractFilePaths,
   setCodeServiceInstances,
-} from '@amp/code';
+} from '@memberry/code';
 import {
   UnifiedAssembler,
   FeedbackTracker,
   setRetrievalServiceInstances,
-} from '@amp/retrieval';
+} from '@memberry/retrieval';
 import {
   WikiCompiler,
   IngestionService,
@@ -47,8 +47,8 @@ import {
   DefaultDocumentConverter,
   CachingDocumentConverter,
   setWikiServiceInstances,
-} from '@amp/wiki';
-import type { CompileInput, CompileV2Result } from '@amp/wiki';
+} from '@memberry/wiki';
+import type { CompileInput, CompileV2Result } from '@memberry/wiki';
 import {
   initGraphSchema,
   GraphSnapshotService,
@@ -57,7 +57,7 @@ import {
   PrImpactService,
   GitHubCliProvider,
   setGraphServiceInstances,
-} from '@amp/graph';
+} from '@memberry/graph';
 
 export interface BootstrapHandles {
   /** Call to disconnect Redis and Neo4j cleanly. */
@@ -70,10 +70,10 @@ export async function bootstrap(): Promise<BootstrapHandles> {
   const neo4jPassword = process.env['NEO4J_PASSWORD'] ?? '';
   const redisUrl = process.env['REDIS_URL'] ?? 'redis://localhost:6379';
   const openaiKey = process.env['OPENAI_API_KEY'] ?? '';
-  const exportPath = process.env['AMP_EXPORT_PATH'] ?? './.amp';
+  const exportPath = readEnv('MEMBERRY_EXPORT_PATH') ?? './.amp';
 
   // Build the shared core load/store kit through the single construction path
-  // used by both the MCP server and the CLI hook commands (@amp/core
+  // used by both the MCP server and the CLI hook commands (@memberry/core
   // services-factory). The factory builds clients lazily and does not own the
   // schema lifecycle — the server connects-and-verifies below.
   const core = createCoreServices({ neo4jUri, neo4jUser, neo4jPassword, redisUrl, openaiKey, exportPath });
@@ -94,11 +94,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   // Connect-and-verify + initialise schema (idempotent).
   await redis.ping();
-  console.error('[amp-mcp] Redis connected');
+  console.error('[memberry-mcp] Redis connected');
   await driver.getServerInfo();
-  console.error('[amp-mcp] Neo4j connected');
+  console.error('[memberry-mcp] Neo4j connected');
   await initSchema(driver);
-  console.error('[amp-mcp] Neo4j schema verified');
+  console.error('[memberry-mcp] Neo4j schema verified');
 
   // Services the MCP server needs beyond the core load/store kit.
   const semantic = new SemanticStore(driver);
@@ -116,7 +116,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
 
   if (!openaiKey) {
     status.degraded.push('embeddings: zero vectors (no OPENAI_API_KEY)');
-    console.error('[amp-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings. Vector search will return random results.');
+    console.error('[memberry-mcp] WARNING: No OPENAI_API_KEY — using zero embeddings. Vector search will return random results.');
   }
 
   const consolidationEngine = new ConsolidationEngine(
@@ -161,11 +161,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     provenance: provenanceTraversal,
   });
 
-  console.error('[amp-mcp] Memory block and fact services initialized');
+  console.error('[memberry-mcp] Memory block and fact services initialized');
 
   // ─── Research services ─────────────────────────────────────────────────────
   await initResearchSchema(driver);
-  console.error('[amp-mcp] Research schema verified');
+  console.error('[memberry-mcp] Research schema verified');
 
   const experimentStore = new ExperimentStore(driver);
   const campaignStore = new CampaignStore(driver);
@@ -183,11 +183,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     researchConsolidation,
   });
 
-  console.error('[amp-mcp] Research services initialized');
+  console.error('[memberry-mcp] Research services initialized');
 
   // ─── Arch services ─────────────────────────────────────────────────────────
   await initArchSchema(driver);
-  console.error('[amp-mcp] Arch schema verified');
+  console.error('[memberry-mcp] Arch schema verified');
 
   const archEntityStore = new ArchEntityStore(driver);
   const aspectStore = new AspectStore(driver);
@@ -205,11 +205,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     archContextBuilder,
   });
 
-  console.error('[amp-mcp] Arch services initialized');
+  console.error('[memberry-mcp] Arch services initialized');
 
   // ─── Code intelligence services ────────────────────────────────────────────
   await initCodeSchema(driver);
-  console.error('[amp-mcp] Code schema verified');
+  console.error('[memberry-mcp] Code schema verified');
 
   const codeIndexerService = new CodeIndexer(driver);
   const symbolStoreService = new SymbolStore(driver);
@@ -240,7 +240,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     codeWatcher: codeWatcherService,
   });
 
-  // Inject codeIndexer into core tools so amp_ingest_codebase can use it
+  // Inject codeIndexer into core tools so berry_ingest_codebase can use it
   setServiceInstances({
     ampService,
     consolidationEngine: consolidationAdapter,
@@ -251,7 +251,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     codeIndexer: codeIndexerService,
   });
 
-  console.error('[amp-mcp] Code services initialized');
+  console.error('[memberry-mcp] Code services initialized');
 
   // ─── Retrieval services ────────────────────────────────────────────────────
   const feedbackRedis = {
@@ -286,7 +286,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     feedbackTracker: feedbackTrackerService,
   });
 
-  console.error('[amp-mcp] Retrieval services initialized');
+  console.error('[memberry-mcp] Retrieval services initialized');
 
   // ─── Wiki services ─────────────────────────────────────────────────────────
   // WikiCompiler.compile() accepts outputDir plus an optional project tag; the
@@ -310,11 +310,11 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     editReconciler: editReconcilerInstance,
   });
 
-  console.error('[amp-mcp] Wiki services initialized');
+  console.error('[memberry-mcp] Wiki services initialized');
 
   // ─── Graph analytics services ──────────────────────────────────────────────
   await initGraphSchema(driver);
-  console.error('[amp-mcp] Graph schema verified');
+  console.error('[memberry-mcp] Graph schema verified');
 
   const graphSnapshotService = new GraphSnapshotService(driver);
   const graphReportService = new GraphReportService(graphSnapshotService);
@@ -328,15 +328,15 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     prImpactService,
   });
 
-  console.error('[amp-mcp] Graph services initialized');
+  console.error('[memberry-mcp] Graph services initialized');
 
   if (status.degraded.length > 0) {
-    console.error(`[amp-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);
+    console.error(`[memberry-mcp] DEGRADED MODE — ${status.degraded.length} issue(s):`);
     for (const issue of status.degraded) {
       console.error(`  - ${issue}`);
     }
   } else {
-    console.error('[amp-mcp] All services initialized — fully operational');
+    console.error('[memberry-mcp] All services initialized — fully operational');
   }
 
   return {

@@ -1,6 +1,6 @@
 // packages/redis/src/__tests__/proposals.test.ts
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
-import type { ConsolidationProposal } from '@amp/core';
+import type { ConsolidationProposal } from '@memberry/core';
 import { createRedisClient } from '../client.js';
 import { ProposalStore } from '../proposals.js';
 

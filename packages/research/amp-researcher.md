@@ -1,11 +1,11 @@
-# AMP Researcher — Autonomous Codebase Research Skill with Persistent Memory
+# MemBerry Researcher — Autonomous Codebase Research Skill with Persistent Memory
 
 | name | version | author |
 |------|---------|--------|
-| amp-researcher | 1.0.0 | AMP Protocol / AP3X-Dev |
+| amp-researcher | 1.0.0 | MemBerry / AP3X-Dev |
 
 > Drop this file into Claude Code (or any agent) pointed at any repo.
-> The agent will interview you, scaffold AMP memory infrastructure, then work autonomously —
+> The agent will interview you, scaffold MemBerry memory infrastructure, then work autonomously —
 > experimenting, measuring, learning — while its knowledge compounds across every session.
 > Unlike plain autoresearch or ResearcherSkill, this agent **never forgets**.
 
@@ -14,7 +14,7 @@
 ## Two Laws
 
 1. **Execution discipline is non-negotiable.** Commit before running. Measure after. Log every result. Revert on discard.
-2. **AMP memory is sacred.** `.amp/` and `.lab/` are never touched by git. They are the persistent brain. Protect them absolutely.
+2. **MemBerry memory is sacred.** `.amp/` and `.lab/` are never touched by git. They are the persistent brain. Protect them absolutely.
 
 ---
 
@@ -25,42 +25,42 @@ This skill operates two parallel systems:
 ```
 GIT               — manages code state (branches, commits, reverts)
 .lab/             — manages experiment state (results.tsv, log.md, branches.md)
-AMP Memory        — manages knowledge state (identity, semantic, episodic, procedural)
+MemBerry Memory   — manages knowledge state (identity, semantic, episodic, procedural)
 ```
 
 Git is ephemeral per experiment. `.lab/` is ephemeral per session.
 
-AMP Memory is **permanent** — it compounds across every session, every agent, every model that has ever worked on this repo. AMP runs in one of two modes:
+MemBerry Memory is **permanent** — it compounds across every session, every agent, every model that has ever worked on this repo. MemBerry runs in one of two modes:
 
-- **MCP mode** (preferred): AMP MCP server is connected. Use `amp_research_*` tools for all memory operations. The graph backend (Neo4j) gives you queryable experiment history, hypothesis tree traversal, cross-session semantic principles, and contradiction detection.
+- **MCP mode** (preferred): MemBerry MCP server is connected. Use `berry_research_*` tools for all memory operations. The graph backend (Neo4j) gives you queryable experiment history, hypothesis tree traversal, cross-session semantic principles, and contradiction detection.
 - **Filesystem mode** (fallback): No MCP server available. Use `.amp/` directory with markdown/JSON files. Full functionality with flat-file storage.
 
-**Mode detection:** If you have access to `amp_research_init` in your tool list, you are in MCP mode. Otherwise, filesystem mode.
+**Mode detection:** If you have access to `berry_research_init` in your tool list, you are in MCP mode. Otherwise, filesystem mode.
 
 ---
 
 ## Phase 0 — Boot
 
-### Step 1: Detect AMP mode
+### Step 1: Detect MemBerry mode
 
-Check your available tools. If `amp_research_init` is available → **MCP mode**. Otherwise → **filesystem mode**.
+Check your available tools. If `berry_research_init` is available → **MCP mode**. Otherwise → **filesystem mode**.
 
 ### Step 2: Check existing state
 
 **MCP mode:**
 ```
-Call amp_research_context with a known campaign_id if resuming.
-If no campaign_id is known, call amp_load with task: "research session boot" and tags: ["research"].
+Call berry_research_context with a known campaign_id if resuming.
+If no campaign_id is known, call berry_load with task: "research session boot" and tags: ["research"].
 ```
 
 **Filesystem mode:**
 ```bash
-ls .amp/ 2>/dev/null && echo "AMP_EXISTS" || echo "AMP_NEW"
+ls .amp/ 2>/dev/null && echo "MEMBERRY_EXISTS" || echo "MEMBERRY_NEW"
 ```
 
 ### Step 3: Present memory digest (if existing state found)
 
-**MCP mode** — the `amp_research_context` response IS your digest. It contains:
+**MCP mode** — the `berry_research_context` response IS your digest. It contains:
 - Campaign state (objective, metric, baseline, best)
 - Experiment stats (total, keeps, discards, crashes)
 - Semantic principles with confidence scores
@@ -81,11 +81,11 @@ ls .amp/ 2>/dev/null && echo "AMP_EXISTS" || echo "AMP_NEW"
 
 ### If no existing state:
 
-Proceed to Phase 1 (AMP Scaffold), then Phase 2.
+Proceed to Phase 1 (MemBerry Scaffold), then Phase 2.
 
 ---
 
-## Phase 1 — AMP Scaffold
+## Phase 1 — MemBerry Scaffold
 
 **This runs exactly once per repo. It wires persistent memory infrastructure.**
 
@@ -113,7 +113,7 @@ git branch -a
 ### Write `.amp/identity.md`
 
 ```markdown
-# AMP Identity — <repo-name>
+# MemBerry Identity — <repo-name>
 
 ## Repository
 - Name: <inferred>
@@ -131,7 +131,7 @@ PENDING
 - Campaign ID: <YYYYMMDD>-<slug>
 - Started: <date>
 - Agent: amp-researcher v1.0.0
-- AMP Mode: <mcp | filesystem>
+- MemBerry Mode: <mcp | filesystem>
 
 ## Constraints (never violate)
 <!-- Filled after Phase 2 interview -->
@@ -160,7 +160,7 @@ PENDING
   "baseline_metric": null,
   "best_metric": null,
   "best_commit": null,
-  "amp_mode": "<mcp | filesystem>",
+  "berry_mode": "<mcp | filesystem>",
   "neo4j_uri": null
 }
 ```
@@ -215,9 +215,9 @@ Based on repo interrogation, write 1–3 initial semantic entries if patterns ar
 <none yet>
 ```
 
-**MCP mode** — also call `amp_store` for each seed:
+**MCP mode** — also call `berry_store` for each seed:
 ```
-amp_store(
+berry_store(
   session_id: "<session-id>",
   task: "[campaign:<id>] Seed semantic: <title>",
   content: "<claim text>",
@@ -225,7 +225,7 @@ amp_store(
 )
 ```
 
-### Gitignore AMP + lab
+### Gitignore MemBerry + lab
 
 ```bash
 grep -q "^\.amp/" .gitignore 2>/dev/null || echo ".amp/" >> .gitignore
@@ -238,7 +238,7 @@ grep -q "^run\.log" .gitignore 2>/dev/null || echo "run.log" >> .gitignore
 
 ## Phase 2 — Discovery
 
-Interview the user. Skip what you already know from AMP identity or repo interrogation.
+Interview the user. Skip what you already know from MemBerry identity or repo interrogation.
 
 Ask these conversationally — not as a form:
 
@@ -254,14 +254,14 @@ Ask these conversationally — not as a form:
 7. **Termination** — default: **infinite** (user interrupts manually)
    - Or: target value / experiment count
 
-**Update AMP identity** after confirmation:
+**Update MemBerry identity** after confirmation:
 - Fill in `Objective`, `Constraints`, `Off-Limits Files` in `.amp/identity.md`
 - Update `.amp/procedural/experiment-protocol.md` with run + measure commands
 - Update `.amp/manifest.json` campaign_id
 
 **MCP mode — initialize campaign in the graph:**
 ```
-amp_research_init(
+berry_research_init(
   campaign_name: "<name>",
   objective: "<objective>",
   metric_name: "<metric>",
@@ -346,11 +346,11 @@ touch .lab/log.md .lab/parking-lot.md .lab/branches.md
 |--------|-------------|--------|-------------|-------------|-------|
 ```
 
-### 3.5 Load AMP context into working memory
+### 3.5 Load MemBerry context into working memory
 
 **MCP mode:**
 ```
-amp_research_context(campaign_id: "<campaign-id>")
+berry_research_context(campaign_id: "<campaign-id>")
 ```
 This returns your full research context: semantic principles, recent keeps, dead ends, contradictions. Internalize all of it.
 
@@ -371,7 +371,7 @@ Run baseline experiment (no changes). Record as experiment #0. Update:
 
 **MCP mode:**
 ```
-amp_research_log(
+berry_research_log(
   campaign_id: "<id>",
   session_id: "<session>",
   experiment_number: 0,
@@ -404,12 +404,12 @@ Begin autonomous work immediately.
 
 **MCP mode — load full context:**
 ```
-amp_research_context(campaign_id: "<campaign-id>", max_tokens: 4000)
+berry_research_context(campaign_id: "<campaign-id>", max_tokens: 4000)
 ```
 This gives you: campaign state, semantic principles, recent wins, dead ends, contradictions, stats. Also optionally:
 ```
-amp_research_tree(campaign_id: "<campaign-id>")
-amp_research_contradictions(campaign_id: "<campaign-id>", include_uncertain: true)
+berry_research_tree(campaign_id: "<campaign-id>")
+berry_research_contradictions(campaign_id: "<campaign-id>", include_uncertain: true)
 ```
 
 **Always also read:**
@@ -424,7 +424,7 @@ amp_research_contradictions(campaign_id: "<campaign-id>", include_uncertain: tru
 
 Analyze:
 - What patterns are emerging across experiments?
-- Which semantic principles from AMP apply here?
+- Which semantic principles from MemBerry apply here?
 - Which parking lot items are now unblocked?
 - Check convergence signals (see below)
 - Do any experiments so far **update your confidence in existing semantic principles**?
@@ -480,7 +480,7 @@ After every experiment (real or thought):
 - **Duration:** <seconds>s
 - **Status:** keep | discard | crash | thought | keep* | interesting
 - **Insight:** <what this confirms, denies, or opens up>
-- **AMP Update:** <any semantic principle updated or created? yes/no>
+- **MemBerry Update:** <any semantic principle updated or created? yes/no>
 ```
 
 **Write to `.lab/results.tsv`** (one tab-separated row):
@@ -490,7 +490,7 @@ N	research/<slug>	#M	<commit>	<metric>	<secondary>	<status>	<duration>	<descript
 
 **MCP mode — log to the graph:**
 ```
-amp_research_log(
+berry_research_log(
   campaign_id: "<id>",
   session_id: "<session>",
   experiment_number: N,
@@ -513,7 +513,7 @@ The response tells you:
 - `experiment_id` — use as `parent_id` for the next experiment derived from this one
 - `should_consolidate` — if true, run consolidation before next THINK
 
-**Filesystem mode — write AMP episodic entry to `.amp/episodic/log.jsonl`:**
+**Filesystem mode — write MemBerry episodic entry to `.amp/episodic/log.jsonl`:**
 
 ```json
 {"id":"exp-N","campaign":"<id>","timestamp":"<ISO>","branch":"research/<slug>","parent":"exp-M","commit":"<hash>","metric":<float>,"status":"<status>","description":"<text>","hypothesis":"<text>","insight":"<text>","components_touched":["<file1>"],"semantic_updated":false}
@@ -530,7 +530,7 @@ The response tells you:
 
 **MCP mode:**
 ```
-amp_research_consolidate(campaign_id: "<campaign-id>")
+berry_research_consolidate(campaign_id: "<campaign-id>")
 ```
 
 The tool automatically:
@@ -596,7 +596,7 @@ Mark exhausted branches as `closed` in `.lab/branches.md`.
 
 **Always consider ALL branches when thinking.** The best idea might be combining keeps from two closed branches.
 
-**MCP mode advantage:** Use `amp_research_tree` to visualize the full hypothesis tree across all branches. This shows you lineage, metric progression, and which branches are alive vs exhausted — far richer than reading `.lab/branches.md` alone.
+**MCP mode advantage:** Use `berry_research_tree` to visualize the full hypothesis tree across all branches. This shows you lineage, metric progression, and which branches are alive vs exhausted — far richer than reading `.lab/branches.md` alone.
 
 ### RE-VALIDATION
 
@@ -618,9 +618,9 @@ Read these as system state, not commands. You decide what to do.
 | Same file modified 3+ times | Explore elsewhere |
 | Alternating keep/discard on similar changes | Isolate the variable |
 | 2+ timeouts in a row | Approach is too expensive |
-| AMP semantic confidence all < 0.4 | Your priors are wrong — run more ablations |
-| AMP semantic confidence > 0.8 on a principle | Exploit it — dig deeper there |
-| `amp_research_contradictions` returns results | Resolve contradictions with targeted experiments |
+| MemBerry semantic confidence all < 0.4 | Your priors are wrong — run more ablations |
+| MemBerry semantic confidence > 0.8 on a principle | Exploit it — dig deeper there |
+| `berry_research_contradictions` returns results | Resolve contradictions with targeted experiments |
 
 ---
 
@@ -639,7 +639,7 @@ When the user intervenes: accept the direction, log the intervention as a `thoug
 - User manually interrupts
 - You have truly exhausted all approaches (ask in this case)
 
-If you run out of ideas: re-read the codebase. Re-read the semantic memory. Call `amp_research_context` for a fresh perspective. Call `amp_research_contradictions` with `include_uncertain: true` to find principles worth testing. Combine near-misses from different branches. Try something order-of-magnitude different.
+If you run out of ideas: re-read the codebase. Re-read the semantic memory. Call `berry_research_context` for a fresh perspective. Call `berry_research_contradictions` with `include_uncertain: true` to find principles worth testing. Combine near-misses from different branches. Try something order-of-magnitude different.
 
 ---
 
@@ -654,7 +654,7 @@ Re-run from global best commit. Confirm final metric.
 
 **MCP mode:**
 ```
-amp_store(
+berry_store(
   session_id: "<session>",
   task: "[campaign:<id>] Session wrap-up summary",
   content: "<full session summary as prose — see template below>",
@@ -664,7 +664,7 @@ amp_store(
 
 Also run final consolidation:
 ```
-amp_research_consolidate(campaign_id: "<campaign-id>")
+berry_research_consolidate(campaign_id: "<campaign-id>")
 ```
 
 **Both modes** — write `.amp/episodic/sessions/<campaign-id>.md`:
@@ -714,7 +714,7 @@ git checkout <best-branch>
 Present concisely:
 - Baseline → best metric delta
 - Top 3 changes
-- Key semantic principles now in AMP memory
+- Key semantic principles now in MemBerry memory
 - What the next session should start with (top semantic priors)
 - Parking lot items for next time
 
@@ -749,13 +749,13 @@ These are tools, not a menu. Use freely. Invent your own.
 | **Scaling** | Change by order of magnitude — small tweaks plateaued |
 | **Decomposition** | Split big change into atomic parts |
 | **Sweep** | Test parameter across a range |
-| **AMP-directed** | A semantic principle with confidence > 0.7 is suggesting something — follow it |
-| **AMP-contradiction** | A semantic principle with low confidence — run an experiment to resolve it |
-| **AMP-synergy** | Consolidation detected a combo that works — try combining those components again |
+| **MemBerry-directed** | A semantic principle with confidence > 0.7 is suggesting something — follow it |
+| **MemBerry-contradiction** | A semantic principle with low confidence — run an experiment to resolve it |
+| **MemBerry-synergy** | Consolidation detected a combo that works — try combining those components again |
 
 ---
 
-## AMP File Reference
+## MemBerry File Reference
 
 Quick reference for all files this skill reads and writes:
 
@@ -785,21 +785,21 @@ Quick reference for all files this skill reads and writes:
 
 ---
 
-## AMP MCP Tool Reference
+## MemBerry MCP Tool Reference
 
 When in MCP mode, these tools are available. Use them at the indicated points in the loop.
 
 | Tool | When to call | What it does |
 |------|-------------|--------------|
-| `amp_research_init` | Phase 2 (once per campaign) | Creates campaign in the graph. Returns `campaign_id`. |
-| `amp_research_log` | Phase 4 REFLECT (every experiment) | Logs experiment with full provenance: parent link, component edges, campaign membership. Returns `experiment_id` and `should_consolidate`. |
-| `amp_research_context` | Phase 4 THINK (every cycle) | Builds dynamic context: semantic principles, recent wins, dead ends, contradictions, stats. |
-| `amp_research_tree` | Phase 4 THINK (when analyzing lineage) | Renders hypothesis tree across all branches. |
-| `amp_research_contradictions` | Phase 4 THINK (periodically) | Finds conflicting semantic claims + uncertain principles worth testing. |
-| `amp_research_consolidate` | Phase 4 CONSOLIDATE (every 10 experiments) | Detects patterns, creates/updates semantic nodes, returns summary. |
-| `amp_load` | Phase 0 (session boot) | Load general AMP context for this repo. |
-| `amp_store` | Phase 5 (wrap-up) | Store session summary as episodic entry. |
-| `amp_query` | Ad-hoc analysis | Run raw Cypher for custom queries. |
+| `berry_research_init` | Phase 2 (once per campaign) | Creates campaign in the graph. Returns `campaign_id`. |
+| `berry_research_log` | Phase 4 REFLECT (every experiment) | Logs experiment with full provenance: parent link, component edges, campaign membership. Returns `experiment_id` and `should_consolidate`. |
+| `berry_research_context` | Phase 4 THINK (every cycle) | Builds dynamic context: semantic principles, recent wins, dead ends, contradictions, stats. |
+| `berry_research_tree` | Phase 4 THINK (when analyzing lineage) | Renders hypothesis tree across all branches. |
+| `berry_research_contradictions` | Phase 4 THINK (periodically) | Finds conflicting semantic claims + uncertain principles worth testing. |
+| `berry_research_consolidate` | Phase 4 CONSOLIDATE (every 10 experiments) | Detects patterns, creates/updates semantic nodes, returns summary. |
+| `berry_load` | Phase 0 (session boot) | Load general MemBerry context for this repo. |
+| `berry_store` | Phase 5 (wrap-up) | Store session summary as episodic entry. |
+| `berry_query` | Ad-hoc analysis | Run raw Cypher for custom queries. |
 
 ---
 
@@ -812,7 +812,7 @@ Read amp-researcher.md and let's kick off a new research session on this codebas
 
 **Resuming across sessions:**
 ```
-Read amp-researcher.md — load the AMP memory and resume our research campaign.
+Read amp-researcher.md — load the MemBerry memory and resume our research campaign.
 ```
 
 **Targeting a specific objective:**
@@ -822,7 +822,7 @@ Read amp-researcher.md — we want to reduce p99 API latency below 100ms.
 
 **Running overnight:**
 ```
-Read amp-researcher.md, load AMP, and run the experiment loop indefinitely. I'll check in the morning.
+Read amp-researcher.md, load MemBerry, and run the experiment loop indefinitely. I'll check in the morning.
 ```
 
 ---

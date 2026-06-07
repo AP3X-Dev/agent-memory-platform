@@ -4,7 +4,7 @@
  * Neo4j returns every `count(...)`, `size(...)`, degree, and integer property as
  * a BigInt-like `neo4j.Integer` object — NOT a JS number. Doing arithmetic on
  * the raw object yields `NaN` / `"[object Object]"`. Every integer read from
- * Neo4j in @amp/graph MUST pass through this helper before arithmetic.
+ * Neo4j in @memberry/graph MUST pass through this helper before arithmetic.
  *
  * Mirrors the established convention at
  * `packages/code/src/symbol-store.ts:367` and `packages/wiki/src/lint.ts:88-91`.

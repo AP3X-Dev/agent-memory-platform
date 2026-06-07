@@ -1,6 +1,6 @@
 // packages/research/src/tools.ts
 // MCP tool definitions for the research domain.
-// These are registered alongside the core AMP tools.
+// These are registered alongside the core MemBerry tools.
 
 import { z } from 'zod';
 import { nanoid } from 'nanoid';
@@ -84,12 +84,12 @@ export function setResearchServiceInstances(services: {
 // ─── Tool names ──────────────────────────────────────────────────────────────
 
 export const RESEARCH_TOOL_NAMES = [
-  'amp_research_init',
-  'amp_research_log',
-  'amp_research_context',
-  'amp_research_tree',
-  'amp_research_contradictions',
-  'amp_research_consolidate',
+  'berry_research_init',
+  'berry_research_log',
+  'berry_research_context',
+  'berry_research_tree',
+  'berry_research_contradictions',
+  'berry_research_consolidate',
 ] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
@@ -106,7 +106,7 @@ const ResearchInitSchema = {
 };
 
 const ResearchLogSchema = {
-  campaign_id: z.string().max(200).describe('Campaign ID from amp_research_init'),
+  campaign_id: z.string().max(200).describe('Campaign ID from berry_research_init'),
   session_id: z.string().max(200).describe('Session identifier for this agent session'),
   experiment_number: z.number().int().nonnegative().describe('Sequential experiment number (0 = baseline)'),
   branch: z.string().max(500).describe('Git branch name'),
@@ -158,13 +158,13 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 export function registerResearchTools(server: McpServer): RegisteredTool[] {
   const handles: RegisteredTool[] = [];
 
-  // ─── amp_research_init ──────────────────────────────────────────────────
+  // ─── berry_research_init ──────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_init',
+    'berry_research_init',
     'Initialize a new research campaign. Creates campaign entity and returns campaign_id. Call once at the start of a new research session.',
     ResearchInitSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!campaignStore) throw new Error('Research services not initialised');
@@ -204,13 +204,13 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_research_log ───────────────────────────────────────────────────
+  // ─── berry_research_log ───────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_log',
+    'berry_research_log',
     'Log an experiment result. Creates an Experiment node in the graph with full provenance: parent link, component edges, campaign membership. Returns experiment ID and whether consolidation should run.',
     ResearchLogSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!experimentStore || !campaignStore) throw new Error('Research services not initialised');
@@ -304,9 +304,9 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_research_context ────────────────────────────────────────────────
+  // ─── berry_research_context ────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_context',
+    'berry_research_context',
     'Build dynamic research context for the THINK phase. Returns assembled markdown with: campaign state, semantic principles, recent wins, dead ends, contradictions, and experiment stats.',
     ResearchContextSchema,
     { readOnlyHint: true } satisfies ToolAnnotations,
@@ -317,9 +317,9 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_research_tree ──────────────────────────────────────────────────
+  // ─── berry_research_tree ──────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_tree',
+    'berry_research_tree',
     'Query the hypothesis tree for a campaign. Returns an indented markdown visualization of the experiment lineage. Optionally filter by component or status.',
     ResearchTreeSchema,
     { readOnlyHint: true } satisfies ToolAnnotations,
@@ -341,9 +341,9 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_research_contradictions ────────────────────────────────────────
+  // ─── berry_research_contradictions ────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_contradictions',
+    'berry_research_contradictions',
     'Find conflicting semantic principles in a campaign. Also optionally returns low-confidence principles that need experiments to resolve uncertainty.',
     ResearchContradictionsSchema,
     { readOnlyHint: true } satisfies ToolAnnotations,
@@ -362,13 +362,13 @@ export function registerResearchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_research_consolidate ───────────────────────────────────────────
+  // ─── berry_research_consolidate ───────────────────────────────────────────
   handles.push(server.tool(
-    'amp_research_consolidate',
+    'berry_research_consolidate',
     'Run research-specific consolidation. Detects patterns in experiment history (component leverage, exhausted directions, crash patterns, combo synergies) and creates/updates semantic nodes. Call every 10 experiments or on session wrap-up.',
     ResearchConsolidateSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
-    // ("typedHandler is not a function"). See ANN_WRITE note in @amp/mcp tools.ts.
+    // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
     async (args) => {
       if (!researchConsolidation || !campaignStore) throw new Error('Research services not initialised');

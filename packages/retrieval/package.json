@@ -1,5 +1,5 @@
 {
-  "name": "@amp/retrieval",
+  "name": "@memberry/retrieval",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -11,10 +11,10 @@
     "bench:quality": "tsx bench/quality-eval.ts"
   },
   "dependencies": {
-    "@amp/arch": "*",
-    "@amp/code": "*",
-    "@amp/core": "*",
-    "@amp/redis": "*",
+    "@memberry/arch": "*",
+    "@memberry/code": "*",
+    "@memberry/core": "*",
+    "@memberry/redis": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "neo4j-driver": "^5.27.0",
     "zod": "^3.23.0"

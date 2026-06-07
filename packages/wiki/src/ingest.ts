@@ -1,12 +1,12 @@
 // packages/wiki/src/ingest.ts
-// Ingests raw source documents into the AMP graph as Source nodes,
+// Ingests raw source documents into the MemBerry graph as Source nodes,
 // Entity nodes, and Semantic nodes with CITES/ABOUT relationships.
 
 import neo4j, { type Driver } from 'neo4j-driver';
 import { readFile } from 'node:fs/promises';
 import { basename, extname } from 'node:path';
 import { nanoid } from 'nanoid';
-import type { ExtractionProvider } from '@amp/core';
+import type { ExtractionProvider } from '@memberry/core';
 import type { IngestInput, IngestResult } from './types.js';
 import { needsConversion, type DocumentConverter } from './document-converter.js';
 

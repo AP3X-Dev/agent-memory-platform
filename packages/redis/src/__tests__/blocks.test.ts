@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { createRedisClient } from '../client.js';
 import { BlockStore } from '../blocks.js';
-import type { MemoryBlock } from '@amp/core';
+import type { MemoryBlock } from '@memberry/core';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 

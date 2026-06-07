@@ -2,7 +2,7 @@
 //
 // Shared chat-completion client. Before this existed, the only LLM call in the
 // codebase was extractFacts() in extract.ts (ad-hoc `new OpenAI()` with a
-// hardcoded model). The dialectic tool (amp_ask) and the dream pass both need an
+// hardcoded model). The dialectic tool (berry_ask) and the dream pass both need an
 // LLM call, so this gives them one place to do it with per-task model selection
 // and transient-error retry. Callers must degrade gracefully when no API key is
 // configured: use NullLlmClient (available === false) instead of throwing here.

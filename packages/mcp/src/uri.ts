@@ -6,37 +6,42 @@ export interface AmpUri {
 }
 
 /**
- * Parse an AMP URI of the form:
- *   amp://entity/ClientX
- *   amp://tag/brand-voice
+ * Parse a MemBerry URI of the form:
+ *   memberry://entity/ClientX
+ *   memberry://tag/brand-voice
+ *
+ * The legacy `memberry://` scheme is still accepted so existing MWP stage
+ * CONTEXT.md files keep resolving after the rebrand.
  *
  * Throws on invalid URIs.
  */
+const URI_PREFIXES = ['memberry://', 'amp://'] as const;
+
 export function parseAmpUri(uri: string): AmpUri {
   if (!uri || typeof uri !== 'string') {
-    throw new Error(`Invalid AMP URI: ${uri}`);
+    throw new Error(`Invalid MemBerry URI: ${uri}`);
   }
 
-  const AMP_PREFIX = 'amp://';
-  if (!uri.startsWith(AMP_PREFIX)) {
-    throw new Error(`Invalid AMP URI — must start with "amp://": ${uri}`);
+  const prefix = URI_PREFIXES.find((p) => uri.startsWith(p));
+  if (!prefix) {
+    throw new Error(`Invalid MemBerry URI — must start with "memberry://" (legacy "amp://" also accepted): ${uri}`);
   }
 
-  const rest = uri.slice(AMP_PREFIX.length);
+  const rest = uri.slice(prefix.length);
   const slashIdx = rest.indexOf('/');
   if (slashIdx === -1) {
-    throw new Error(`Invalid AMP URI — missing type/name separator: ${uri}`);
+    throw new Error(`Invalid MemBerry URI — missing type/name separator: ${uri}`);
   }
 
   const type = rest.slice(0, slashIdx);
   const name = rest.slice(slashIdx + 1);
 
   if (type !== 'entity' && type !== 'tag') {
-    throw new Error(`Invalid AMP URI — unknown type "${type}" (must be "entity" or "tag"): ${uri}`);
+    throw new Error(`Invalid MemBerry URI — unknown type "${type}" (must be "entity" or "tag"): ${uri}`);
   }
 
   if (!name || name.trim() === '') {
-    throw new Error(`Invalid AMP URI — name is empty: ${uri}`);
+    throw new Error(`Invalid MemBerry URI — name is empty: ${uri}`);
   }
 
   return { type, name };

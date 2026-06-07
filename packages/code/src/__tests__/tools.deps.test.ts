@@ -21,7 +21,7 @@ function makeSymbol(overrides: Partial<SymbolNode> = {}): SymbolNode {
   };
 }
 
-describe('amp_code_deps tool', () => {
+describe('berry_code_deps tool', () => {
   const symbolStore = {
     getByFile: vi.fn(),
     findByName: vi.fn(),
@@ -59,7 +59,7 @@ describe('amp_code_deps tool', () => {
     };
 
     registerCodeTools(server as never);
-    const deps = registrations.find((registration) => registration.name === 'amp_code_deps');
+    const deps = registrations.find((registration) => registration.name === 'berry_code_deps');
     expect(deps).toBeDefined();
 
     const response = await deps!.handler({

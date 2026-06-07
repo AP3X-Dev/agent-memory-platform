@@ -1,5 +1,5 @@
 {
-  "name": "@amp/core",
+  "name": "@memberry/core",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,11 +9,12 @@
     "test": "vitest run"
   },
   "bin": {
+    "memberry": "dist/cli.js",
     "amp": "dist/cli.js"
   },
   "dependencies": {
-    "@amp/redis": "*",
-    "@amp/neo4j": "*",
+    "@memberry/redis": "*",
+    "@memberry/neo4j": "*",
     "neo4j-driver": "^5.27.0",
     "openai": "^4.0.0",
     "nanoid": "^5.0.0"

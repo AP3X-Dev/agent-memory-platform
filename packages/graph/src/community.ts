@@ -3,7 +3,7 @@
  * snapshot. NO GDS, no external library, no graph writes. Communities are an
  * in-memory analytics OVERLAY: they are surfaced in the report ("Knowledge
  * Areas") and the visual map, but never persisted, so they can never pollute
- * amp_load / retrieval / consolidation (Correction C-07 is sidestepped entirely
+ * berry_load / retrieval / consolidation (Correction C-07 is sidestepped entirely
  * by not writing them).
  *
  * Algorithm: modularity-maximizing local moving (one Louvain level) on the

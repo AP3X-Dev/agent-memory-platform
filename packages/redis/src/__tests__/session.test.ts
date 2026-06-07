@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, beforeEach, afterAll } from 'vitest';
 import { createRedisClient } from '../client.js';
 import { SessionStore } from '../session.js';
-import type { SessionState } from '@amp/core';
+import type { SessionState } from '@memberry/core';
 
 const REDIS_URL = process.env.REDIS_URL || 'redis://localhost:6379';
 

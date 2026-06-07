@@ -1,11 +1,11 @@
 // packages/mcp/src/__tests__/tool-registration.regression.test.ts
 //
-// BUG: amp_store (and every other mutating tool) threw "typedHandler is not a
+// BUG: berry_store (and every other mutating tool) threw "typedHandler is not a
 // function" on every call, while read tools worked. Root cause was NOT the
 // service/connection — it was tool *registration*. Mutating tools were
 // registered with an empty `{}` as the ToolAnnotations argument:
 //
-//     server.tool('amp_store', desc, AmpStoreSchema, {}, handlers.amp_store)
+//     server.tool('berry_store', desc, AmpStoreSchema, {}, handlers.berry_store)
 //
 // The MCP SDK's server.tool() overload parser treats an empty object as a
 // zero-param Zod raw shape (isZodRawShapeCompat({}) === true), so the `{}` is
@@ -16,7 +16,7 @@
 // The existing tools.test.ts exercised buildToolHandlers() directly and so
 // never went through server.tool(), which is why it stayed green. This test
 // goes through the real registration path and asserts every wired handler is
-// callable — guarding the whole class, not just amp_store.
+// callable — guarding the whole class, not just berry_store.
 import { describe, it, expect, beforeEach } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
@@ -59,7 +59,7 @@ function registeredHandlers(server: McpServer): Record<string, unknown> {
 
 describe('tool registration regression (typedHandler is not a function)', () => {
   it('registers every core tool with a callable handler', () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
 
     const handlers = registeredHandlers(server);
@@ -74,26 +74,26 @@ describe('tool registration regression (typedHandler is not a function)', () => 
   });
 
   it('the originally-broken mutating tools have function handlers', () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
     const handlers = registeredHandlers(server);
 
     for (const name of [
-      'amp_store',
-      'amp_memory_insert',
-      'amp_memory_replace',
-      'amp_memory_rewrite',
-      'amp_memory_promote',
-      'amp_consolidate',
+      'berry_store',
+      'berry_memory_insert',
+      'berry_memory_replace',
+      'berry_memory_rewrite',
+      'berry_memory_promote',
+      'berry_consolidate',
     ]) {
       expect(typeof handlers[name], `${name} handler should be a function`).toBe('function');
     }
   });
 
-  it('invoking the registered amp_store handler succeeds (original repro)', async () => {
-    const server = new McpServer({ name: 'amp-mcp-test', version: '0.0.0' });
+  it('invoking the registered berry_store handler succeeds (original repro)', async () => {
+    const server = new McpServer({ name: 'memberry-mcp-test', version: '0.0.0' });
     registerTools(server);
-    const handler = registeredHandlers(server)['amp_store'] as (
+    const handler = registeredHandlers(server)['berry_store'] as (
       args: unknown,
       extra: unknown,
     ) => Promise<{ content: Array<{ text: string }> }>;

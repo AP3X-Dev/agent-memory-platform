@@ -1,6 +1,6 @@
 /**
  * GraphSnapshotService — a deterministic, project-scoped, bounded, secret-safe
- * in-memory view of the AMP Neo4j graph. It is the single choke point every
+ * in-memory view of the MemBerry Neo4j graph. It is the single choke point every
  * later capability (report, export, community detection, PR impact) consumes.
  *
  * Invariants (from the hardened design):

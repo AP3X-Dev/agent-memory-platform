@@ -19,14 +19,14 @@ import {
   ConsolidationQueue,
   DistributedLock,
   BlockStore as RedisBlockStore,
-} from '@amp/redis';
+} from '@memberry/redis';
 import {
   createNeo4jDriver,
   EpisodicStore,
   ScopedQuery,
   FactStore,
   BlockStore as Neo4jBlockStore,
-} from '@amp/neo4j';
+} from '@memberry/neo4j';
 import { AMPService } from './service.js';
 import { MemoryBlockService } from './blocks.js';
 import { OpenAIEmbedding } from './embedding.js';
@@ -34,6 +34,7 @@ import { OpenAiLlmClient, NullLlmClient, type LlmClient } from './llm.js';
 import { KeyedSerialQueue } from './serial-queue.js';
 import { DreamEngine, type DreamGraphLayer, type DreamBlockLayer } from './dream.js';
 import { EMBEDDING_DIM, type EmbeddingProvider, type AMPConfig } from './types.js';
+import { readEnv } from './config/settings.js';
 
 export interface CoreServicesEnv {
   neo4jUri?: string;
@@ -79,7 +80,7 @@ function resolveEnv(env: CoreServicesEnv = {}): Required<CoreServicesEnv> {
     neo4jPassword: env.neo4jPassword ?? process.env['NEO4J_PASSWORD'] ?? '',
     redisUrl: env.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379',
     openaiKey: env.openaiKey ?? process.env['OPENAI_API_KEY'] ?? '',
-    exportPath: env.exportPath ?? process.env['AMP_EXPORT_PATH'] ?? './.amp',
+    exportPath: env.exportPath ?? readEnv('MEMBERRY_EXPORT_PATH') ?? './.amp',
   };
 }
 
@@ -113,11 +114,14 @@ export function createCoreServices(env: CoreServicesEnv = {}): CoreServices {
 
   const embedding: EmbeddingProvider = openaiKey ? new OpenAIEmbedding(openaiKey) : zeroEmbedding();
 
-  // Per-task model overrides from env (AMP_MODEL_*); omitted keys fall back to DEFAULT_MODELS.
+  // Per-task model overrides from env (MEMBERRY_MODEL_*); omitted keys fall back to DEFAULT_MODELS.
   const models: NonNullable<AMPConfig['models']> = {};
-  if (process.env['AMP_MODEL_EXTRACTION']) models.extraction = process.env['AMP_MODEL_EXTRACTION'];
-  if (process.env['AMP_MODEL_SYNTHESIS']) models.synthesis = process.env['AMP_MODEL_SYNTHESIS'];
-  if (process.env['AMP_MODEL_DREAM']) models.dream = process.env['AMP_MODEL_DREAM'];
+  const mExtraction = readEnv('MEMBERRY_MODEL_EXTRACTION');
+  if (mExtraction) models.extraction = mExtraction;
+  const mSynthesis = readEnv('MEMBERRY_MODEL_SYNTHESIS');
+  if (mSynthesis) models.synthesis = mSynthesis;
+  const mDream = readEnv('MEMBERRY_MODEL_DREAM');
+  if (mDream) models.dream = mDream;
 
   const config: AMPConfig = {
     redis: { url: redisUrl },

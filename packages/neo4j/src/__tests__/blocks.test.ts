@@ -2,7 +2,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { createNeo4jDriver } from '../driver.js';
 import { BlockStore } from '../blocks.js';
-import type { MemoryBlock } from '@amp/core';
+import type { MemoryBlock } from '@memberry/core';
 
 const NEO4J_URI = process.env.NEO4J_URI || 'bolt://localhost:7687';
 const NEO4J_USER = process.env.NEO4J_USER || 'neo4j';

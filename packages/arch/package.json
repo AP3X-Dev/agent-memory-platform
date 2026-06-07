@@ -1,5 +1,5 @@
 {
-  "name": "@amp/arch",
+  "name": "@memberry/arch",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,8 +9,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@amp/core": "*",
-    "@amp/neo4j": "*",
+    "@memberry/core": "*",
+    "@memberry/neo4j": "*",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "nanoid": "^5.0.0",
     "neo4j-driver": "^5.27.0",

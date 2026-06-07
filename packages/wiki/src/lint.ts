@@ -48,7 +48,7 @@ async function checkOrphanPages(driver: Driver, projectName: string, thresholds:
       severity: 'warning' as const,
       entity: r.get('name') as string,
       message: `Entity "${r.get('name')}" (${r.get('type')}) has no semantic knowledge about it`,
-      suggestion: 'Add claims about this entity via amp_store or amp_ingest',
+      suggestion: 'Add claims about this entity via berry_store or berry_ingest',
     }));
 
     return { check: 'orphan_pages', issues, passed: issues.length === 0 };
@@ -99,7 +99,7 @@ async function checkBrokenLinks(driver: Driver, projectName: string): Promise<Li
           : `Entity "${name}" is referenced by ${refsNum} semantic node(s) but is not part of any project hierarchy`,
         suggestion: isCrossProject
           ? 'No action needed unless you want to mirror this entity into the current project explicitly'
-          : 'Add this entity to a project via amp_bootstrap or create a CONTAINS relationship',
+          : 'Add this entity to a project via berry_bootstrap or create a CONTAINS relationship',
       };
     });
 

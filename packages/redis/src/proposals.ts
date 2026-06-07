@@ -1,6 +1,6 @@
 // packages/redis/src/proposals.ts
 import type { Redis } from 'ioredis';
-import type { ConsolidationProposal } from '@amp/core';
+import type { ConsolidationProposal } from '@memberry/core';
 
 const DEFAULT_TTL = 604800; // 7 days
 const PENDING_SET = 'amp:proposals:pending';

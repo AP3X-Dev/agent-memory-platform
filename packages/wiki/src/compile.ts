@@ -1,5 +1,5 @@
 // packages/wiki/src/compile.ts
-// V2 compiler: walks the AMP graph and compiles a multi-project wiki with
+// V2 compiler: walks the MemBerry graph and compiles a multi-project wiki with
 // subdirectory layout, episodic history, library, topics, and portal homepage.
 
 import type { Driver } from 'neo4j-driver';

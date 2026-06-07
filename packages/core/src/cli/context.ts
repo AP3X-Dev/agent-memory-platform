@@ -1,6 +1,6 @@
 // packages/core/src/cli/context.ts
 //
-// `amp context materialize` — write/refresh the managed AMP block in a static
+// `memberry context materialize` — write/refresh the managed MemBerry block in a static
 // agent context file (AGENTS.md / .hermes.md). Used by Codex and Hermes, which
 // have no dynamic hook callback.
 
@@ -16,7 +16,7 @@ function asAgent(value: string | boolean | undefined): MaterializeAgent {
 
 export async function runContextCommand(sub: string, flags: Flags): Promise<void> {
   if (sub !== 'materialize') {
-    console.error('Usage: amp context materialize --agent codex|hermes [--file PATH] [--scope project:x] [--task "..."] [--max-tokens N] [--per-dir]');
+    console.error('Usage: memberry context materialize --agent codex|hermes [--file PATH] [--scope project:x] [--task "..."] [--max-tokens N] [--per-dir]');
     process.exit(1);
   }
 
@@ -31,10 +31,10 @@ export async function runContextCommand(sub: string, flags: Flags): Promise<void
   try {
     const result = await materializeContext(core, { agent, file, scopeTag, task, maxTokens, perDir });
     console.log(
-      `Materialized AMP context → ${result.file}\n  scope: ${result.scope}  loaded: ${result.loaded}  bytes: ${result.bytes}`,
+      `Materialized MemBerry context → ${result.file}\n  scope: ${result.scope}  loaded: ${result.loaded}  bytes: ${result.bytes}`,
     );
     if (!result.loaded) {
-      console.error('Warning: AMP was unreachable; wrote a placeholder block. Re-run once AMP is up.');
+      console.error('Warning: MemBerry was unreachable; wrote a placeholder block. Re-run once MemBerry is up.');
     }
   } finally {
     await core.close();

@@ -6,9 +6,9 @@
 //                   ad-hoc agent memories degrade into. No semantics, no currency, no scope.
 //   Keyword       — BM25 lexical retrieval. Good recall/precision, but blind to staleness
 //                   and project scope (returns superseded facts and cross-project bleed).
-//   Amp           — AMP's approach: BM25 channel → rrfFusion (which applies the provenance
+//   Amp           — MemBerry's approach: BM25 channel → rrfFusion (which applies the provenance
 //                   invalidation demotion + MMR) with project-scoped recall. This is the
-//                   actual AMP ranking core, not a strawman.
+//                   actual MemBerry ranking core, not a strawman.
 //
 // To benchmark an external system (Zep, Letta, Mem0, …) write one more adapter here.
 
@@ -61,8 +61,8 @@ function jaccard(a: Set<string>, b: Set<string>): number {
 }
 
 /**
- * Infer implicit supersession — a FAITHFUL proxy for AMP's fact-layer behavior, not a
- * benchmark hack: AMP's `_extractAndStoreFacts` calls `findBySubjectPredicate(subject,
+ * Infer implicit supersession — a FAITHFUL proxy for MemBerry's fact-layer behavior, not a
+ * benchmark hack: MemBerry's `_extractAndStoreFacts` calls `findBySubjectPredicate(subject,
  * predicate)` and, when a newer fact shares an existing fact's subject+predicate but has a
  * different object, invalidates the old one (`supersedes_fact_id`). After consolidation the
  * superseded fact is `status != 'active'` and current-mode recall excludes it. Here we
@@ -111,15 +111,15 @@ export class KeywordAdapter implements MemorySystemAdapter {
   }
 }
 
-// ─── AMP adapter (real ranking core) ─────────────────────────────────────────
+// ─── MemBerry adapter (real ranking core) ─────────────────────────────────────────
 export class AmpAdapter implements MemorySystemAdapter {
-  readonly name = 'AMP';
+  readonly name = 'MemBerry';
   private items: MemoryItem[] = [];
   async reset() { this.items = []; }
   async remember(item: MemoryItem) { this.items.push(item); }
   async recall(query: string, opts: { k: number; project?: string }): Promise<RecalledItem[]> {
-    // 1. Project-scoped recall (AMP load() filters by project tag) AND current-mode:
-    //    AMP's default temporal mode returns ACTIVE facts only (getActive filters
+    // 1. Project-scoped recall (MemBerry load() filters by project tag) AND current-mode:
+    //    MemBerry's default temporal mode returns ACTIVE facts only (getActive filters
     //    status='active'), so superseded knowledge is excluded from the agent's context
     //    rather than merely demoted. History remains queryable via evolution mode.
     const scoped = this.items.filter((i) => inScope(i, opts.project) && !i.invalidated);

@@ -12,16 +12,16 @@ import {
   DedupChecker,
   ConsolidationQueue,
   EmbeddingCache,
-} from '@amp/redis';
+} from '@memberry/redis';
 import {
   createNeo4jDriver,
   initSchema,
   EpisodicStore,
   ScopedQuery,
-} from '@amp/neo4j';
-import { AMPService, OpenAIEmbedding } from '@amp/core';
-import type { RedisLayer, Neo4jLayer } from '@amp/core';
-import type { AMPConfig } from '@amp/core';
+} from '@memberry/neo4j';
+import { AMPService, OpenAIEmbedding } from '@memberry/core';
+import type { RedisLayer, Neo4jLayer } from '@memberry/core';
+import type { AMPConfig } from '@memberry/core';
 
 // ─── Environment / connection config ─────────────────────────────────────────
 

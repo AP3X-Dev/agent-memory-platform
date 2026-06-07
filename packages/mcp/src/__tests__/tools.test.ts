@@ -91,10 +91,10 @@ beforeEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('amp_load handler', () => {
+describe('berry_load handler', () => {
   it('calls AMPService.load with correct scope and returns markdown', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_load({
+    const result = await handlers.berry_load({
       task: 'Write brand copy',
       entities: ['ClientX'],
       tags: ['brand-voice'],
@@ -113,7 +113,7 @@ describe('amp_load handler', () => {
 
   it('uses default max_tokens when not provided', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_load({ task: 'test task' });
+    await handlers.berry_load({ task: 'test task' });
 
     expect(mockAmpService.load).toHaveBeenCalledWith(
       expect.objectContaining({ max_tokens: 4000 }),
@@ -129,14 +129,14 @@ describe('amp_load handler', () => {
     bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_load({ task: 'test' })).rejects.toThrow('AMPService not initialised');
+    await expect(handlers.berry_load({ task: 'test' })).rejects.toThrow('AMPService not initialised');
   });
 });
 
-describe('amp_store handler', () => {
+describe('berry_store handler', () => {
   it('calls AMPService.store and returns id', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_store({
+    const result = await handlers.berry_store({
       session_id: 'sess-1',
       task: 'Write copy',
       content: 'Some content here',
@@ -158,7 +158,7 @@ describe('amp_store handler', () => {
   it('returns duplicate:true when store reports duplicate', async () => {
     vi.mocked(mockAmpService.store).mockResolvedValueOnce({ id: '', duplicate: true });
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_store({
+    const result = await handlers.berry_store({
       session_id: 'sess-1',
       task: 'test',
       content: 'duplicate content',
@@ -171,7 +171,7 @@ describe('amp_store handler', () => {
     const signals = [
       { type: 'reinforcement' as const, target_id: 'sem-1', detail: 'good tone' },
     ];
-    await handlers.amp_store({
+    await handlers.berry_store({
       session_id: 'sess-2',
       task: 'review',
       content: 'content',
@@ -185,7 +185,7 @@ describe('amp_store handler', () => {
 
   it('passes project scope metadata to AMPService.store', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_store({
+    await handlers.berry_store({
       session_id: 'sess-3',
       task: 'capture decision',
       content: 'content',
@@ -206,10 +206,10 @@ describe('amp_store handler', () => {
   });
 });
 
-describe('amp_query handler', () => {
+describe('berry_query handler', () => {
   it('calls rawCypher with query and limit', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_query({
+    const result = await handlers.berry_query({
       query: 'MATCH (n:Semantic) RETURN n',
       limit: 5,
     });
@@ -225,7 +225,7 @@ describe('amp_query handler', () => {
 
   it('uses default limit of 10 when not provided', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_query({ query: 'MATCH (n) RETURN n' });
+    await handlers.berry_query({ query: 'MATCH (n) RETURN n' });
     expect(mockScopedQuery.rawCypher).toHaveBeenCalledWith(expect.any(String), 10);
   });
 
@@ -233,7 +233,7 @@ describe('amp_query handler', () => {
     const handlers = buildToolHandlers();
     const query = 'CALL { MATCH (n:Semantic) RETURN n } RETURN n';
 
-    await expect(handlers.amp_query({ query, limit: 5 })).resolves.toEqual(
+    await expect(handlers.berry_query({ query, limit: 5 })).resolves.toEqual(
       expect.objectContaining({ content: expect.any(Array) }),
     );
 
@@ -248,13 +248,13 @@ describe('amp_query handler', () => {
       bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_query({ query: 'MATCH (n) RETURN n' })).rejects.toThrow(
+    await expect(handlers.berry_query({ query: 'MATCH (n) RETURN n' })).rejects.toThrow(
       'ScopedQuery not initialised',
     );
   });
 });
 
-describe('amp_provenance handler', () => {
+describe('berry_provenance handler', () => {
   const mockProvenance = {
     traceOrigin: vi.fn().mockResolvedValue([
       { id: 'amp-ep-1', label: 'Episodic', content: 'Original session where this was decided', relationship: 'PROMOTED_FROM' },
@@ -273,7 +273,7 @@ describe('amp_provenance handler', () => {
       provenance: mockProvenance,
     });
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_provenance({ semantic_id: 'amp-sem-xyz' });
+    const result = await handlers.berry_provenance({ semantic_id: 'amp-sem-xyz' });
 
     expect(mockProvenance.traceOrigin).toHaveBeenCalledWith('amp-sem-xyz');
     expect(mockProvenance.supersessionHistory).toHaveBeenCalledWith('amp-sem-xyz');
@@ -294,7 +294,7 @@ describe('amp_provenance handler', () => {
       provenance: { traceOrigin: vi.fn().mockResolvedValue([]), supersessionHistory: vi.fn().mockResolvedValue([]) },
     });
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_provenance({ semantic_id: 'amp-sem-root' });
+    const result = await handlers.berry_provenance({ semantic_id: 'amp-sem-root' });
     expect(result.content[0].text).toContain('No origin lineage found');
     expect(result.content[0].text).toContain('No superseded predecessors');
   });
@@ -308,16 +308,16 @@ describe('amp_provenance handler', () => {
       // provenance intentionally omitted
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_provenance({ semantic_id: 'x' })).rejects.toThrow(
+    await expect(handlers.berry_provenance({ semantic_id: 'x' })).rejects.toThrow(
       'ProvenanceTraversal not initialised',
     );
   });
 });
 
-describe('amp_resolve handler', () => {
+describe('berry_resolve handler', () => {
   it('resolves entity URI correctly (calls load with entities scope)', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_resolve({ uri: 'amp://entity/ClientX' });
+    const result = await handlers.berry_resolve({ uri: 'amp://entity/ClientX' });
 
     expect(mockAmpService.load).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -333,7 +333,7 @@ describe('amp_resolve handler', () => {
 
   it('resolves tag URI correctly (calls load with tags scope)', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_resolve({ uri: 'amp://tag/brand-voice' });
+    await handlers.berry_resolve({ uri: 'amp://tag/brand-voice' });
 
     expect(mockAmpService.load).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -347,7 +347,7 @@ describe('amp_resolve handler', () => {
 
   it('uses stage_context as the task parameter', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_resolve({
+    await handlers.berry_resolve({
       uri: 'amp://entity/ClientX',
       stage_context: 'Writing brand copy for ClientX landing page',
     });
@@ -361,7 +361,7 @@ describe('amp_resolve handler', () => {
 
   it('synthesizes a default task when stage_context is omitted', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_resolve({ uri: 'amp://entity/ClientX' });
+    await handlers.berry_resolve({ uri: 'amp://entity/ClientX' });
 
     expect(mockAmpService.load).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -372,8 +372,8 @@ describe('amp_resolve handler', () => {
 
   it('throws on invalid URI', async () => {
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_resolve({ uri: 'not-an-amp-uri' })).rejects.toThrow(
-      'Invalid AMP URI',
+    await expect(handlers.berry_resolve({ uri: 'not-an-amp-uri' })).rejects.toThrow(
+      'Invalid MemBerry URI',
     );
   });
 
@@ -385,16 +385,16 @@ describe('amp_resolve handler', () => {
     bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_resolve({ uri: 'amp://entity/ClientX' })).rejects.toThrow(
+    await expect(handlers.berry_resolve({ uri: 'amp://entity/ClientX' })).rejects.toThrow(
       'AMPService not initialised',
     );
   });
 });
 
-describe('amp_consolidate handler', () => {
+describe('berry_consolidate handler', () => {
   it('calls run action correctly', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_consolidate({ action: 'run', scope: 'ClientX' });
+    const result = await handlers.berry_consolidate({ action: 'run', scope: 'ClientX' });
 
     expect(mockConsolidationEngine.run).toHaveBeenCalledWith('ClientX');
     const parsed = JSON.parse(result.content[0].text);
@@ -403,13 +403,13 @@ describe('amp_consolidate handler', () => {
 
   it('calls run without scope — defaults to global', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_consolidate({ action: 'run' });
+    await handlers.berry_consolidate({ action: 'run' });
     expect(mockConsolidationEngine.run).toHaveBeenCalledWith('global');
   });
 
   it('calls status action correctly', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_consolidate({ action: 'status' });
+    const result = await handlers.berry_consolidate({ action: 'status' });
 
     expect(mockConsolidationEngine.status).toHaveBeenCalled();
     const parsed = JSON.parse(result.content[0].text);
@@ -418,7 +418,7 @@ describe('amp_consolidate handler', () => {
 
   it('calls review action to fetch a proposal', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_consolidate({
+    const result = await handlers.berry_consolidate({
       action: 'review',
       proposal_id: 'prop-1',
     });
@@ -430,7 +430,7 @@ describe('amp_consolidate handler', () => {
 
   it('calls review action with decision to apply', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_consolidate({
+    const result = await handlers.berry_consolidate({
       action: 'review',
       proposal_id: 'prop-1',
       decision: 'approve',
@@ -444,7 +444,7 @@ describe('amp_consolidate handler', () => {
   it('throws when review action is missing proposal_id', async () => {
     const handlers = buildToolHandlers();
     await expect(
-      handlers.amp_consolidate({ action: 'review' }),
+      handlers.berry_consolidate({ action: 'review' }),
     ).rejects.toThrow('"proposal_id" is required');
   });
 
@@ -456,7 +456,7 @@ describe('amp_consolidate handler', () => {
       bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_consolidate({ action: 'status' })).rejects.toThrow(
+    await expect(handlers.berry_consolidate({ action: 'status' })).rejects.toThrow(
       'ConsolidationEngine not initialised',
     );
   });
@@ -464,10 +464,10 @@ describe('amp_consolidate handler', () => {
 
 // ─── Memory block tools ────────────────────────────────────────────────────
 
-describe('amp_memory_read handler', () => {
+describe('berry_memory_read handler', () => {
   it('reads a block and returns JSON', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_read({ block: 'persona', scope: 'project:test' });
+    const result = await handlers.berry_memory_read({ block: 'persona', scope: 'project:test' });
     expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'persona', undefined);
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.name).toBe('persona');
@@ -477,28 +477,28 @@ describe('amp_memory_read handler', () => {
   it('returns found:false when block does not exist', async () => {
     vi.mocked(mockMemoryBlockService.read).mockResolvedValueOnce(null);
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_read({ block: 'nonexistent' });
+    const result = await handlers.berry_memory_read({ block: 'nonexistent' });
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.found).toBe(false);
   });
 
   it('uses default scope when not provided', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_memory_read({ block: 'persona' });
+    await handlers.berry_memory_read({ block: 'persona' });
     expect(mockMemoryBlockService.read).toHaveBeenCalledWith('default', 'persona', undefined);
   });
 
   it('passes session_id for working blocks', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_memory_read({ block: 'working_state', scope: 'project:test', session_id: 'sess-1' });
+    await handlers.berry_memory_read({ block: 'working_state', scope: 'project:test', session_id: 'sess-1' });
     expect(mockMemoryBlockService.read).toHaveBeenCalledWith('project:test', 'working_state', 'sess-1');
   });
 });
 
-describe('amp_memory_insert handler', () => {
+describe('berry_memory_insert handler', () => {
   it('inserts text and returns result', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_insert({
+    const result = await handlers.berry_memory_insert({
       block: 'persona',
       text: ' And wise.',
       scope: 'project:test',
@@ -510,10 +510,10 @@ describe('amp_memory_insert handler', () => {
   });
 });
 
-describe('amp_memory_replace handler', () => {
+describe('berry_memory_replace handler', () => {
   it('replaces text and returns result', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_replace({
+    const result = await handlers.berry_memory_replace({
       block: 'persona',
       old_text: 'helpful',
       new_text: 'wise',
@@ -525,10 +525,10 @@ describe('amp_memory_replace handler', () => {
   });
 });
 
-describe('amp_memory_rewrite handler', () => {
+describe('berry_memory_rewrite handler', () => {
   it('rewrites block and returns result', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_rewrite({
+    const result = await handlers.berry_memory_rewrite({
       block: 'persona',
       content: 'Completely new persona.',
       scope: 'project:test',
@@ -540,10 +540,10 @@ describe('amp_memory_rewrite handler', () => {
   });
 });
 
-describe('amp_memory_promote handler', () => {
+describe('berry_memory_promote handler', () => {
   it('promotes block tier and returns result', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_promote({
+    const result = await handlers.berry_memory_promote({
       block: 'working_state',
       from_tier: 'working',
       to_tier: 'core',
@@ -556,10 +556,10 @@ describe('amp_memory_promote handler', () => {
   });
 });
 
-describe('amp_memory_archive handler', () => {
+describe('berry_memory_archive handler', () => {
   it('archives block and returns content length', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_memory_archive({
+    const result = await handlers.berry_memory_archive({
       block: 'persona',
       scope: 'project:test',
     });
@@ -571,7 +571,7 @@ describe('amp_memory_archive handler', () => {
 });
 
 describe('memory block tools throw when service not initialised', () => {
-  it('amp_memory_read throws', async () => {
+  it('berry_memory_read throws', async () => {
     setServiceInstances({
       ampService: mockAmpService,
       consolidationEngine: mockConsolidationEngine,
@@ -580,13 +580,13 @@ describe('memory block tools throw when service not initialised', () => {
       // memoryBlockService omitted
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_memory_read({ block: 'persona' })).rejects.toThrow('MemoryBlockService not initialised');
+    await expect(handlers.berry_memory_read({ block: 'persona' })).rejects.toThrow('MemoryBlockService not initialised');
   });
 });
 
-// ─── amp_grep tests ─────────────────────────────────────────────────────────
+// ─── berry_grep tests ─────────────────────────────────────────────────────────
 
-describe('amp_grep handler', () => {
+describe('berry_grep handler', () => {
   it('performs exact string match across node types and returns markdown', async () => {
     // Mock rawCypher to return results for different node types
     const mockResults = {
@@ -608,7 +608,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT' });
+    const result = await handlers.berry_grep({ pattern: 'JWT' });
 
     expect(result.content[0].type).toBe('text');
     const text = result.content[0].text;
@@ -632,7 +632,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT|OAuth2', regex: true });
+    const result = await handlers.berry_grep({ pattern: 'JWT|OAuth2', regex: true });
 
     const text = result.content[0].text;
     expect(text).toContain('## Grep Results: "JWT|OAuth2"');
@@ -641,7 +641,7 @@ describe('amp_grep handler', () => {
 
   it('returns error for invalid regex', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: '[invalid', regex: true });
+    const result = await handlers.berry_grep({ pattern: '[invalid', regex: true });
 
     const text = result.content[0].text;
     expect(text).toContain('**Error:**');
@@ -658,7 +658,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', case_sensitive: true });
+    const result = await handlers.berry_grep({ pattern: 'JWT', case_sensitive: true });
 
     const text = result.content[0].text;
     expect(text).toContain('1 match');
@@ -674,7 +674,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'] });
+    const result = await handlers.berry_grep({ pattern: 'JWT', node_types: ['semantic'] });
 
     const text = result.content[0].text;
     expect(text).toContain('1 match');
@@ -707,7 +707,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', scope: 'project:amp' });
+    const result = await handlers.berry_grep({ pattern: 'JWT', scope: 'project:amp' });
 
     const text = result.content[0].text;
     expect(text).toContain('2 matches');
@@ -723,7 +723,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'] });
+    const result = await handlers.berry_grep({ pattern: 'JWT', node_types: ['semantic'] });
 
     const text = result.content[0].text;
     // Should have ellipsis for truncation and bold match
@@ -735,7 +735,7 @@ describe('amp_grep handler', () => {
     vi.mocked(mockScopedQuery.rawCypher).mockResolvedValue([]);
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'nonexistent_pattern_xyz' });
+    const result = await handlers.berry_grep({ pattern: 'nonexistent_pattern_xyz' });
 
     const text = result.content[0].text;
     expect(text).toContain('0 matches');
@@ -755,7 +755,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', node_types: ['entity'] });
+    const result = await handlers.berry_grep({ pattern: 'JWT', node_types: ['entity'] });
 
     const text = result.content[0].text;
     expect(text).toContain('1 match');
@@ -769,7 +769,7 @@ describe('amp_grep handler', () => {
       bootstrapService: mockBootstrapService,
     });
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_grep({ pattern: 'test' })).rejects.toThrow('ScopedQuery not initialised');
+    await expect(handlers.berry_grep({ pattern: 'test' })).rejects.toThrow('ScopedQuery not initialised');
   });
 
   it('handles query failures gracefully per node type', async () => {
@@ -785,7 +785,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'test' });
+    const result = await handlers.berry_grep({ pattern: 'test' });
 
     // Should still return results from semantic even though others failed
     const text = result.content[0].text;
@@ -803,7 +803,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'], limit: 3 });
+    const result = await handlers.berry_grep({ pattern: 'JWT', node_types: ['semantic'], limit: 3 });
 
     const text = result.content[0].text;
     expect(text).toContain('3 matches');
@@ -819,7 +819,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const fractional = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'], limit: 2.8 });
+    const fractional = await handlers.berry_grep({ pattern: 'JWT', node_types: ['semantic'], limit: 2.8 });
     expect(fractional.content[0].text).toContain('2 matches');
     expect(mockScopedQuery.rawCypher).toHaveBeenLastCalledWith(
       expect.stringContaining('Semantic'),
@@ -828,7 +828,7 @@ describe('amp_grep handler', () => {
     );
 
     vi.mocked(mockScopedQuery.rawCypher).mockClear();
-    const invalid = await handlers.amp_grep({ pattern: 'JWT', node_types: ['semantic'], limit: -5 as never });
+    const invalid = await handlers.berry_grep({ pattern: 'JWT', node_types: ['semantic'], limit: -5 as never });
     expect(invalid.content[0].text).toContain('4 matches');
     expect(mockScopedQuery.rawCypher).toHaveBeenLastCalledWith(
       expect.stringContaining('Semantic'),
@@ -846,7 +846,7 @@ describe('amp_grep handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_grep({ pattern: "it's", node_types: ['semantic'] });
+    const result = await handlers.berry_grep({ pattern: "it's", node_types: ['semantic'] });
 
     const text = result.content[0].text;
     expect(text).toContain('1 match');
@@ -859,7 +859,7 @@ describe('amp_grep handler', () => {
     vi.mocked(mockScopedQuery.rawCypher).mockResolvedValue([]);
 
     const handlers = buildToolHandlers();
-    await handlers.amp_grep({
+    await handlers.berry_grep({
       pattern: dangerousPattern,
       scope: dangerousScope,
       node_types: ['semantic'],

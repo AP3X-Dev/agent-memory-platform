@@ -9,7 +9,7 @@
 // WITHOUT leaking stale assumptions or contaminating across projects.
 //
 // MemBench measures exactly those agent-relevant properties, and it does so through a
-// thin adapter so the SAME suite scores AMP, a naive baseline, or any external system
+// thin adapter so the SAME suite scores MemBerry, a naive baseline, or any external system
 // (Zep, Letta, Mem0, …) once an adapter is written.
 
 /** A unit of memory an agent would store. */
@@ -32,7 +32,7 @@ export interface RecalledItem {
 
 /**
  * The ONLY contract a memory system must satisfy to be benchmarked. Implement this for
- * AMP, Zep, Letta, a naive baseline, etc. Keep it minimal on purpose.
+ * MemBerry, Zep, Letta, a naive baseline, etc. Keep it minimal on purpose.
  */
 export interface MemorySystemAdapter {
   readonly name: string;

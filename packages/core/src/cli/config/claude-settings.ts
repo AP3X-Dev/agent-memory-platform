@@ -1,7 +1,7 @@
 // packages/core/src/cli/config/claude-settings.ts
 //
-// Pure merge/strip logic for AMP's entries in a Claude Code settings.json
-// `hooks` map. AMP-owned hook groups are tagged with `_amp: true` so uninstall
+// Pure merge/strip logic for MemBerry's entries in a Claude Code settings.json
+// `hooks` map. MemBerry-owned hook groups are tagged with `_amp: true` so uninstall
 // is precise and existing user hooks are never touched. No I/O here.
 
 export interface HookCommand {
@@ -13,7 +13,7 @@ export interface HookCommand {
 export interface HookGroup {
   matcher?: string;
   hooks: HookCommand[];
-  /** AMP ownership marker (ignored by Claude Code). */
+  /** MemBerry ownership marker (ignored by Claude Code). */
   _amp?: boolean;
 }
 
@@ -22,7 +22,7 @@ export interface ClaudeSettings {
   [key: string]: unknown;
 }
 
-/** Hook event name → `amp hook claude <event>` subcommand. */
+/** Hook event name → `memberry hook claude <event>` subcommand. */
 export const AMP_HOOK_EVENTS: Record<string, string> = {
   SessionStart: 'session-start',
   UserPromptSubmit: 'user-prompt',
@@ -30,10 +30,14 @@ export const AMP_HOOK_EVENTS: Record<string, string> = {
   SessionEnd: 'session-end',
 };
 
-const isAmpGroup = (g: HookGroup): boolean => g._amp === true || g.hooks?.some((h) => h.command?.includes('amp hook claude'));
+// Detect MemBerry-owned groups by the persisted `_amp` marker (kept stable
+// across the rebrand so pre-rebrand installs are still recognised) OR, as a
+// fallback for marker-less groups, a brand-agnostic command match that catches
+// both legacy `amp hook claude` and new `memberry hook claude` invocations.
+const isAmpGroup = (g: HookGroup): boolean => g._amp === true || (g.hooks?.some((h) => h.command?.includes('hook claude')) ?? false);
 
 /**
- * Insert (or refresh) AMP's hook groups, returning a new settings object.
+ * Insert (or refresh) MemBerry's hook groups, returning a new settings object.
  * `command` is the base CLI invocation, e.g. `node /abs/cli.js`. Idempotent.
  */
 export function addAmpHooks(settings: ClaudeSettings, command: string): ClaudeSettings {
@@ -49,7 +53,7 @@ export function addAmpHooks(settings: ClaudeSettings, command: string): ClaudeSe
   return { ...settings, hooks };
 }
 
-/** Remove all AMP-owned hook groups, dropping now-empty event keys. */
+/** Remove all MemBerry-owned hook groups, dropping now-empty event keys. */
 export function removeAmpHooks(settings: ClaudeSettings): ClaudeSettings {
   if (!settings.hooks) return settings;
   const hooks: Record<string, HookGroup[]> = {};
@@ -62,7 +66,7 @@ export function removeAmpHooks(settings: ClaudeSettings): ClaudeSettings {
   return next;
 }
 
-/** List the Claude events AMP currently owns in a settings object. */
+/** List the Claude events MemBerry currently owns in a settings object. */
 export function ampHookStatus(settings: ClaudeSettings): string[] {
   if (!settings.hooks) return [];
   return Object.entries(settings.hooks)
