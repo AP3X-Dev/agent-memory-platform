@@ -8,7 +8,7 @@
  *  - every tool registers with a NON-EMPTY `ToolAnnotations` — passing `{}` makes
  *    the MCP SDK misparse the handler slot ("typedHandler is not a function").
  *
- * This PR ships exactly one tool, `amp_graph_report`, under a `graph` domain that
+ * This PR ships exactly one tool, `berry_graph_report`, under a `graph` domain that
  * is disabled by default.
  */
 import { z } from 'zod';
@@ -28,10 +28,10 @@ import type {
 } from './types.js';
 
 export const GRAPH_TOOL_NAMES = [
-  'amp_graph_report',
-  'amp_graph_export',
-  'amp_pr_impact',
-  'amp_pr_conflicts',
+  'berry_graph_report',
+  'berry_graph_export',
+  'berry_pr_impact',
+  'berry_pr_conflicts',
 ] as const;
 
 // ─── Injected service interfaces (no concrete imports) ───────────────────────
@@ -156,7 +156,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
 
   handles.push(
     server.tool(
-      'amp_graph_report',
+      'berry_graph_report',
       'Generate a deterministic markdown audit of the AMP knowledge graph: corpus summary, node/relation counts, memory-confidence summary, high-centrality "Core Abstractions" (weighted degree), import/dependency cycles, low-confidence knowledge, and knowledge gaps. Read-only; project-scoped via project_tag/project_name.',
       AmpGraphReportSchema,
       // Non-empty annotations are MANDATORY — `{}` re-triggers the SDK
@@ -181,7 +181,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
 
   handles.push(
     server.tool(
-      'amp_graph_export',
+      'berry_graph_export',
       'Export the AMP knowledge graph as a portable artifact: "json" (the secret-safe graph snapshot) or "html" (a self-contained, offline, interactive force-directed viewer you open in a browser — pan/zoom/drag, click a node to inspect its properties). Works for any memory graph (code, people, orgs, topics). Project-scoped; writes to amp-graph-out/ when output_path is given, otherwise returns the artifact inline.',
       AmpGraphExportSchema,
       // Writes a file when output_path is set, so this is not purely read-only.
@@ -216,7 +216,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
 
   handles.push(
     server.tool(
-      'amp_pr_impact',
+      'berry_pr_impact',
       'Analyze the blast radius of a GitHub pull request over the code graph: changed files → their symbols → files that import/call them (dependents), plus the knowledge areas and high-centrality nodes touched. Requires the `gh` CLI to be installed and authenticated. Read-only.',
       AmpPrImpactSchema,
       { readOnlyHint: true } satisfies ToolAnnotations,
@@ -235,7 +235,7 @@ export function registerGraphTools(server: McpServer): RegisteredTool[] {
 
   handles.push(
     server.tool(
-      'amp_pr_conflicts',
+      'berry_pr_conflicts',
       'Find pull requests whose impact overlaps — pairs of PRs that touch (or whose dependents touch) the same files, signalling likely merge/review conflicts. Compares the given PR refs, or all open PRs if none are given. Requires the `gh` CLI. Read-only.',
       AmpPrConflictsSchema,
       { readOnlyHint: true } satisfies ToolAnnotations,

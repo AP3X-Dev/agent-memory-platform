@@ -9,8 +9,8 @@ const TOOLS_SOURCE = fs.readFileSync(
 );
 
 describe('code tools.ts regression', () => {
-  it('BUG-0045: amp_code_index validates path is within project root to prevent directory traversal', () => {
-    // Before the fix, the amp_code_index MCP tool accepted any absolute
+  it('BUG-0045: berry_code_index validates path is within project root to prevent directory traversal', () => {
+    // Before the fix, the berry_code_index MCP tool accepted any absolute
     // filesystem path with no restriction, allowing any MCP client to walk
     // and parse arbitrary directories (e.g. /, /etc) on the server.
     // The fix adds path.resolve + baseDir+sep prefix matching to reject
@@ -33,26 +33,26 @@ describe('code tools.ts regression', () => {
     expect(validationIdx).toBeLessThan(indexProjectIdx);
   });
 
-  it('amp_code_context exposes project and file path scoping for direct code context calls', () => {
+  it('berry_code_context exposes project and file path scoping for direct code context calls', () => {
     expect(TOOLS_SOURCE).toContain('project_name');
     expect(TOOLS_SOURCE).toContain('buildCodePathScope');
     expect(TOOLS_SOURCE).toContain('file_path: buildCodePathScope(args.file_path, args.project_name)');
   });
 
-  it('amp_code_search exposes project and file path scoping for direct code search calls', () => {
+  it('berry_code_search exposes project and file path scoping for direct code search calls', () => {
     const scopedSearchCalls = TOOLS_SOURCE.match(/file_path: buildCodePathScope\(args\.file_path, args\.project_name\)/g) ?? [];
 
     expect(scopedSearchCalls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it('amp_code_ast_grep exposes ast-grep structural search as a read-only code tool', () => {
-    expect(TOOLS_SOURCE).toContain("'amp_code_ast_grep'");
+  it('berry_code_ast_grep exposes ast-grep structural search as a read-only code tool', () => {
+    expect(TOOLS_SOURCE).toContain("'berry_code_ast_grep'");
     expect(TOOLS_SOURCE).toContain('structuralSearch(resolved');
     expect(TOOLS_SOURCE).toContain('readOnlyHint: true');
     expect(TOOLS_SOURCE).toContain('language: z.enum([\'javascript\', \'typescript\', \'tsx\'])');
   });
 
-  it('amp_code_ast_grep exposes and forwards max_file_bytes for large-repo safety', () => {
+  it('berry_code_ast_grep exposes and forwards max_file_bytes for large-repo safety', () => {
     expect(TOOLS_SOURCE).toContain('max_file_bytes');
     expect(TOOLS_SOURCE).toContain('max_file_bytes: args.max_file_bytes');
   });

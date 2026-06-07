@@ -107,10 +107,10 @@ beforeEach(() => {
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('amp_ingest_codebase handler', () => {
+describe('berry_ingest_codebase handler', () => {
   it('scans, bootstraps, indexes, and seeds in one call', async () => {
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_ingest_codebase({ path: tempDir });
+    const result = await handlers.berry_ingest_codebase({ path: tempDir });
 
     // Should have called bootstrap
     expect(mockBootstrapService.bootstrap).toHaveBeenCalledTimes(1);
@@ -136,7 +136,7 @@ describe('amp_ingest_codebase handler', () => {
 
   it('uses user-provided overrides over auto-detection', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_ingest_codebase({
+    await handlers.berry_ingest_codebase({
       path: tempDir,
       project_name: 'custom-name',
       project_tag: 'project:custom',
@@ -153,7 +153,7 @@ describe('amp_ingest_codebase handler', () => {
 
   it('passes exclude patterns to code indexer', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_ingest_codebase({
+    await handlers.berry_ingest_codebase({
       path: tempDir,
       exclude_patterns: ['vendor', 'generated'],
     });
@@ -176,7 +176,7 @@ describe('amp_ingest_codebase handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_ingest_codebase({ path: tempDir });
+    const result = await handlers.berry_ingest_codebase({ path: tempDir });
 
     // Should still bootstrap
     expect(mockBootstrapService.bootstrap).toHaveBeenCalledTimes(1);
@@ -198,7 +198,7 @@ describe('amp_ingest_codebase handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_ingest_codebase({ path: tempDir });
+    const result = await handlers.berry_ingest_codebase({ path: tempDir });
 
     const text = result.content[0].text;
     expect(text).toContain('Memory blocks seeded:** 0');
@@ -206,7 +206,7 @@ describe('amp_ingest_codebase handler', () => {
 
   it('generates correct project tag from name with special characters', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_ingest_codebase({
+    await handlers.berry_ingest_codebase({
       path: tempDir,
       project_name: 'My Cool Project!',
     });
@@ -224,7 +224,7 @@ describe('amp_ingest_codebase handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    await expect(handlers.amp_ingest_codebase({ path: tempDir })).rejects.toThrow(
+    await expect(handlers.berry_ingest_codebase({ path: tempDir })).rejects.toThrow(
       'BootstrapGraphService not initialised',
     );
   });
@@ -243,7 +243,7 @@ describe('amp_ingest_codebase handler', () => {
     });
 
     const handlers = buildToolHandlers();
-    const result = await handlers.amp_ingest_codebase({ path: tempDir });
+    const result = await handlers.berry_ingest_codebase({ path: tempDir });
 
     const text = result.content[0].text;
     expect(text).toContain('Indexing errors:** 2');
@@ -253,7 +253,7 @@ describe('amp_ingest_codebase handler', () => {
 
   it('creates semantic seeds for description and languages', async () => {
     const handlers = buildToolHandlers();
-    await handlers.amp_ingest_codebase({ path: tempDir });
+    await handlers.berry_ingest_codebase({ path: tempDir });
 
     const bootstrapArgs = (mockBootstrapService.bootstrap as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(bootstrapArgs.semantic_seeds.length).toBeGreaterThanOrEqual(2);

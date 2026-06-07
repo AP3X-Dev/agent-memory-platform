@@ -114,7 +114,7 @@ async function settleWithin<T>(
 
 /**
  * Register all tools on a server with progressive disclosure.
- * Returns the ToolRegistry for the amp_tools gateway.
+ * Returns the ToolRegistry for the berry_tools gateway.
  */
 function registerAllTools(server: McpServer): ToolRegistry {
   const toolRegistry: ToolRegistry = new Map();
@@ -133,7 +133,7 @@ function registerAllTools(server: McpServer): ToolRegistry {
   toolRegistry.set('code', codeHandles);
 
   const retrievalResult = registerRetrievalTools(server);
-  // amp_context is Tier 1, amp_feedback is Tier 2
+  // berry_context is Tier 1, berry_feedback is Tier 2
   const existingRetrieval = toolRegistry.get('retrieval') ?? [];
   existingRetrieval.push(...retrievalResult.tier2);
   toolRegistry.set('retrieval', existingRetrieval);

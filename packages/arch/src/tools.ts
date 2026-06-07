@@ -73,12 +73,12 @@ export function setArchServiceInstances(services: {
 // ─── Tool names ──────────────────────────────────────────────────────────────
 
 export const ARCH_TOOL_NAMES = [
-  'amp_arch_register',
-  'amp_arch_relate',
-  'amp_arch_aspect',
-  'amp_impact',
-  'amp_arch_drift',
-  'amp_arch_context',
+  'berry_arch_register',
+  'berry_arch_relate',
+  'berry_arch_aspect',
+  'berry_impact',
+  'berry_arch_drift',
+  'berry_arch_context',
 ] as const;
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -92,10 +92,10 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 export function registerArchTools(server: McpServer): RegisteredTool[] {
   const handles: RegisteredTool[] = [];
 
-  // ─── amp_arch_register ──────────────────────────────────────────────────
+  // ─── berry_arch_register ──────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_arch_register',
-    'Enrich an existing Entity node with architectural properties: category, hierarchy depth, responsibility (what it IS), interface (how to USE it), internals (how it WORKS), and tracked source file paths. The entity must already exist from amp_bootstrap. Idempotent.',
+    'berry_arch_register',
+    'Enrich an existing Entity node with architectural properties: category, hierarchy depth, responsibility (what it IS), interface (how to USE it), internals (how it WORKS), and tracked source file paths. The entity must already exist from berry_bootstrap. Idempotent.',
     {
       entity_name: z.string().max(500).describe('Name of the entity to enrich (must already exist)'),
       category: z.enum(['project', 'domain', 'module', 'service', 'library', 'component', 'infrastructure', 'config']).optional()
@@ -126,9 +126,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_arch_relate ────────────────────────────────────────────────────
+  // ─── berry_arch_relate ────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_arch_relate',
+    'berry_arch_relate',
     'Create a typed structural relationship between two entities. Relationship types: USES (runtime dependency), CALLS (direct invocation), EXTENDS (inheritance), IMPLEMENTS (interface satisfaction), EMITS (event emission), LISTENS (event subscription). Both entities must already exist.',
     {
       from_entity: z.string().max(500).describe('Source entity name'),
@@ -154,9 +154,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_arch_aspect ────────────────────────────────────────────────────
+  // ─── berry_arch_aspect ────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_arch_aspect',
+    'berry_arch_aspect',
     'Create or manage a cross-cutting concern (aspect). Aspects represent patterns that apply horizontally across components (e.g., "rate-limiting", "hipaa", "audit-logging"). They have stability tiers predicting decay rate and can imply other aspects.',
     {
       action: z.enum(['create', 'apply', 'remove', 'list', 'get']).describe('Action to perform'),
@@ -213,9 +213,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_impact ─────────────────────────────────────────────────────────
+  // ─── berry_impact ─────────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_impact',
+    'berry_impact',
     'Blast radius analysis: what breaks if this entity changes? Returns direct dependents, transitive dependents, co-aspect entities, affected aspects, and an overall change risk assessment (low/medium/high/critical). Optionally query as of a specific time.',
     {
       entity_name: z.string().max(2000).describe('Entity to analyze'),
@@ -230,9 +230,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_arch_drift ─────────────────────────────────────────────────────
+  // ─── berry_arch_drift ─────────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_arch_drift',
+    'berry_arch_drift',
     'Check if tracked source files have changed since last indexing. Compares SHA-256 hashes of files on disk against stored hashes. Use "check" to detect drift, "mark_fresh" to update hashes after reviewing changes, "check_all" to batch-check an entire project.',
     {
       action: z.enum(['check', 'mark_fresh', 'check_all', 'list_stale']).describe('Action to perform'),
@@ -270,9 +270,9 @@ export function registerArchTools(server: McpServer): RegisteredTool[] {
     },
   ));
 
-  // ─── amp_arch_context ───────────────────────────────────────────────────
+  // ─── berry_arch_context ───────────────────────────────────────────────────
   handles.push(server.tool(
-    'amp_arch_context',
+    'berry_arch_context',
     'Deterministic architectural context assembly for an entity. Returns: responsibility, interface, internals, hierarchy (ancestors), children, dependencies with their interfaces, dependents (what breaks), and cross-cutting aspects. Same graph state always produces the same output — no ranking heuristics. Optionally query as of a specific time.',
     {
       entity_name: z.string().max(2000).describe('Entity to build context for'),

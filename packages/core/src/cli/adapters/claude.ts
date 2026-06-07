@@ -72,7 +72,7 @@ function turnTokenBudget(): number {
 
 // ─── SessionStart ────────────────────────────────────────────────────────────
 // Deterministic floor: load project memory and inject it, regardless of whether
-// the model would have called amp_load. Record the injected source ids so the
+// the model would have called berry_load. Record the injected source ids so the
 // per-turn hook can avoid re-injecting the same context.
 
 export async function claudeSessionStart(

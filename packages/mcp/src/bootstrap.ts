@@ -240,7 +240,7 @@ export async function bootstrap(): Promise<BootstrapHandles> {
     codeWatcher: codeWatcherService,
   });
 
-  // Inject codeIndexer into core tools so amp_ingest_codebase can use it
+  // Inject codeIndexer into core tools so berry_ingest_codebase can use it
   setServiceInstances({
     ampService,
     consolidationEngine: consolidationAdapter,

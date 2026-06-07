@@ -48,7 +48,7 @@ const TEST_FILE_PATTERNS = [
 // ─── File path extraction ───────────────────────────────────────────────────
 
 /**
- * Extract file paths from prose content (e.g., episode content from amp_store).
+ * Extract file paths from prose content (e.g., episode content from berry_store).
  * Matches common file path patterns containing path separators and known extensions.
  */
 export function extractFilePaths(content: string): string[] {

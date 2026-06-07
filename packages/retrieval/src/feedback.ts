@@ -83,7 +83,7 @@ export class FeedbackTracker {
 
   /**
    * Infer feedback from agent behavior: if a result_id appears in a subsequent
-   * amp_store content, the agent used it.
+   * berry_store content, the agent used it.
    */
   async inferUsage(storeContent: string, recentResultIds: string[], sessionId: string): Promise<number> {
     let usageCount = 0;

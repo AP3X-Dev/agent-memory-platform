@@ -34,7 +34,7 @@ export interface AssemblerMemoryLayer {
   }>;
 }
 
-// ─── Dialectic (amp_ask) ─────────────────────────────────────────────────────
+// ─── Dialectic (berry_ask) ─────────────────────────────────────────────────────
 
 export type AskLevel = 'minimal' | 'low' | 'medium' | 'high' | 'max';
 
@@ -107,7 +107,7 @@ export class UnifiedAssembler {
   }
 
   /**
-   * Dialectic retrieval (amp_ask): retrieve ranked evidence, then synthesize a
+   * Dialectic retrieval (berry_ask): retrieve ranked evidence, then synthesize a
    * cited answer instead of returning raw chunks. Reasoning level trades
    * latency/cost for depth. Throws if no LLM is configured.
    */
@@ -122,7 +122,7 @@ export class UnifiedAssembler {
     } = {},
   ): Promise<AskResult> {
     if (!this.llm || !this.llm.available) {
-      throw new Error('amp_ask requires an LLM client — set OPENAI_API_KEY');
+      throw new Error('berry_ask requires an LLM client — set OPENAI_API_KEY');
     }
     const level: AskLevel = opts.level ?? 'medium';
     const cfg = ASK_LEVELS[level];

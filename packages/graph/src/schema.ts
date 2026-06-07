@@ -17,7 +17,7 @@
  *   DROP INDEX source_project IF EXISTS;
  *
  * Note: persisted analysis nodes (GraphAnalysisRun / Community / IN_COMMUNITY)
- * are written only by future persisted runs and are excluded from amp_load /
+ * are written only by future persisted runs and are excluded from berry_load /
  * consolidation candidate sets, so analytics never pollute memory retrieval.
  */
 import type { Driver } from 'neo4j-driver';

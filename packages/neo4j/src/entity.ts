@@ -22,7 +22,7 @@ export class EntityStore {
 
   /**
    * Idempotent upsert of a project Entity. Used to auto-create a placeholder
-   * when amp_store sees a never-before-seen project tag.
+   * when berry_store sees a never-before-seen project tag.
    * - If an Entity with the same name (case-insensitive) and any type exists, leave it alone.
    * - Otherwise create a new Entity with type='project'.
    */

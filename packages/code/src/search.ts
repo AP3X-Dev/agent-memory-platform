@@ -332,7 +332,7 @@ export class CodeSearch {
 // Same algorithm as @memberry/retrieval's rrfFusion but operates on any
 // { id: string; score: number } type. The retrieval version adds dynamic k,
 // normalization, feedback boosts, and MMR — this is the lightweight path for
-// direct amp_code_search calls.
+// direct berry_code_search calls.
 
 function rrfFusion<T extends { id: string; score: number }>(
   rankedLists: T[][],

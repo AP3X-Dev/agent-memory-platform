@@ -124,7 +124,7 @@ export class AMPService {
     if (!rawTag) {
       if (process.env['AMP_REQUIRE_PROJECT_TAG'] === 'false') return { tag: '', isNew: false };
       throw new Error(
-        'amp_store: a project tag is required. Pass tags: ["project:<name>"] or prefix the task/content with [project:<name>]. ' +
+        'berry_store: a project tag is required. Pass tags: ["project:<name>"] or prefix the task/content with [project:<name>]. ' +
         'Set AMP_REQUIRE_PROJECT_TAG=false to disable this check.',
       );
     }
@@ -150,8 +150,8 @@ export class AMPService {
     // Auto-placeholder so the wiki picks up the project immediately.
     if (this.neo4j.entity) {
       try {
-        await this.neo4j.entity.upsertProject(projectName, 'Auto-created from amp_store on first reference');
-        console.error(`[amp-store] INFO: auto-bootstrapped placeholder project Entity for "${canonical}". Run amp_bootstrap with full module list when ready.`);
+        await this.neo4j.entity.upsertProject(projectName, 'Auto-created from berry_store on first reference');
+        console.error(`[amp-store] INFO: auto-bootstrapped placeholder project Entity for "${canonical}". Run berry_bootstrap with full module list when ready.`);
         this.knownProjectsCache = null; // invalidate
       } catch (err) {
         console.error(`[amp-store] WARN: failed to auto-create placeholder for "${canonical}":`, err instanceof Error ? err.message : err);
@@ -832,7 +832,7 @@ export function normalizePredicate(predicate: string): string {
 
 /**
  * Returns a copy of the current predicate synonym map.
- * Useful for debugging and inspection via amp_query.
+ * Useful for debugging and inspection via berry_query.
  */
 export function getPredicateSynonyms(): Record<string, string> {
   return { ...PREDICATE_SYNONYMS };

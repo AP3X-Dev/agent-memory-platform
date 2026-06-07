@@ -9,29 +9,29 @@ const TOOLS_SOURCE = fs.readFileSync(
 );
 
 describe('arch tools.ts regression', () => {
-  it('amp_arch_context exposes project scoping for duplicate entity names', () => {
+  it('berry_arch_context exposes project scoping for duplicate entity names', () => {
     expect(TOOLS_SOURCE).toContain('project_name');
     expect(TOOLS_SOURCE).toContain('renderMarkdown(args.entity_name, args.max_tokens, args.as_of, args.project_name)');
     expect(TOOLS_SOURCE).toContain('getChildren(args.entity_name, args.project_name)');
   });
 
-  it('amp_impact exposes project scoping for duplicate entity names', () => {
+  it('berry_impact exposes project scoping for duplicate entity names', () => {
     expect(TOOLS_SOURCE).toContain('blastRadius(args.entity_name, args.as_of, args.project_name)');
   });
 
-  it('amp_arch_drift scopes single-entity check and mark_fresh actions', () => {
+  it('berry_arch_drift scopes single-entity check and mark_fresh actions', () => {
     expect(TOOLS_SOURCE).toContain('checkFreshness(args.entity_name, args.project_name)');
     expect(TOOLS_SOURCE).toContain('markFresh(args.entity_name, args.project_name)');
   });
 
-  it('amp_arch_aspect scopes entity-specific operations', () => {
+  it('berry_arch_aspect scopes entity-specific operations', () => {
     expect(TOOLS_SOURCE).toContain('applyTo(args.name, args.entity_name, args.project_name)');
     expect(TOOLS_SOURCE).toContain('removeFrom(args.name, args.entity_name, args.project_name)');
     expect(TOOLS_SOURCE).toContain('getEffectiveAspects(args.entity_name, args.project_name)');
     expect(TOOLS_SOURCE).toContain('getEntitiesForAspect(args.name, args.project_name)');
   });
 
-  it('amp_arch_relate scopes structural relation creation', () => {
+  it('berry_arch_relate scopes structural relation creation', () => {
     expect(TOOLS_SOURCE).toContain('args.properties,\n        args.project_name');
   });
 });

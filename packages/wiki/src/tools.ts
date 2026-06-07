@@ -47,7 +47,7 @@ export function setWikiServiceInstances(services: {
 
 // ─── Tool name constants ──────────────────────────────────────────────────────
 
-export const WIKI_TOOL_NAMES = ['amp_compile', 'amp_ingest', 'amp_lint', 'amp_braindump', 'amp_wiki_sync'] as const;
+export const WIKI_TOOL_NAMES = ['berry_compile', 'berry_ingest', 'berry_lint', 'berry_braindump', 'berry_wiki_sync'] as const;
 
 // ─── Zod schemas ─────────────────────────────────────────────────────────────
 
@@ -143,14 +143,14 @@ function textContent(text: string): { content: Array<{ type: 'text'; text: strin
 // ─── Handler implementations ─────────────────────────────────────────────────
 
 export type WikiToolHandlers = {
-  amp_compile: (args: {
+  berry_compile: (args: {
     project_tag: string;
     output_dir: string;
     format?: 'obsidian' | 'plain';
     emit_graph?: boolean;
     entities?: string[];
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-  amp_ingest: (args: {
+  berry_ingest: (args: {
     source_path: string;
     source_type: 'article' | 'paper' | 'repo' | 'dataset' | 'note' | 'reference';
     project_tag: string;
@@ -159,7 +159,7 @@ export type WikiToolHandlers = {
     claims?: Array<{ content: string; about: string[]; confidence?: number; tags?: string[] }>;
     tags?: string[];
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-  amp_lint: (args: {
+  berry_lint: (args: {
     project_tag: string;
     checks?: LintCheck[];
     thresholds?: {
@@ -169,7 +169,7 @@ export type WikiToolHandlers = {
       hub_min_links?: number;
     };
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-  amp_braindump: (args: {
+  berry_braindump: (args: {
     content?: string;
     source_path?: string;
     scope: string;
@@ -180,7 +180,7 @@ export type WikiToolHandlers = {
     claims?: Array<{ content: string; about: string[]; confidence?: number; tags?: string[] }>;
     compile?: boolean;
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
-  amp_wiki_sync: (args: {
+  berry_wiki_sync: (args: {
     path: string;
     project_tag?: string;
   }) => Promise<{ content: Array<{ type: 'text'; text: string }> }>;
@@ -188,7 +188,7 @@ export type WikiToolHandlers = {
 
 export function buildWikiToolHandlers(): WikiToolHandlers {
   return {
-    async amp_compile(args) {
+    async berry_compile(args) {
       if (!wikiCompiler) throw new Error('WikiCompiler not initialised');
 
       // Validate output_dir is within allowed directory
@@ -205,7 +205,7 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
       return textContent(JSON.stringify(result, null, 2));
     },
 
-    async amp_ingest(args) {
+    async berry_ingest(args) {
       if (!ingestionService) throw new Error('IngestionService not initialised');
 
       // Validate source_path is within allowed directory
@@ -224,10 +224,10 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
       return textContent(JSON.stringify(result, null, 2));
     },
 
-    async amp_braindump(args) {
+    async berry_braindump(args) {
       if (!ingestionService) throw new Error('IngestionService not initialised');
       if (!args.content && !args.source_path) {
-        throw new Error('amp_braindump requires either `content` or `source_path`');
+        throw new Error('berry_braindump requires either `content` or `source_path`');
       }
       if (args.source_path) validatePath(args.source_path);
 
@@ -259,7 +259,7 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
       return textContent(JSON.stringify({ ...result, scope, compiled }, null, 2));
     },
 
-    async amp_wiki_sync(args) {
+    async berry_wiki_sync(args) {
       if (!editReconciler) throw new Error('WikiEditReconciler not initialised');
       validatePath(args.path);
       const editedMd = await readFile(args.path, 'utf-8');
@@ -271,7 +271,7 @@ export function buildWikiToolHandlers(): WikiToolHandlers {
       return textContent(JSON.stringify(result, null, 2));
     },
 
-    async amp_lint(args) {
+    async berry_lint(args) {
       if (!wikiLinter) throw new Error('WikiLinter not initialised');
       const input: LintInput = {
         project_tag: args.project_tag,
@@ -318,45 +318,45 @@ export function registerWikiTools(server: McpServer): RegisteredTool[] {
   const handles: RegisteredTool[] = [];
 
   handles.push(server.tool(
-    'amp_compile',
+    'berry_compile',
     'Compile the AMP knowledge graph into a navigable wiki of interlinked markdown pages. Each entity becomes an article with [[wikilinks]], backlinks, hierarchy, see-also, and source citations. Generates index files and optional graph metadata.',
     AmpCompileSchema,
     // Non-empty: an empty `{}` makes the MCP SDK misparse the handler slot
     // ("typedHandler is not a function"). See ANN_WRITE note in @memberry/mcp tools.ts.
     { readOnlyHint: false } satisfies ToolAnnotations,
-    handlers.amp_compile,
+    handlers.berry_compile,
   ));
 
   handles.push(server.tool(
-    'amp_ingest',
+    'berry_ingest',
     'Ingest a raw source document into the AMP graph. Creates a Source node and stores pre-extracted entities and claims as Entity and Semantic nodes with CITES/ABOUT relationships. Handles text/markdown directly and converts documents (PDF, Word/.docx, Excel/.xlsx, HTML, RTF) to text first when the needed system tools are installed. Use this to feed research material, articles, notes, contracts, reports, or org docs into the knowledge base.',
     AmpIngestSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
-    handlers.amp_ingest,
+    handlers.berry_ingest,
   ));
 
   handles.push(server.tool(
-    'amp_lint',
+    'berry_lint',
     'Run health checks on the wiki knowledge graph. Detects orphan pages, broken links, missing relationships, duplicate entities, contradictions, low-confidence claims, stale sources, and coverage gaps. Returns actionable suggestions.',
     AmpLintSchema,
     { readOnlyHint: true } satisfies ToolAnnotations,
-    handlers.amp_lint,
+    handlers.berry_lint,
   ));
 
   handles.push(server.tool(
-    'amp_braindump',
+    'berry_braindump',
     'Capture a human brain dump into AMP as durable, human-authored memory. Turns freeform text (your role, preferences, tech stack, how you like AI to respond) into graph knowledge under a custom scope (e.g. project:user-personal) while keeping the verbatim text as a Source. Auto-extracts entities and claims, creates the scope if new, and optionally compiles that scope into its own wiki. Use when the user says "remember this about me".',
     AmpBraindumpSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
-    handlers.amp_braindump,
+    handlers.berry_braindump,
   ));
 
   handles.push(server.tool(
-    'amp_wiki_sync',
-    'Reconcile a human-edited wiki markdown file back into the graph. Changed claims become corrections (supersede), newly added lines become new human-authored memories, using the hidden per-claim anchors emitted by amp_compile. The complement to the wiki viewer Edit button for agent/CLI-driven edits.',
+    'berry_wiki_sync',
+    'Reconcile a human-edited wiki markdown file back into the graph. Changed claims become corrections (supersede), newly added lines become new human-authored memories, using the hidden per-claim anchors emitted by berry_compile. The complement to the wiki viewer Edit button for agent/CLI-driven edits.',
     AmpWikiSyncSchema,
     { openWorldHint: true } satisfies ToolAnnotations,
-    handlers.amp_wiki_sync,
+    handlers.berry_wiki_sync,
   ));
 
   return handles;

@@ -86,7 +86,7 @@ describe('IngestionService — brain dumps', () => {
     expect(sem?.params.confidence).toBe(0.7);
   });
 
-  it('leaves amp_ingest behaviour unchanged (agent author, volatile, 0.3, no fallback)', async () => {
+  it('leaves berry_ingest behaviour unchanged (agent author, volatile, 0.3, no fallback)', async () => {
     const { driver, calls } = createMockDriver();
     const result = await new IngestionService(driver).ingest({
       content: 'some doc text', source_type: 'article', project_tag: 'project:test',
