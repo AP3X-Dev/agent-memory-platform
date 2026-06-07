@@ -98,7 +98,7 @@ npm run dev
 ```json
 {
   "mcpServers": {
-    "amp": {
+    "memberry": {
       "type": "sse",
       "url": "http://localhost:3101/sse"
     }
@@ -110,7 +110,7 @@ npm run dev
 ```json
 {
   "mcpServers": {
-    "amp": {
+    "memberry": {
       "type": "stdio",
       "command": "npx",
       "args": ["tsx", "packages/mcp/src/server.ts", "--stdio"],
