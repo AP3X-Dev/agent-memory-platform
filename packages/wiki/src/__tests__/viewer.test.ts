@@ -121,6 +121,27 @@ describe('WikiViewer', () => {
     expect(html).toContain('MemBerry Wiki');
   });
 
+  it('renders the MemBerry branded header and serves the logo asset', async () => {
+    const page = await fetch(`http://localhost:${TEST_PORT}/wiki/_index`);
+    const html = await page.text();
+    expect(html).toContain('src="/assets/memberry-logo.png"');
+    expect(html).toContain('<span class="title-mem">Mem</span><span class="title-berry">Berry</span>');
+    expect(html).toContain('--accent: #9b35ff;');
+    expect(html).toContain('.hero-aurora {');
+    expect(html).toContain('--hero-legacy-bg:');
+    expect(html).toContain('--hero-left-scrim:');
+
+    const logo = await fetch(`http://localhost:${TEST_PORT}/assets/memberry-logo.png`);
+    expect(logo.status).toBe(200);
+    expect(logo.headers.get('content-type')).toContain('image/png');
+    const bytes = new Uint8Array(await logo.arrayBuffer());
+    expect([...bytes.slice(0, 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+
+    const logoHead = await fetch(`http://localhost:${TEST_PORT}/assets/memberry-logo.png`, { method: 'HEAD' });
+    expect(logoHead.status).toBe(200);
+    expect(logoHead.headers.get('content-type')).toContain('image/png');
+  });
+
   it('resolves [[wikilinks]] to HTML links', async () => {
     const res = await fetch(`http://localhost:${TEST_PORT}/wiki/_index`);
     const html = await res.text();

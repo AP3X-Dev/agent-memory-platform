@@ -797,7 +797,7 @@ export function renderProjectGraph(project: ProjectData): string {
   }
 
   lines.push('');
-  lines.push('  classDef project fill:#ffd400,color:#0a0a0a,stroke:#ffd400');
+  lines.push('  classDef project fill:#9b35ff,color:#ffffff,stroke:#9b35ff');
   lines.push('  classDef sparse fill:#1a1a1a,color:#888,stroke:#2a2a2a,stroke-dasharray:3 3');
   lines.push('```');
 

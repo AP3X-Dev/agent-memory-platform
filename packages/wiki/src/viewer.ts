@@ -22,6 +22,7 @@ const marked = new Marked();
 // and before search indexing so they never surface to the reader. Stateless (no
 // shared lastIndex) — safe to reuse with String.replace.
 const ANCHOR_STRIP_RE = /<!--\s*amp:sem-[A-Za-z0-9_-]+\s*-->/g;
+const MEMBERRY_LOGO_ASSET = new URL('./assets/memberry-logo.png', import.meta.url);
 
 // Driver for the editable round-trip. Null = strictly read-only viewer.
 let editDriver: Driver | null = null;
@@ -150,8 +151,8 @@ function topBar(active: string): string {
   ).join('');
   return `<div class="topbar">
   <div class="brand">
-    <a href="/wiki/_index" class="logo">A</a>
-    <a href="/wiki/_index" class="title">MemBerry&nbsp;WIKI</a>
+    <a href="/wiki/_index" class="logo" aria-label="MemBerry Wiki home"><img src="/assets/memberry-logo.png" alt="" decoding="async"></a>
+    <a href="/wiki/_index" class="title" aria-label="MemBerry Wiki"><span class="title-mem">Mem</span><span class="title-berry">Berry</span><span class="title-suffix">&nbsp;WIKI</span></a>
     <span class="stamp">v2.4 · synced ${escapeHtml(compiledStamp)}</span>
   </div>
   <nav>${navHtml}</nav>
@@ -488,9 +489,21 @@ function renderOpsHomeBody(
 
   const heroHtml = `
   <div class="hero">
-    <div class="stamp">KNOWLEDGE GRAPH · NEO4J · COMPILED ${escapeHtml(compiled)}</div>
-    <h1><span class="accent">EVERY</span><br><span class="ghost">THING</span><br><span class="full">WE&nbsp;KNOW</span></h1>
-    <p>Auto-generated from <span class="accent">${stats.projects} projects</span>, <span class="accent">${stats.entities} entities</span>, and <span class="accent">${stats.sessions} sessions</span> of agent work. Rebuilt every 6 hours from the MemBerry knowledge graph.</p>
+    <div class="hero-aurora" aria-hidden="true">
+      <span class="hero-aurora-band hero-aurora-band-main"></span>
+      <span class="hero-aurora-band hero-aurora-band-ribbon"></span>
+      <span class="hero-aurora-band hero-aurora-band-depth"></span>
+      <span class="hero-aurora-band hero-aurora-band-core"></span>
+      <span class="hero-aurora-shadow hero-aurora-shadow-left"></span>
+      <span class="hero-aurora-shadow hero-aurora-shadow-right"></span>
+      <span class="hero-aurora-sheen"></span>
+      <span class="hero-aurora-grain"></span>
+    </div>
+    <div class="hero-content">
+      <div class="stamp">KNOWLEDGE GRAPH · NEO4J · COMPILED ${escapeHtml(compiled)}</div>
+      <h1><span class="accent">EVERY</span><br><span class="ghost">THING</span><br><span class="full">WE&nbsp;KNOW</span></h1>
+      <p>Auto-generated from <span class="accent">${stats.projects} projects</span>, <span class="accent">${stats.entities} entities</span>, and <span class="accent">${stats.sessions} sessions</span> of agent work. Rebuilt every 6 hours from the MemBerry knowledge graph.</p>
+    </div>
   </div>`;
 
   const graphHtml = `
@@ -656,7 +669,10 @@ const CSS = `
   --border: #1a1a1a;
   --border-faint: #141414;
   --border-line: #2a2a2a;
-  --accent: #ffd400;
+  --accent: #9b35ff;
+  --accent-soft: #9b35ff24;
+  --hero-legacy-bg: radial-gradient(ellipse at 80% 30%, var(--accent-soft) 0%, transparent 50%), var(--bg);
+  --hero-left-scrim: linear-gradient(to right, rgba(0, 0, 0, 0.96) 0%, rgba(0, 0, 0, 0.88) 30%, rgba(0, 0, 0, 0.52) 44%, rgba(0, 0, 0, 0.12) 62%, transparent 78%);
   --ok: #22c98a;
   --warn: #ffaa55;
   --display: 'Archivo Black', 'Anton', 'Inter', sans-serif;
@@ -681,11 +697,17 @@ a { color: var(--fg); text-decoration: none; }
 }
 .topbar .brand { display: flex; align-items: center; gap: 10px; margin-right: 32px; }
 .topbar .logo {
-  width: 22px; height: 22px; border-radius: 4px;
-  background: var(--accent); display: grid; place-items: center;
-  color: #0a0a0a; font-weight: 900; font-size: 12px; font-family: var(--display);
+  width: 30px; height: 30px; border-radius: 999px;
+  display: block; overflow: hidden; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px #2a2a2a, 0 0 16px #9b35ff55;
 }
-.topbar .title { font-family: var(--display); font-weight: 900; font-size: 14px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--fg); }
+.topbar .logo img {
+  display: block; width: 100%; height: 100%; object-fit: cover;
+}
+.topbar .title { font-family: var(--display); font-weight: 900; font-size: 15px; letter-spacing: 0.02em; text-transform: none; color: var(--fg); }
+.topbar .title .title-mem { color: #ffffff; }
+.topbar .title .title-berry { color: var(--accent); }
+.topbar .title .title-suffix { color: var(--fg-muted); font-size: 11px; letter-spacing: 0.1em; }
 .topbar .stamp { font-size: 10px; color: var(--fg-faint); letter-spacing: 0.1em; text-transform: uppercase; margin-left: 4px; }
 .topbar nav { display: flex; gap: 0; flex: 1; }
 .topbar nav a {
@@ -726,8 +748,155 @@ a { color: var(--fg); text-decoration: none; }
 .hero {
   padding: 48px 24px 32px;
   border-bottom: 1px solid var(--border);
-  background: radial-gradient(ellipse at 80% 30%, #ffd40018 0%, transparent 50%), var(--bg);
+  /* Previous hero treatment is kept here as the fallback/revert path. */
+  background: var(--hero-legacy-bg);
   position: relative;
+  overflow: hidden;
+  isolation: isolate;
+}
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background:
+    var(--hero-left-scrim),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.62), rgba(0, 0, 0, 0.18) 22%, transparent 45%, rgba(0, 0, 0, 0.42)),
+    radial-gradient(ellipse at 70% 50%, transparent 30%, rgba(0, 0, 0, 0.58) 100%);
+}
+.hero-content {
+  position: relative;
+  z-index: 3;
+}
+.hero-aurora {
+  position: absolute;
+  inset: -20%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 118%, rgba(192, 38, 211, 0.14), transparent 42%),
+    radial-gradient(circle at 18% 6%, rgba(221, 214, 254, 0.08), transparent 28%),
+    radial-gradient(circle at 88% 18%, rgba(109, 40, 217, 0.10), transparent 30%),
+    radial-gradient(circle at 70% 50%, rgba(91, 33, 182, 0.07), transparent 35%),
+    #000;
+  animation: heroSceneDrift 11s ease-in-out infinite alternate;
+}
+.hero-aurora::before {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  background:
+    conic-gradient(from 0deg at 50% 50%,
+      transparent 0deg,
+      rgba(221, 214, 254, 0.08) 48deg,
+      transparent 112deg,
+      rgba(139, 92, 246, 0.10) 185deg,
+      transparent 258deg,
+      rgba(192, 38, 211, 0.10) 320deg,
+      transparent 360deg);
+  filter: blur(52px);
+  opacity: 0.82;
+  mix-blend-mode: screen;
+  transform-origin: center;
+  animation: heroAuroraSpin 16s linear infinite;
+}
+.hero-aurora-band,
+.hero-aurora-shadow,
+.hero-aurora-sheen,
+.hero-aurora-grain {
+  position: absolute;
+  pointer-events: none;
+  will-change: transform, opacity, border-radius;
+  transform: translate3d(0, 0, 0);
+}
+.hero-aurora-band {
+  border-radius: 999px;
+  mix-blend-mode: screen;
+  filter: blur(clamp(34px, 6vw, 116px));
+}
+.hero-aurora-band-main {
+  width: 92vmax;
+  height: 48vmax;
+  left: -26vmax;
+  top: -18vmax;
+  opacity: 0.70;
+  background:
+    radial-gradient(circle at 52% 24%, rgba(221, 214, 254, 0.82) 0 12%, rgba(232, 121, 249, 0.68) 28%, rgba(139, 92, 246, 0.72) 48%, rgba(109, 40, 217, 0.55) 64%, transparent 78%);
+  animation: heroBandMain 9s cubic-bezier(.5, .05, .2, 1) infinite alternate;
+}
+.hero-aurora-band-ribbon {
+  width: 96vmax;
+  height: 24vmax;
+  right: -26vmax;
+  top: 22vmax;
+  opacity: 0.64;
+  filter: blur(clamp(28px, 5vw, 88px));
+  background:
+    radial-gradient(ellipse at 40% 55%, rgba(221, 214, 254, 0.54) 0 8%, rgba(192, 38, 211, 0.70) 26%, rgba(109, 40, 217, 0.76) 48%, transparent 70%);
+  animation: heroBandRibbon 7.5s ease-in-out infinite alternate;
+}
+.hero-aurora-band-depth {
+  width: 82vmax;
+  height: 42vmax;
+  right: -30vmax;
+  bottom: -18vmax;
+  opacity: 0.52;
+  background:
+    radial-gradient(circle at 42% 42%, rgba(232, 121, 249, 0.58) 0 16%, rgba(139, 92, 246, 0.62) 38%, rgba(91, 33, 182, 0.45) 60%, transparent 80%);
+  animation: heroBandDepth 8s ease-in-out infinite alternate;
+}
+.hero-aurora-band-core {
+  width: 30vmax;
+  height: 18vmax;
+  left: 22vmax;
+  top: 16vmax;
+  opacity: 0.40;
+  filter: blur(clamp(24px, 4vw, 68px));
+  background:
+    radial-gradient(circle at 45% 45%, rgba(221, 214, 254, 0.72), rgba(192, 38, 211, 0.36) 44%, transparent 72%);
+  animation: heroBandCore 5.5s ease-in-out infinite alternate;
+}
+.hero-aurora-shadow {
+  z-index: 1;
+  border-radius: 50%;
+  filter: blur(clamp(34px, 5vw, 92px));
+  background: radial-gradient(ellipse at center, rgba(0, 0, 0, 0.92) 0 42%, rgba(0, 0, 0, 0.54) 60%, transparent 74%);
+}
+.hero-aurora-shadow-left {
+  width: 72vmax;
+  height: 32vmax;
+  left: -20vmax;
+  top: 30vmax;
+  animation: heroShadowLeft 8.5s ease-in-out infinite alternate;
+}
+.hero-aurora-shadow-right {
+  width: 58vmax;
+  height: 24vmax;
+  right: -10vmax;
+  top: 6vmax;
+  opacity: 0.70;
+  animation: heroShadowRight 9s ease-in-out infinite alternate;
+}
+.hero-aurora-sheen {
+  inset: 2% -10%;
+  z-index: 2;
+  opacity: 0.46;
+  mix-blend-mode: screen;
+  filter: blur(20px);
+  background:
+    linear-gradient(120deg, transparent 16%, rgba(255, 255, 255, 0.05) 28%, transparent 42%),
+    radial-gradient(circle at 46% 36%, rgba(255, 255, 255, 0.05), transparent 18%),
+    radial-gradient(circle at 74% 62%, rgba(232, 121, 249, 0.08), transparent 20%);
+  animation: heroSheenSweep 7s ease-in-out infinite alternate;
+}
+.hero-aurora-grain {
+  inset: -80px;
+  z-index: 4;
+  opacity: 0.08;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 240 240' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.65'/%3E%3C/svg%3E");
+  animation: heroGrainShift 700ms steps(3) infinite;
 }
 .hero .stamp { font-size: 10px; letter-spacing: 0.2em; color: var(--fg-dim); text-transform: uppercase; margin-bottom: 14px; }
 .hero h1 { font-family: var(--display); font-size: 96px; line-height: 0.92; font-weight: 900; letter-spacing: -0.02em; text-transform: uppercase; }
@@ -736,6 +905,86 @@ a { color: var(--fg); text-decoration: none; }
 .hero h1 .full { color: var(--fg); }
 .hero p { max-width: 540px; margin-top: 20px; color: var(--fg-muted); font-size: 14px; line-height: 1.6; }
 .hero p .accent { color: var(--accent); }
+
+@keyframes heroSceneDrift {
+  0% { transform: scale(1) translate3d(0, 0, 0); }
+  100% { transform: scale(1.03) translate3d(-0.8vw, 0.8vh, 0); }
+}
+@keyframes heroAuroraSpin {
+  0% { transform: rotate(0deg) scale(1); }
+  50% { transform: rotate(180deg) scale(1.06); }
+  100% { transform: rotate(360deg) scale(1); }
+}
+@keyframes heroBandMain {
+  0% {
+    transform: translate3d(-4vw, -2vh, 0) rotate(-9deg) scale(1);
+    border-radius: 55% 45% 60% 40% / 48% 58% 42% 52%;
+  }
+  100% {
+    transform: translate3d(12vw, 8vh, 0) rotate(8deg) scale(1.12);
+    border-radius: 62% 38% 51% 49% / 40% 62% 38% 60%;
+  }
+}
+@keyframes heroBandRibbon {
+  0% {
+    transform: translate3d(-4vw, 4vh, 0) rotate(-12deg) scaleX(1.05) scaleY(0.94);
+    border-radius: 58% 42% 48% 52% / 63% 36% 64% 37%;
+  }
+  100% {
+    transform: translate3d(-16vw, -6vh, 0) rotate(5deg) scaleX(1.22) scaleY(0.98);
+    border-radius: 63% 37% 45% 55% / 42% 62% 38% 58%;
+  }
+}
+@keyframes heroBandDepth {
+  0% {
+    transform: translate3d(2vw, 2vh, 0) rotate(7deg) scale(1);
+    border-radius: 49% 51% 58% 42% / 44% 60% 40% 56%;
+  }
+  100% {
+    transform: translate3d(-12vw, -7vh, 0) rotate(-6deg) scale(1.14);
+    border-radius: 61% 39% 42% 58% / 52% 43% 57% 48%;
+  }
+}
+@keyframes heroBandCore {
+  0% { transform: translate3d(-2vw, -1vh, 0) scale(0.94); opacity: 0.30; }
+  100% { transform: translate3d(8vw, 7vh, 0) scale(1.22); opacity: 0.52; }
+}
+@keyframes heroShadowLeft {
+  0% {
+    transform: translate3d(-4vw, 1vh, 0) rotate(4deg) scale(1);
+    border-radius: 52% 48% 58% 42% / 48% 54% 46% 52%;
+  }
+  100% {
+    transform: translate3d(10vw, -7vh, 0) rotate(-4deg) scale(1.14);
+    border-radius: 43% 57% 45% 55% / 58% 41% 59% 42%;
+  }
+}
+@keyframes heroShadowRight {
+  0% { transform: translate3d(0, 0, 0) rotate(-4deg) scale(1); }
+  100% { transform: translate3d(-10vw, 8vh, 0) rotate(5deg) scale(1.12); }
+}
+@keyframes heroSheenSweep {
+  0% { transform: translate3d(-6vw, -4vh, 0) rotate(-1deg); }
+  100% { transform: translate3d(8vw, 5vh, 0) rotate(3deg); }
+}
+@keyframes heroGrainShift {
+  0% { transform: translate3d(0, 0, 0); }
+  25% { transform: translate3d(-4%, 3%, 0); }
+  50% { transform: translate3d(3%, -4%, 0); }
+  75% { transform: translate3d(5%, 2%, 0); }
+  100% { transform: translate3d(0, 0, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-aurora,
+  .hero-aurora::before,
+  .hero-aurora-band,
+  .hero-aurora-shadow,
+  .hero-aurora-sheen,
+  .hero-aurora-grain {
+    animation: none !important;
+  }
+}
 
 /* GRAPH (collapsible <details>) */
 .graph-wrap { position: relative; border-bottom: 1px solid var(--border); background: var(--bg-alt); }
@@ -1003,7 +1252,7 @@ a { color: var(--fg); text-decoration: none; }
 .search-page .results .result:hover { background: var(--surface-hover); }
 .search-page .results .result .title { color: var(--fg); font-size: 13px; }
 .search-page .results .result .snippet { color: var(--fg-dim); font-size: 12px; margin-top: 4px; line-height: 1.5; }
-.search-page .results .result .snippet mark { background: #ffd40022; color: var(--accent); padding: 1px 2px; }
+.search-page .results .result .snippet mark { background: var(--accent-soft); color: var(--accent); padding: 1px 2px; }
 
 /* TAG / FRONTMATTER (legacy markdown) */
 .frontmatter {
@@ -1490,7 +1739,7 @@ function buildEditor(slugPath: string, rawContent: string): string {
     .amp-edit { margin-top: 2rem; border-top: 1px solid var(--border); padding-top: 1rem; }
     .amp-edit-btn { background: #1a1a1a; color: var(--fg, #eee); border: 1px solid var(--border, #2a2a2a);
       padding: 0.4rem 0.8rem; cursor: pointer; font-family: inherit; font-size: 0.8rem; letter-spacing: 0.05em; }
-    .amp-edit-btn.primary { background: #ffd400; color: #0a0a0a; border-color: #ffd400; font-weight: 600; }
+    .amp-edit-btn.primary { background: var(--accent, #9b35ff); color: #ffffff; border-color: var(--accent, #9b35ff); font-weight: 600; }
     .amp-edit-btn:hover { filter: brightness(1.15); }
     .amp-edit-hint { color: var(--fg-faint, #888); font-size: 0.8rem; margin: 0.5rem 0; }
     #amp-edit-text { width: 100%; min-height: 420px; background: #0d0d0d; color: #ddd; border: 1px solid var(--border, #2a2a2a);
@@ -1718,6 +1967,18 @@ export function startWikiViewer(config: ViewerConfig): Promise<ReturnType<typeof
         // Redirect root to portal
         res.writeHead(302, { Location: '/wiki/_index' });
         res.end();
+      } else if (path === '/assets/memberry-logo.png' && (req.method === 'GET' || req.method === 'HEAD')) {
+        const logo = await readFile(MEMBERRY_LOGO_ASSET);
+        res.writeHead(200, {
+          'Content-Type': 'image/png',
+          'Cache-Control': 'public, max-age=86400',
+          'Content-Length': String(logo.byteLength),
+        });
+        if (req.method === 'HEAD') {
+          res.end();
+          return;
+        }
+        res.end(logo);
       } else if (path === '/api/refresh' && req.method === 'POST') {
         // Manual cache refresh endpoint
         try {
