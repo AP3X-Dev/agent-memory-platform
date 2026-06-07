@@ -20,6 +20,9 @@
     "setup": "bash scripts/setup.sh",
     "smoke": "node scripts/smoke.mjs",
     "start": "tsx packages/mcp/src/server.ts",
+    "stack:up": "docker compose --profile app up -d --build",
+    "stack:down": "docker compose --profile app down",
+    "stack:logs": "docker compose --profile app logs -f mcp",
     "bench:quality": "tsx bench/quality/eval.ts"
   },
   "engines": {

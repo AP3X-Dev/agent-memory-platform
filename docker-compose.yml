@@ -51,6 +51,46 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # The MemBerry MCP server. Opt-in via the "app" profile so a plain
+  # `docker compose up` brings up only the databases (handy when you run the
+  # server yourself, e.g. via systemd). Full turnkey stack:
+  #   docker compose --profile app up -d --build
+  # Connects to Neo4j/Redis over the compose network (service DNS), so its
+  # connection URLs differ from the host-facing ones in .env.
+  mcp:
+    profiles: ["app"]
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: memberry:local
+    container_name: memberry-mcp
+    depends_on:
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Container-network connection URLs (override the localhost values in .env).
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-memberry-local-dev}
+      REDIS_URL: redis://:${REDIS_PASSWORD:-memberry-local-dev}@redis:6379
+      MCP_PORT: "3101"
+      # App config — sourced from .env (compose interpolation), safe defaults otherwise.
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      MEMBERRY_API_TOKEN: ${MEMBERRY_API_TOKEN:-}
+      MEMBERRY_API_TOKENS: ${MEMBERRY_API_TOKENS:-}
+      MEMBERRY_ALLOW_UNAUTHENTICATED: ${MEMBERRY_ALLOW_UNAUTHENTICATED:-}
+      MEMBERRY_READONLY: ${MEMBERRY_READONLY:-}
+      MEMBERRY_REDACT_ON_INGEST: ${MEMBERRY_REDACT_ON_INGEST:-}
+      MEMBERRY_EMBEDDING_DIM: ${MEMBERRY_EMBEDDING_DIM:-}
+      MEMBERRY_MODEL_EXTRACTION: ${MEMBERRY_MODEL_EXTRACTION:-}
+      MEMBERRY_MODEL_SYNTHESIS: ${MEMBERRY_MODEL_SYNTHESIS:-}
+      MEMBERRY_MODEL_DREAM: ${MEMBERRY_MODEL_DREAM:-}
+    ports:
+      - "127.0.0.1:3101:3101"
+    restart: unless-stopped
+
 volumes:
   neo4j_data:
   neo4j_plugins:

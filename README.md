@@ -69,42 +69,61 @@ On demand:       9 domains (memory, temporal, admin, research, code, arch, wiki,
 
 ## Quick Start
 
-### Prerequisites
-
-- Node.js 20+
-- Docker (for Redis + Neo4j)
-
-### Setup
+The fastest path runs the whole stack — Neo4j, Redis, and the MemBerry MCP
+server — in Docker. **Only Docker is required** (Docker Engine + the Compose v2 plugin).
 
 ```bash
 git clone https://github.com/AP3X-Dev/memberry.git
 cd memberry
-
-cp .env.example .env   # then set OPENAI_API_KEY (defaults are fine for local infra)
-npm run setup          # brings up Docker infra (Neo4j + Redis), installs, builds, smoke-tests
+./setup.sh
 ```
 
-`npm run setup` is self-contained: it starts the bundled Neo4j + Redis via
-`docker compose`, waits for them to be healthy, runs `npm ci && npm run build`,
-then runs a smoke test. It's idempotent — safe to re-run.
-
-Run the server from compiled artifacts:
+`./setup.sh` is a guided wizard: it checks Docker, generates a `.env` (a random
+API token + database passwords; the OpenAI key is optional), builds and starts
+the full stack via `docker compose --profile app`, waits until it's healthy, and
+prints the exact MCP config to paste into your agent — including your generated
+bearer token. It's idempotent — safe to re-run.
 
 ```bash
-npm start              # node packages/mcp/dist/server.js
+./setup.sh --yes          # non-interactive (CI) — accept all defaults
+./setup.sh --db-only      # start only Neo4j + Redis (run the server yourself)
+./setup.sh --reconfigure  # re-run the wizard even if .env exists
 ```
 
-Prefer hot reload during development? Use `npm run dev` instead.
+> **No OpenAI key?** MemBerry still runs — retrieval falls back to deterministic
+> lexical + fulltext ranking (no random results). Add `OPENAI_API_KEY` to `.env`
+> and `npm run stack:up` to enable embeddings.
+
+### Manage the stack
+
+```bash
+npm run stack:up      # build + start Neo4j + Redis + MemBerry server
+npm run stack:logs    # follow the server logs
+npm run stack:down    # stop everything
+curl http://localhost:3101/healthz
+```
+
+### Run from source instead (development)
+
+Hacking on MemBerry itself? Start just the databases and run the server on the
+host (needs Node.js 20+):
+
+```bash
+./setup.sh --db-only
+npm install
+npm run dev           # tsx, hot reload  (or: npm start)
+```
 
 ### Connect to Your Agent
 
-**Claude Code (SSE):**
+After setup, paste the printed config (with your token) into your MCP client:
+
 ```json
 {
   "mcpServers": {
     "memberry": {
-      "type": "sse",
-      "url": "http://localhost:3101/sse"
+      "url": "http://localhost:3101/mcp",
+      "headers": { "Authorization": "Bearer <token-from-setup>" }
     }
   }
 }
@@ -115,27 +134,9 @@ Prefer hot reload during development? Use `npm run dev` instead.
 codex mcp add memberry --url http://localhost:3101/mcp --bearer-token-env-var MEMBERRY_API_TOKEN
 ```
 
-**Claude Code (stdio):**
-```json
-{
-  "mcpServers": {
-    "memberry": {
-      "type": "stdio",
-      "command": "npx",
-      "args": ["tsx", "packages/mcp/src/server.ts", "--stdio"],
-      "cwd": "/path/to/memberry",
-      "env": {
-        "NEO4J_URI": "bolt://localhost:7687",
-        "NEO4J_USER": "neo4j",
-        "NEO4J_PASSWORD": "your-password",
-        "REDIS_URL": "redis://:your-password@localhost:6379"
-      }
-    }
-  }
-}
-```
+stdio transport is also supported (`tsx packages/mcp/src/server.ts --stdio`).
 
-**Works with any MCP-compatible agent:** Claude Code, Cursor, Windsurf, Cline, Codex, or custom agents.
+**Works with any MCP-compatible agent:** Claude Code, Cursor, Windsurf, Cline, Codex, or custom agents. See [SECURITY.md](SECURITY.md) for the auth model and token management.
 
 ### Hooks — a deterministic context floor (optional)
 
