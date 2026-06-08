@@ -1,0 +1,10 @@
+---
+id: EBBeBH6nehbMsWA-BbVs4
+session_id: session-20260607-ag3ntic-prpv2
+agent_id: mcp
+task: Record morph decisions: clean-repo mandate, computer-use-as-capability, Composio removal.
+outcome: approved
+created_at: "2026-06-07T12:24:16.428Z"
+---
+
+AG3NTIC morph execution decisions (2026-06-07): (1) MORPH path confirmed (hybrid) — cloned the prior "Cloud Computer Platform/Nimbus" repo from C:\Users\Guerr\Desktop\AG3NTIC to the fork C:\Users\Guerr\Documents\AG3NTIC\platform (HEAD 96ecb0b); also copied the untracked packages/mcp-server into the fork. We build the AG3NTIC employee/operator/capability/memory/approval layer ON TOP of this fork. (2) HARD REQUIREMENT — clean repo: dead-end/no-longer-viable code MUST be removed, not left beside the new code; agents get confused by dead paths and it 'turns into a disaster.' Enforced via: an upfront purge milestone (delete dead paradigm before building), per-milestone remove-on-replacement (delete the thing each new piece replaces in the same step), and a repo-cleanliness acceptance gate (no orphaned modules/dead imports/refs to removed concepts, grep-enforced). (3) COMPUTER-USE REFRAME — the user WANTS agents to be able to use computers (a strong differentiator). So the desktop/VNC/computer-use stack is NOT dropped; it is reframed from the core product metaphor into a first-class 'Computer' Capability (and optional computer-backed runtime) that employees can be granted, gated by the Permission Gateway + approvals. This amends PRP v2: add a Computer capability to §16/§30 and a computer-backed runtime option to §13. (4) Composio is to be REMOVED — tool integrations will be provided through our own MCP capability containers instead. Deliverable in progress: ag3ntic-morph-build-plan.md = morph-aware milestone plan + file/path-level removal manifest.

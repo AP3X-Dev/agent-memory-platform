@@ -1,0 +1,10 @@
+---
+id: PpkY4lthkbLC9Luiyn1Fz
+session_id: session-20260514-optimizer56
+agent_id: mcp
+task: [project:oni-grid] optimization session 56: Mode-B discovery sweep across managed-session code paths
+outcome: approved
+created_at: "2026-05-14T13:25:43.855Z"
+---
+
+[project:oni-grid] Session 56 (commit 133fd47) was a Mode-B discovery sweep across the managed-session code landed in Sessions 48-55. Two findings: (1) Discovery fix inline — useActiveRunPersistence.ts beforeunload handler swallowed markRunInterrupted failures with .catch(() => {}); now console.warns run id + truncated message per the Item #4 silent-catch convention (fire-and-forget-on-unload behavior unchanged). (2) New backlog item D17 — agentSessions and agentBlockers in appStore.ts are unbounded arrays. Root cause: these slices were added in Sessions 48+ AFTER Item #12's array-bounding pass, so they were missed. managedAgentEvents IS bounded (trimManagedAgentEvents, limit 1000) but the session/blocker arrays just push and never trim. Over a long-lived app running many managed runs (especially the autonomous loop) they grow without limit. Deferred to D17 rather than fixed inline because a safe trim must preserve non-terminal AgentSessions and open AgentBlockers — keep all live entries + most recent N terminal ones — which is more than a 15-min discovery fix and needs tests. Swept clean: useManagedAgentEvents (proper error handling), ManagedTranscript in TerminalPane (read-only, no clickable divs, no hardcoded sample data, bounded .slice(-120) reads), forkTree (pruned by sessionId filter, not unbounded). npm audit --omit=dev: 0 vulnerabilities. Convention reinforced: when adding a new array slice to appStore, check whether it needs bounding — the Item #12 pass (pane.output/chatMessages/costAlerts ring buffers) set the precedent and new slices must follow it. State of the optimization pass: items 1-30 complete, D1-D16 closed, D14 in progress (code-side done, only live validation remains — not loop-runnable), D17 now open. Next session executes D17 as Mode-A.

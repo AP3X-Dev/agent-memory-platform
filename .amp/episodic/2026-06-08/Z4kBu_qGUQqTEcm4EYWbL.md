@@ -1,0 +1,17 @@
+---
+id: Z4kBu_qGUQqTEcm4EYWbL
+session_id: session-20260608-ag3ntic-phase45
+agent_id: mcp
+task: [project:ag3ntic] Phase 4 + 5 COMPLETE + live Cerebro acceptance results. Handoff before the autonomous optimization loop.
+created_at: "2026-06-08T09:17:59.040Z"
+---
+
+PHASE 4 + 5 DONE (branch morph/m1-data-model, NOT pushed). Commits on 1972ed2: 7a1f774 (T13 seed_shell), d431a3b (T15 seed_shell_demo CLI+doc), d382958 (test fix), 9734119 (T17 docs ACP-primary), 07ee4a7 (T18 security.md+deploy docs), 0a4ec79 (T16 live findings). tests/=215 pass; cleanliness gate PASS; no World-B remnants.
+
+LIVE DEPLOY DONE (Cerebro ag3ntic stack, ISOLATED — MemBerry/others untouched). Deploy method: ag3ntic api+worker BIND-MOUNT source (../apps/api:/app), so deploy = rsync/tar apps/api to ~/projects/ag3ntic-morph/apps/api (NOT a git repo) + alembic upgrade head (20260607_0001->20260608_0003) + docker compose -p ag3ntic restart api worker. NO image rebuild. DB backed up to ~/backups/ag3ntic-pre-phase4.sql.gz. REDIS_URL=redis://redis:6379/0 (own ag3ntic-redis-1). APP_ENV=development. Demo: ws wsp_65af44e194692baac5f5efae, employee emp_8940c6de179980dcb572e6f9 (slug hermes-demo, healthy runtime container employee-demo-hermes-demo), reviewer user usr_5366a22327dbf06b78830db3 (owner). Shell cap seeded live: cap_de66b64748065a4a18269066, binding ecap_13761efc386b7282a4a0e573 attached.
+
+LIVE VALIDATION (Hermes Agent v0.14.0): ✅ ACP duplex docker-exec transport works through docker-socket-proxy (EXEC=1) — the #1 risk, PROVEN. ✅ streaming + contiguous run_event sequencing. ✅ FULL gating path: dangerous cmd (rm -rf) -> Hermes prompt_dangerous_approval -> ACP request_permission -> adapter approval.requested -> gateway intercept_tool_call maps to (shell,run_command) -> approval_required -> ApprovalRequest(pending_user_review)+ToolCall(args_hash) -> run waiting_approval -> deny-fast (ACP cancelled). Events: chat.run_started,tool.started,approval.requested,tool.intercepted,approval.requested,approval.pending,tool.completed,chat.delta*. ✅ decide_approval(approve) -> approved (decided_by is FK to users.id — must be real user).
+
+KNOWN GAP (Phase 4 re-issue leg, documented in docs/hermes-contract-findings.md): RISK #2 (model re-attempt) is REAL+nondeterministic — on the generic resume re-prompt ('your action was approved, proceed'), gpt-5.5 did NOT reliably re-attempt the specific gated command (run reached succeeded WITHOUT executing it; approval stayed approved not executed; grant unconsumed). Hermes terminal tool-use itself is nondeterministic (same prompt sometimes no tool call). FIX (HIGH PRIORITY, ideal optimization-loop target): improve run_worker._handle_resume to re-prompt with the SPECIFIC approved command pulled from the held ToolCall args (Mitigation B = fresh session + original task pre-noting approval) so re-attempt is deterministic; then wired-approval re-test. Also: grant creation needs tasks.runs.wire() (HTTP approval endpoint is wired; out-of-process decide_approval skips it — harness artifact). Gating only fires for Hermes-classified-dangerous commands (benign run un-gated). Vestige: AG3NTIC_GATEWAY_URL=http://permission-gateway:7100 set in employee env but no such service (cleanup candidate).
+
+NEXT: autonomous optimization/hardening loop (user goal) via building-optimization-loops skill — _handle_resume re-prompt is target #1.

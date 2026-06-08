@@ -1,0 +1,10 @@
+---
+id: qqt6Nj9-kgwIICV7BORkB
+session_id: session-20260413-111800
+agent_id: mcp
+task: [project:oni-code] Ship Slice C of parity-v0.2 — Streamable HTTP MCP transport (C.1 interface + C.2 immediate JSON + C.3 SSE + Mcp-Session-Id).
+outcome: approved
+created_at: "2026-04-13T19:15:54.201Z"
+---
+
+[project:oni-code] Slice C landed as umbrella merge 4cc9099 off 1d92b34. Three sub-commits in one branch matching the queue plan's narrowing: C.1 (b8fdc58) extracts McpClient interface + payload types into src/mcp/client.ts, McpStdioClient implements it, bridge Entry.client typed as McpClient — pure refactor, suite stays green; C.2 (6812b18) adds src/mcp/http-client.ts implementing McpClient over native fetch with application/json responses; McpServerSpec becomes discriminated union {transport: 'stdio'} (default) | {transport: 'http', url, headers?}; bridge.spawnAndHandshake routes accordingly; C.3 (7a3f5d9) adds SSE response path (drain ReadableStream, concat data: lines into JSON-RPC frames, resolve on matching id, drop intermediate notifications pending Slice D) + Mcp-Session-Id round-trip captured from any response that carries one and echoed via mcp-session-id header on subsequent requests. Total ~1180 LOC; ~580 LOC production. Tests: 12 http-client unit (fixture node:http server with optional sessionId issuance + SSE fixture variant) + 4 slice-19ext-http integration (bridge over HTTP, deferred registration, handler round-trip, resources/prompts surfaces, disconnect). Suite 1326 pass +16 new from baseline 1311. Same Windows-fs/concurrency flake class as rule 8 (S04, S05, bash-persistent, monitor-tool — all pass in isolation). Slice C unblocks Slice D (elicitation needs handleServerRequest hook on McpClient + long-lived GET stream — both net-new) and Slice E (multi-runtime pooling needs McpBridge.view() returning a child-bridge proxy implementing McpClient — clean only because of C.1's interface).

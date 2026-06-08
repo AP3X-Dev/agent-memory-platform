@@ -1,0 +1,10 @@
+---
+id: Iv0V6Wh_MbeeyqL-mZ_fZ
+session_id: session-20260607-m2
+agent_id: mcp
+task: [project:ag3ntic-platform] built credentials domain (ModelProvider/ModelCredential CRUD + connect-a-model + test-connection)
+outcome: approved
+created_at: "2026-06-07T15:27:51.565Z"
+---
+
+[project:ag3ntic-platform] Built platform_core/credentials/ (M2). Key design decisions: (1) The §10.6.2 model_credentials table has a single encrypted_payload bytea column and NO dedicated nonce column, even though vault.crypto.encrypt_value returns (ciphertext, nonce). Decision: store payload as nonce(12 bytes) || ciphertext, split back on decrypt via _pack_payload/_unpack_payload. Avoids a model/migration change. (2) Credential status uses the DDL CHECK set active|invalid|revoked PLUS 'untested' on create (per §4.1 step 4 — credential starts untested, flips to active only after test-connection succeeds). (3) Live provider probe is factored into a standalone `async def _probe(base_url, api_key, provider_type)` in service.py with an 8s httpx timeout, so tests monkeypatch service._probe. Anthropic uses POST /v1/messages 1-token completion with x-api-key + anthropic-version headers; openrouter/nous_portal/openai_compatible/local use GET /v1/models with Bearer. (4) create_credential demotes any prior active credential for the same provider to 'revoked' so the partial unique index uq_model_creds_active_provider holds. (5) has_active_model_credential(session, workspace_id) is the Operator gate per §4.1 step 3. (6) Router uses the existing authorize_workspace PEP from auth.deps on every route; mounted in main.py alongside auth/workspaces/tool_capsules. Responses are redacted (ModelCredentialOut never carries encrypted_payload/nonce/plaintext; only a masked key_hint '...abcd'). NOTE: the live Workspace model in models.py lacks owner_user_id/status/settings_json fields that auth.deps.authorize_workspace and workspaces/router.py reference — pre-existing transitional mismatch, not introduced by this work.

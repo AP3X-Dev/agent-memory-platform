@@ -1,0 +1,10 @@
+---
+id: QahTg6s6pZ5lv6YZ2nVFI
+session_id: session-20260419-prp01-autonomous
+agent_id: mcp
+task: [project:ap3x-solana] T15+T16+T17 done — solana-connectivity COMPLETE
+outcome: approved
+created_at: "2026-04-19T17:01:28.956Z"
+---
+
+[project:ap3x-solana] Three commits completing solana-connectivity: 5ab3207 (FileCheckpointStore mirroring T11 FileVaultStorage pattern — atomic tmp+rename, per-key #mutex map, path-traversal whitelist, ENOENT→null, 0o600 POSIX, 18+1 tests 98.21% coverage); 32dcd9e (RpcHistoricalBackfill — thin typed wrappers over RpcPool.call for getSignaturesForAddress + iterateSignaturesForAddress async-gen pagination + getTransaction with maxSupportedTransactionVersion:0 default for v0-only rule + getBlocks chunked into 1000-slot windows + fetchEventsForProgram async-gen walking blocks→sigs→txs→decoder with decoder-throws surfacing as UnknownEventDecode without halting iteration. Defined DecodedEvent/UnknownEventDecode/EventDecodeResult/TransactionDecoder types here; T30 will refine/re-export. 20 tests 100% coverage); 46e445f (diag CLI — probeRpc via real RpcPool getSlot call, probeGeyser via GeyserClient injectable GrpcAdapter for N-seconds slot-update count, compareProviders parallel probes with slotDelta/latencyDelta. CLI main(argv, io) testable dispatcher, Vitest guard via !process.env.VITEST instead of require.main since tsx ESM, subcommands probe-rpc/probe-geyser/compare-providers + --check flag exits 1 on failure. Bin path uses .cjs for cross-Node-version safety; tsup banner adds shebang once (removed from source to prevent doubling). tsx added as devDep only. 24 tests). solana-connectivity package FINAL: 131 tests total, 96.07% stmts / 91.56% branches / 95.71% funcs / 96.07% lines. Added ecosystem deps: @grpc/grpc-js, @grpc/proto-loader (T14); dev-only: tsx (T17). Three packages complete (solana-core, solana-vault, solana-connectivity); 4 packages + example + fixtures + CI remain.

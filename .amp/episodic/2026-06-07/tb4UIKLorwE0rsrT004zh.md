@@ -1,0 +1,9 @@
+---
+id: tb4UIKLorwE0rsrT004zh
+session_id: session-20260607-m5-capabilities
+agent_id: mcp
+task: Build Capabilities + MCP (M5) - new platform_core.capabilities package
+created_at: "2026-06-07T16:43:59.406Z"
+---
+
+M5 Capabilities+MCP build: creating new package apps/api/platform_core/capabilities/ (manifest.py, mcp_client.py, launcher.py, service.py, router.py, computer_capability.py, seed.py). Discriminated CapabilityManifest pydantic v2 on `type` literal {mcp_stdio, mcp_streamable_http, computer, builtin} per build plan §6.3 (note: build plan §6.3 names mcp_stdio not mcp_stdio_container - the task pins these 4 exact literals). transport literal {stdio, streamable_http} only - NEVER 'http'/'mcp'. MCP_PROTOCOL_VERSION='2025-11-25'. Per-(capability_slug,action) ToolAction risk{low,medium,high,critical}/default{allow,approval_required,deny} with risk-floor (critical!=allow, high!=allow). Keep tool_capsules host-escape-mount reject + isolation-tier fail-closed. Models exist already: Capability/CapabilityVersion/EmployeeCapability/CredentialGrant in models.py with exact columns. Reuse runtime_orchestrator.docker_client (proxy-bound, module-level fns monkeypatched in tests). Network ag3ntic_capability_<ws_id>, container mcp-<ws_slug>-<cap_slug>. Credential resolution via vault.crypto.decrypt_value + credentials nonce-prefixed payload (_NONCE_BYTES=12). Computer capability computer.* actions: screenshot low/allow, click/type/key/scroll medium, bash high/approval_required. Mount router in main.py under /api/v1. Tests at platform/tests/test_capabilities.py mock docker_client + mcp transport.

@@ -1,0 +1,10 @@
+---
+id: mFILR35v_FyiBjHVhb7sb
+session_id: session-20260607-prodhardening
+agent_id: mcp
+task: [project:amp] Streamlined open-source setup: one-command Dockerized full stack + guided wizard.
+outcome: approved
+created_at: "2026-06-07T12:43:20.479Z"
+---
+
+[project:amp] Made standing up MemBerry turnkey for open-source users. Decisions: (1) the MCP server now runs in Docker too — added an `mcp` service to docker-compose.yml behind a compose PROFILE named "app". `docker compose --profile app up` runs the full stack (Neo4j + Redis + server); plain `docker compose up` stays DB-only so the maintainer's systemd production server (port 3101) is untouched. The container connects to Neo4j/Redis via service-DNS URLs (bolt://neo4j:7687, redis://:pw@redis:6379) which override the localhost values in .env; app config (OPENAI key, tokens, flags) flows in via compose ${VAR} interpolation from .env. The Node http server binds all interfaces by default (listen(port) with no host), so the published 127.0.0.1:3101 mapping works. (2) scripts/setup.sh rewritten as a guided wizard: Docker-only (Node optional — the image self-builds), TTY-detecting prompts for OpenAI key (optional) + port, auto-generates an API token (mbry_<hex>) and random DB passwords into .env via a special-char-safe set_env helper, runs `docker compose --profile app up -d --build`, waits on /healthz, and prints the MCP client config + bearer token. Flags: --yes (CI), --db-only (host-run dev), --reconfigure. Added npm scripts stack:up/down/logs. Verified: compose config valid for both default and app profiles; mcp image builds via `docker compose --profile app build` (exit 0, 606MB); setup.sh passes bash -n + set_env unit tests. Did NOT run the full `up` on the maintainer's machine (would collide with the live memberry-neo4j/redis containers + systemd server). Released as commit on master (013350f). Remaining roadmap gap (agreed to tackle next): full DI threading through the 6 satellite tool packages, JWT/OIDC, per-tenant DB isolation, audit beyond the store path.

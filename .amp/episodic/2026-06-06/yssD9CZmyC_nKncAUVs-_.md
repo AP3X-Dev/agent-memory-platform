@@ -1,0 +1,14 @@
+---
+id: yssD9CZmyC_nKncAUVs-_
+session_id: session-20260606-honcho-plan
+agent_id: mcp
+task: [project:amp] Evaluate Honcho (plastic-labs) for ideas to enhance AMP; write an implementation plan
+outcome: approved
+created_at: "2026-06-06T08:08:02.136Z"
+---
+
+[project:amp] Wrote docs/honcho-inspired-amp-enhancements.md — a self-contained implementation plan porting ideas from Honcho (plastic-labs/honcho) into AMP. Honcho is message-stream/person-centric (passively derives peer "Representations", queried via a natural-language Dialectic/Chat endpoint with reasoning levels minimal→max, and a background "Dreaming Agent" that fills gaps + forms deductive/inductive/abductive hypotheses); AMP is decision/graph-centric (curated amp_store, reactive consolidation clustering, ranked-context assembly). The gap is synthesis-vs-assembly and generative-vs-reactive background work.
+
+Plan covers, in build order: (3.1) a shared LlmClient at packages/core/src/llm.ts as prerequisite (today the only chat-completion call is extractFacts in extract.ts, gpt-4o-mini, ad hoc); (9) tiered models per task via AMPConfig.models; (6) add optional FactNode.inference_type deductive|inductive|abductive — additive field in types.ts, fact.ts create Cypher + mapFactNode default 'deductive', new fact_inference_type index in schema.ts, FACT_INFERENCE_MULTIPLIER in ranking.ts; (4) amp_ask — new Tier-1 retrieval tool that runs assembler.assemble(ranked) then LLM-synthesizes a cited answer, reasoning_level maps to retrieval+synthesis token budgets; lives in packages/retrieval (assembler.ts gets ask() + llm ctor param; tools.ts registers it; bootstrap threads llm into UnifiedAssembler); (5) DreamEngine at packages/core/src/dream.ts — scheduled nightly via new deploy/systemd/amp-dream.{service,timer} + a cli.ts `dream` command; detects sparse/contradicted entities (reuse amp_lint coverage checks), mints low-confidence tentative abductive facts, never invalidates explicit facts, capped+logged; (8) KeyedSerialQueue mutex per entity_id + scope DistributedLock (generalizes the recent Neo4j single-session fix 86dace9); (7) auto-derived project_card/user_card core blocks refreshed in the dream pass without clobbering human user/project_state blocks. Explicitly out of scope: Honcho's local/global peer representations (theory of mind across peers — AMP isn't peer-symmetric) and recursive session summaries.
+
+Key wiring facts confirmed by reading code: amp_context lives in packages/retrieval/src/tools.ts (NOT mcp/tools.ts) and is Tier-1; MCP tool annotations must be non-empty objects (empty {} breaks the SDK overload parser → "typedHandler is not a function", guarded by tool-registration.regression.test.ts); load() token budget is core15/working10/fact15/archive-remainder; consolidation is manual-trigger only (no scheduler today); adding amp_ask bumps the documented tool count 48→49 and must update CLAUDE.md/README/examples/skills + the docs drift-guard test.

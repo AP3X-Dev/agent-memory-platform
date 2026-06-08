@@ -1,0 +1,18 @@
+---
+id: -Tmv0ShS1Hs-f8y3wYXSm
+session_id: session-20260607-ag3ntic-morph
+agent_id: mcp
+task: [project:ag3ntic] Phase 3 COMPLETE — ACP streaming + per-tool approval (Tasks 8-12) shipped, reviewed, 207 green + cleanliness gate PASS
+outcome: approved
+created_at: "2026-06-08T07:36:45.449Z"
+---
+
+Completed the full ACP streaming + per-tool-approval plan (docs/superpowers/plans/2026-06-08-acp-streaming-per-tool-approval.md) on branch morph/m1-data-model. Phases 1-2 were done before this session; this session finished Phase 3 (Tasks 8-12) via subagent-driven-development (per-task implement → spec review → quality review, plus adversarial security reviews on 11-12). All committed (NOT pushed). pytest tests/ = 207 passed; cleanliness_gate.sh = PASS (M0.5).
+
+THE RE-ISSUE MODEL (how live approvals now work end-to-end): a Hermes employee runs over a live ACP stream (worker run_worker.execute_acp_run). On request_permission the adapter is DENY-FAST: it emits approval.requested then calls gateway_bridge.decide → intercept_tool_call (≤60s, within the ACP ceiling). approval_required → records ApprovalRequest, parks run running→waiting_approval, replies ACP "cancelled" (None). Human approves (decide_approval) → _resume_run records a single-use StandingGrant (keyed workspace+employee+capability+action+args_hash from the held tool_call) and publishes a best-effort Redis resume signal. Worker resume_loop re-issues the run (session/load + re-prompt); the re-attempt hits intercept_tool_call's grant fast-path → consumes the grant → verdict allow + finalizes the approval approved→executed + emits approval.executed → the tool runs → run succeeds.
+
+KEY DECISIONS/ARCH (not in the plan, decided this session): (1) Unified run_event sequencing onto runlog.append_run_event (canonical DB max+1) — the M4 adapter used an in-memory counter which would collide with the gateway's writes mid-stream (uq_run_event_seq). User approved. (2) Grant check sits AFTER evaluate() gated on verdict=="approval_required" — a stale grant can NEVER override an explicit deny (adversarial test locks this). (3) Deleted World-B: SqlAlchemyRunStore.create_approval/resolve_approval, adapter.resume_after_approval (+ base Protocol method + ApprovalResolution DTO + EVT_APPROVAL_RESOLVED), _execute_approved, _reply_runtime — no live caller; re-issue replaces them. (4) publish_resume is best-effort (try/except) so a no-Redis env never fails a committed approval. (5) intercept_tool_call now parks the run (running→waiting_approval) on approval_required.
+
+NEW FILES: runtime_adapter/gateway_bridge.py (decide/make_on_permission), runtime_adapter/tool_mapping.py (maps ACP terminal req → shell.run_command), permission_gateway/standing_grants.py, tests/test_resume_reissue.py, tests/test_gateway_grant_fastpath.py, tests/test_standing_grants.py, tests/test_standing_grant_model.py. Migration 20260608_0002 (standing_grants + tool_calls.args_hash). Commits fc0ec32..70ba0e6.
+
+NEXT = Phase 4 (Tasks 13-16): built-in shell CapabilityManifest + seed_shell.py (run_command, risk high, default approval_required) + attach to demo employee; then the LIVE Cerebro acceptance smoke (deploy branch, dangerous shell cmd → waiting_approval → approve after >60s → re-issue executes). Phase 5 (17-18): demote one-shot hermes chat to documented fallback + docs/security.md + deployment-quickstart.md. GOTCHA: docker_exec_transport is wired but the live ACP per-tool path has NOT been smoke-tested on Cerebro yet (Task 16). Bare `pytest` from platform/ fails collection on untracked packages/mcp-server/ — always scope to tests/.
