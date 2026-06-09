@@ -443,7 +443,7 @@ export async function fetchSemanticsForTag(driver: Driver, tag: string): Promise
 // ─── Stats ──────────────────────────────────────────────────────────────────
 
 export async function fetchGraphStats(driver: Driver): Promise<{
-  total_entities: number; total_semantics: number; total_episodics: number; total_sources: number;
+  total_entities: number; total_facts: number; total_semantics: number; total_episodics: number; total_sources: number;
 }> {
   const session = driver.session();
   try {
@@ -457,6 +457,7 @@ export async function fetchGraphStats(driver: Driver): Promise<{
     }
     return {
       total_entities: counts['Entity'] ?? 0,
+      total_facts: counts['Fact'] ?? 0,
       total_semantics: counts['Semantic'] ?? 0,
       total_episodics: counts['Episodic'] ?? 0,
       total_sources: counts['Source'] ?? 0,

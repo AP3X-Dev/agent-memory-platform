@@ -198,6 +198,135 @@ describe('WikiViewer', () => {
     }
   });
 
+  it('drives every portal stat tile from the compiler payload (no hardcoded zeros)', async () => {
+    const opsDir = join(tmpdir(), `amp-wiki-stats-test-${Date.now()}`);
+    const opsPort = TEST_PORT + 2;
+    let opsServer: Server | null = null;
+
+    try {
+      await mkdir(opsDir, { recursive: true });
+      await writeFile(
+        join(opsDir, '_index.md'),
+        [
+          '---',
+          'title: MemBerry Knowledge Portal',
+          '---',
+          '',
+          '# MemBerry Knowledge Portal',
+          '',
+          '> **2** projects · **2278** entities · **4587** facts · **85** semantics · **721** sessions · **6** sources',
+          '',
+          '<!-- portal-stats: {"projects":2,"entities":2278,"facts":4587,"semantics":85,"sessions":721,"sources":6,"decisions":8,"patterns":14,"topics":19} -->',
+          '',
+          '| Project | Entities | Facts | Sessions | Last Activity |',
+          '| --- | ---: | ---: | ---: | --- |',
+          '| [[projects/alpha/_index|Alpha]] | 10 | 20 | 3 | 2026-06-07 |',
+          '| [[projects/beta/_index|Beta]] | 5 | 12 | 2 | 2026-06-06 |',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      await writeFile(
+        join(opsDir, '_decisions.md'),
+        [
+          '---', 'title: All Decisions', '---', '',
+          '# Decisions', '',
+          '## [[projects/alpha/_index|alpha]]', '',
+          '- Adopt event sourcing for the ledger *(0.93)* -- [[projects/alpha/ledger|Ledger]]',
+          '- Use Postgres over Mongo *(0.88)* -- [[projects/alpha/db|DB]]', '',
+          '## [[projects/beta/_index|beta]]', '',
+          '- Ship the API behind a feature flag *(0.81)* -- [[projects/beta/api|API]]', '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      opsServer = await startWikiViewer({ port: opsPort, wiki_dir: opsDir, project_tag: 'project:test' });
+      const res = await fetch(`http://localhost:${opsPort}/wiki/_index`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      // FACTS reflects raw Fact nodes (not the semantic count), and SEMANTICS is its own tile.
+      expect(html).toMatch(/FACTS<\/div>\s*<div class="value">4587</);
+      expect(html).toMatch(/SEMANTICS<\/div>\s*<div class="value">85</);
+      // The three formerly-broken tiles are now real, non-zero, payload-driven.
+      expect(html).toMatch(/DECISIONS<\/div>\s*<div class="value">8</);
+      expect(html).toMatch(/PATTERNS<\/div>\s*<div class="value">14</);
+      expect(html).toMatch(/TOPICS<\/div>\s*<div class="value">19</);
+      // TOP DECISIONS panel populates from _decisions.md (per-project headings), sorted by confidence.
+      expect(html).toContain('Adopt event sourcing for the ledger');
+    } finally {
+      if (opsServer) {
+        await new Promise<void>((resolve) => opsServer!.close(() => resolve()));
+      }
+      resetViewerCache();
+      await rm(opsDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
+  it('renders the activity feed from _recent.md blockquote entries', async () => {
+    const opsDir = join(tmpdir(), `amp-wiki-recent-test-${Date.now()}`);
+    const opsPort = TEST_PORT + 3;
+    let opsServer: Server | null = null;
+
+    try {
+      await mkdir(opsDir, { recursive: true });
+      await writeFile(
+        join(opsDir, '_index.md'),
+        [
+          '# MemBerry Knowledge Portal',
+          '',
+          '> **1** projects · **5** entities · **2** facts · **1** semantics · **3** sessions · **0** sources',
+          '',
+          '| Project | Entities | Facts | Sessions | Last Activity |',
+          '| --- | ---: | ---: | ---: | --- |',
+          '| [[projects/alpha/_index|Alpha]] | 5 | 2 | 3 | 2026-06-09 |',
+          '',
+        ].join('\n'),
+        'utf-8',
+      );
+      await writeFile(
+        join(opsDir, '_recent.md'),
+        [
+          '---', 'title: Recent Changes', 'entries: 2', '---', '',
+          '# Recent Changes', '',
+          '## 2026-06-09', '',
+          '> **[alpha]** Shipped the new ledger service **[APPROVED]**',
+          '> *Session: session-abc*',
+          '> Rolled out event sourcing behind a flag.', '',
+          '> Investigated a flaky integration test **[ABANDONED]**',
+          '> *Session: session-def*',
+          '> Could not reproduce; parked for now.', '',
+        ].join('\n'),
+        'utf-8',
+      );
+
+      opsServer = await startWikiViewer({ port: opsPort, wiki_dir: opsDir, project_tag: 'project:test' });
+      const res = await fetch(`http://localhost:${opsPort}/wiki/_index`);
+      expect(res.status).toBe(200);
+      const html = await res.text();
+
+      // Both entries' post text renders (status badge text stripped from the body).
+      expect(html).toContain('Shipped the new ledger service');
+      expect(html).toContain('Investigated a flaky integration test');
+      // Project-as-profile: monogram avatar, display name, and @handle.
+      expect(html).toContain('class="feed-avatar"');
+      expect(html).toContain('class="feed-author"');
+      expect(html).toContain('@alpha');
+      // Date preserved as a machine-readable timestamp (rendered short as "Jun 9").
+      expect(html).toContain('datetime="2026-06-09"');
+      expect(html).toContain('Jun 9');
+      // APPROVED gets a pill; ABANDONED (non-highlighted) does not.
+      expect(html).toContain('class="feed-badge approved"');
+      expect(html).not.toContain('feed-badge abandoned');
+    } finally {
+      if (opsServer) {
+        await new Promise<void>((resolve) => opsServer!.close(() => resolve()));
+      }
+      resetViewerCache();
+      await rm(opsDir, { recursive: true, force: true }).catch(() => {});
+    }
+  });
+
   it('resolves [[wikilinks]] to HTML links', async () => {
     const res = await fetch(`http://localhost:${TEST_PORT}/wiki/_index`);
     const html = await res.text();

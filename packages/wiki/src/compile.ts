@@ -50,6 +50,8 @@ import {
   renderPatternsPage,
   renderRecentChanges,
   renderProjectGraph,
+  crossProjectPatternTags,
+  DECISION_CONFIDENCE_THRESHOLD,
 } from './renderers.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -59,6 +61,28 @@ export function slugify(name: string): string {
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Best-effort project attribution for an episode that wasn't stored with a
+ * `[project:…]` task prefix: fall back to a `[project:…]` prefix in its content,
+ * then to a known project name appearing as a token in its session_id
+ * (e.g. session-20260608-ag3ntic-morph → ag3ntic). Returns '' if none match.
+ */
+export function deriveEpisodicScope(ep: EpisodicEntry, knownSlugs: string[]): string {
+  if (ep.project_scope) return ep.project_scope;
+  const fromContent = (ep.content ?? '').match(/^\[project:([^\]]+)\]/);
+  if (fromContent) return fromContent[1];
+  const sid = (ep.session_id ?? '').toLowerCase();
+  for (const slug of knownSlugs) { // caller sorts longest-first → most specific wins
+    if (slug.length < 3) continue;
+    if (new RegExp('(^|[^a-z0-9])' + escapeRegExp(slug) + '($|[^a-z0-9])').test(sid)) return slug;
+  }
+  return '';
 }
 
 /** Resolve entity references in claim text to [[wikilinks]] */
@@ -612,8 +636,14 @@ export class WikiCompiler {
     await writeMarkdown(join(outputDir, '_patterns.md'), patternsMarkdown);
     result.cross_project_pages++;
 
-    // Recent changes
+    // Recent changes — attribute each episode to its project: task prefix, else a
+    // [project:…] prefix in content, else a known project named in the session_id.
+    const knownProjectSlugs = [...new Set([
+      ...allProjectData.map((p) => slugify(p.entity.name)),
+      ...episodicOnlyScopes.map((s) => slugify(s)),
+    ])].filter(Boolean).sort((a, b) => b.length - a.length);
     const recentEpisodics = (await fetchRecentEpisodics(this.driver, 50))
+      .map((ep) => ({ ...ep, project_scope: deriveEpisodicScope(ep, knownProjectSlugs) }))
       .filter((ep) => episodicMatchesScope(ep, projectScope));
     const recentMarkdown = renderRecentChanges(recentEpisodics);
     await writeMarkdown(join(outputDir, '_recent.md'), recentMarkdown);
@@ -625,11 +655,23 @@ export class WikiCompiler {
     const portalStats = projectScope
       ? {
           total_entities: allProjectData.reduce((sum, project) => sum + project.entities.length, 0),
+          // Raw Fact nodes aren't tracked per-project here; fall back to the global count.
+          total_facts: graphStats.total_facts,
           total_semantics: allSemantics.length,
           total_episodics: allProjectData.reduce((sum, project) => sum + project.episodics.length, 0),
           total_sources: allSources.length,
         }
       : graphStats;
+
+    // Derived counts, computed from the same in-scope data the pages render — so the
+    // portal tiles always match the pages and auto-update on every recompile.
+    const totalPatterns = crossProjectPatternTags(allSemantics).length;
+    const totalDecisions = allSemantics.filter((sem) => {
+      if (sem.confidence < DECISION_CONFIDENCE_THRESHOLD) return false;
+      const project = (sem.tags.find((t) => t.startsWith('project:')) ?? 'project:unscoped').replace('project:', '');
+      return !isInternalProjectName(project);
+    }).length;
+    const totalTopics = result.topic_pages;
     const humanRecentEpisodics = recentEpisodics.filter(
       (ep) => !ep.project_scope || !isInternalProjectName(ep.project_scope),
     );
@@ -662,6 +704,9 @@ export class WikiCompiler {
       stats: {
         ...portalStats,
         total_projects: allProjectData.length,
+        total_decisions: totalDecisions,
+        total_patterns: totalPatterns,
+        total_topics: totalTopics,
       },
     };
 

@@ -102,6 +102,7 @@ describe('fetchGraphStats', () => {
     const mockSession = {
       run: vi.fn(async () => mockResult([
         mockRecord({ label: 'Entity', cnt: 20 }),
+        mockRecord({ label: 'Fact', cnt: 99 }),
         mockRecord({ label: 'Semantic', cnt: 4 }),
         mockRecord({ label: 'Episodic', cnt: 219 }),
         mockRecord({ label: 'Source', cnt: 0 }),
@@ -114,6 +115,7 @@ describe('fetchGraphStats', () => {
     const stats = await fetchGraphStats(driver);
 
     expect(stats.total_entities).toBe(20);
+    expect(stats.total_facts).toBe(99);
     expect(stats.total_semantics).toBe(4);
     expect(stats.total_episodics).toBe(219);
     expect(stats.total_sources).toBe(0);
@@ -132,6 +134,7 @@ describe('fetchGraphStats', () => {
     const stats = await fetchGraphStats(driver);
 
     expect(stats.total_entities).toBe(0);
+    expect(stats.total_facts).toBe(0);
     expect(stats.total_semantics).toBe(0);
     expect(stats.total_episodics).toBe(0);
     expect(stats.total_sources).toBe(0);

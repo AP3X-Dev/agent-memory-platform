@@ -209,7 +209,8 @@ ${footer()}
 // activity ticker, top decisions strip.
 
 interface PortalStats {
-  projects: number; entities: number; facts: number; sessions: number; sources: number;
+  projects: number; entities: number; facts: number; semantics: number;
+  sessions: number; sources: number; decisions: number; patterns: number; topics: number;
 }
 
 interface PortalProject {
@@ -225,10 +226,32 @@ interface RecentChange {
 }
 
 function parsePortalStats(md: string): PortalStats {
+  const empty: PortalStats = {
+    projects: 0, entities: 0, facts: 0, semantics: 0,
+    sessions: 0, sources: 0, decisions: 0, patterns: 0, topics: 0,
+  };
+  // Preferred: machine-readable payload emitted by the compiler. Carries every
+  // counter, so no tile is ever hardcoded or re-derived from prose.
+  const j = md.match(/<!--\s*portal-stats:\s*(\{[^]*?\})\s*-->/);
+  if (j) {
+    try {
+      const o = JSON.parse(j[1]) as Record<string, unknown>;
+      const n = (k: string): number => Number(o[k]) || 0;
+      return {
+        projects: n('projects'), entities: n('entities'), facts: n('facts'),
+        semantics: n('semantics'), sessions: n('sessions'), sources: n('sources'),
+        decisions: n('decisions'), patterns: n('patterns'), topics: n('topics'),
+      };
+    } catch { /* fall through to legacy line */ }
+  }
+  // Legacy compiles (pre portal-stats payload): the "semantic facts" figure was the
+  // semantic-node count; there was no separate raw-fact/decision/pattern/topic count.
   const m = md.match(/\*\*(\d+)\*\* projects · \*\*(\d+)\*\* entities · \*\*(\d+)\*\* semantic facts · \*\*(\d+)\*\* session entries · \*\*(\d+)\*\* sources/);
-  if (!m) return { projects: 0, entities: 0, facts: 0, sessions: 0, sources: 0 };
+  if (!m) return empty;
   return {
-    projects: Number(m[1]), entities: Number(m[2]), facts: Number(m[3]),
+    ...empty,
+    projects: Number(m[1]), entities: Number(m[2]),
+    semantics: Number(m[3]), facts: Number(m[3]),
     sessions: Number(m[4]), sources: Number(m[5]),
   };
 }
@@ -251,8 +274,11 @@ function parsePortalProjects(md: string): PortalProject[] {
 }
 
 function parseTopDecisions(md: string): TopDecision[] {
-  const section = md.split(/^##\s+Top Decisions\s*$/m)[1] ?? md;
-  const cut = section.split(/^##\s+/m)[0] ?? section;
+  // A dedicated "## Top Decisions" section (portal _index.md) scopes parsing to that
+  // block. Otherwise — e.g. _decisions.md, whose bullets live under per-project
+  // "## <project>" headings — parse decision bullets across the whole document.
+  const marker = md.split(/^##\s+Top Decisions\s*$/m);
+  const cut = marker.length > 1 ? (marker[1].split(/^##\s+/m)[0] ?? marker[1]) : md;
   const out: TopDecision[] = [];
   // Each decision is a `- text *(0.95)* -- [[link|name]], [[link|name]]` line
   const lines = cut.split('\n').filter((l) => l.trim().startsWith('- '));
@@ -275,24 +301,54 @@ function parseTopDecisions(md: string): TopDecision[] {
     const project = projMatch ? projMatch[1] : undefined;
     out.push({ text, confidence, entities: ents, project });
   }
+  out.sort((a, b) => b.confidence - a.confidence);
   return out;
 }
 
 function parseRecentChanges(md: string): RecentChange[] {
   const out: RecentChange[] = [];
-  const lines = md.split('\n').filter((l) => l.trim().startsWith('- **'));
-  // Match lines like: - **2026-04-29** **[APPROVED]** [agent-assist-cr] Title text
-  const lineRe = /^-\s+\*\*(\d{4}-\d{2}-\d{2})\*\*\s+(?:\*\*\[([A-Z]+)\]\*\*\s+)?(?:\[([^\]]+)\]\s+)?(.*?)$/;
-  for (const line of lines) {
-    const m = lineRe.exec(line.trim());
-    if (!m) continue;
-    const status = (m[2] === 'APPROVED' || m[2] === 'PROPOSED') ? m[2] : 'OTHER';
-    out.push({
-      date: m[1],
-      status: status as RecentChange['status'],
-      project: m[3] ?? '',
-      title: m[4].trim(),
-    });
+  // Legacy bullet form (portal _index.md "Recent Changes"):
+  //   - **2026-04-29** **[APPROVED]** [agent-assist-cr] Title text
+  const bulletRe = /^-\s+\*\*(\d{4}-\d{2}-\d{2})\*\*\s+(?:\*\*\[([A-Z]+)\]\*\*\s+)?(?:\[([^\]]+)\]\s+)?(.*?)$/;
+  const statusOf = (s: string | undefined): RecentChange['status'] =>
+    (s === 'APPROVED' || s === 'PROPOSED') ? s : 'OTHER';
+
+  // _recent.md form (renderRecentChanges): "## <date>" headings, then one entry per
+  // blockquote group — first `> ` line is the title (optional `**[project]**` prefix +
+  // trailing `**[STATUS]**` badge), followed by `> *Session: …*` and `> body` lines.
+  let currentDate = '';
+  let inEntry = false; // currently inside a blockquote group (skip its non-title lines)
+  for (const raw of md.split('\n')) {
+    const line = raw.trim();
+
+    if (line.startsWith('- **')) {
+      const m = bulletRe.exec(line);
+      if (m) out.push({ date: m[1], status: statusOf(m[2]), project: m[3] ?? '', title: m[4].trim() });
+      inEntry = false;
+      continue;
+    }
+
+    const heading = line.match(/^##\s+(.+?)\s*$/);
+    if (heading) { currentDate = heading[1]; inEntry = false; continue; }
+
+    if (line.startsWith('>')) {
+      if (!inEntry) {
+        let body = line.replace(/^>\s?/, '').trim();
+        if (body && !/^\*Session:/i.test(body)) {
+          let project = '';
+          const proj = body.match(/^\*\*\[([^\]]+)\]\*\*\s+/);
+          if (proj) { project = proj[1]; body = body.slice(proj[0].length); }
+          let status: RecentChange['status'] = 'OTHER';
+          const badge = body.match(/\s*\*\*\[([A-Z]+)\]\*\*\s*$/);
+          if (badge) { status = statusOf(badge[1]); body = body.slice(0, badge.index).trim(); }
+          if (body) out.push({ date: currentDate, status, project, title: body.trim() });
+        }
+      }
+      inEntry = true;
+      continue;
+    }
+
+    inEntry = false; // blank / body-continuation line ends the current group
   }
   return out;
 }
@@ -478,6 +534,42 @@ const GRAPH_PAN_ZOOM_JS = `
 })();
 `;
 
+// ── Activity feed (project-as-profile) helpers ────────────────────────────────
+const FEED_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function feedSlug(s: string): string {
+  return s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+}
+
+/** Deterministic hue (0–359) from a project name, for its avatar gradient. */
+function feedHue(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return h % 360;
+}
+
+/** Avatar initials: first letters of the first two words, else first two chars. */
+function feedInitials(s: string): string {
+  const parts = s.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+  if (parts.length === 0) return '··';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[1][0]).toUpperCase();
+}
+
+/** "agent-assist-cr" → "Agent Assist Cr" for the feed display name. */
+function feedDisplayName(s: string): string {
+  const words = s.split(/[^a-zA-Z0-9]+/).filter(Boolean);
+  if (words.length === 0) return s;
+  return words.map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/** "2026-06-09" → "Jun 9"; passes through anything it can't parse. */
+function formatFeedDate(s: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s.trim());
+  if (!m) return s;
+  return `${FEED_MONTHS[Number(m[2]) - 1] ?? ''} ${Number(m[3])}`.trim();
+}
+
 function renderOpsHomeBody(
   indexMd: string,
   recentMd: string | null,
@@ -496,11 +588,12 @@ function renderOpsHomeBody(
     ['PROJECTS', stats.projects],
     ['ENTITIES', stats.entities],
     ['FACTS', stats.facts],
+    ['SEMANTICS', stats.semantics],
     ['SESSIONS', stats.sessions],
     ['SOURCES', stats.sources],
-    ['DECISIONS', decisions.length],
-    ['PATTERNS', 0],
-    ['TOPICS', 0],
+    ['DECISIONS', stats.decisions],
+    ['PATTERNS', stats.patterns],
+    ['TOPICS', stats.topics],
   ];
 
   const heroHtml = `
@@ -560,15 +653,31 @@ function renderOpsHomeBody(
     </a>`;
   }).join('');
 
-  const activityHtml = recent.map((c) => `
-    <div class="item">
-      <div class="meta">
-        <span class="date">${escapeHtml(c.date)}</span>
-        ${c.status === 'OTHER' ? '' : `<span class="badge ${c.status.toLowerCase()}">${escapeHtml(c.status)}</span>`}
-        ${c.project ? `<span class="project">${escapeHtml(c.project)}</span>` : ''}
+  const activityHtml = recent.map((c) => {
+    const hasProject = !!c.project;
+    const name = hasProject ? c.project : 'system';
+    const slug = feedSlug(name);
+    const author = hasProject
+      ? `<a class="feed-author" href="/wiki/projects/${escapeHtml(slug)}/_index">${escapeHtml(feedDisplayName(name))}</a>`
+      : `<span class="feed-author">${escapeHtml(feedDisplayName(name))}</span>`;
+    const badge = c.status === 'OTHER'
+      ? ''
+      : `<span class="feed-badge ${c.status.toLowerCase()}">${escapeHtml(c.status)}</span>`;
+    return `
+    <article class="feed-item">
+      <div class="feed-avatar" style="--av:${feedHue(name)}" aria-hidden="true">${escapeHtml(feedInitials(name))}</div>
+      <div class="feed-body">
+        <div class="feed-head">
+          ${author}
+          <span class="feed-handle">@${escapeHtml(slug)}</span>
+          <span class="feed-dot">·</span>
+          <time class="feed-date" datetime="${escapeHtml(c.date)}" title="${escapeHtml(c.date)}">${escapeHtml(formatFeedDate(c.date))}</time>
+          ${badge}
+        </div>
+        <div class="feed-text">${escapeHtml(c.title)}</div>
       </div>
-      <div class="title">${escapeHtml(c.title)}</div>
-    </div>`).join('');
+    </article>`;
+  }).join('');
 
   const twoColHtml = `
   <div class="two-col">
@@ -582,7 +691,7 @@ function renderOpsHomeBody(
     <div>
       <div class="section-header">
         <div class="title">ACTIVITY</div>
-        <div class="hint">last 24h</div>
+        <div class="hint">latest</div>
       </div>
       <div class="activity">
         ${activityHtml}
@@ -612,7 +721,32 @@ function renderOpsHomeBody(
   </div>`;
 
   const panZoomScript = `<script>${GRAPH_PAN_ZOOM_JS}</script>`;
-  return heroHtml + graphHtml + statBarHtml + twoColHtml + decisionsHtml + panZoomScript;
+  // Aurora frame-rate cap: same keyframes/look, but the animation clock is advanced
+  // at AURORA_FPS instead of the display's native refresh.
+  const auroraScript = `<script>(function(){
+    var AURORA_FPS = 100;
+    var root = document.querySelector('.hero-aurora');
+    if (!root || typeof root.getAnimations !== 'function') return;
+    var frame = 1000 / AURORA_FPS, anims = [];
+    function collect(){
+      try { anims = root.getAnimations({ subtree: true }); } catch (e) { anims = []; }
+      for (var i = 0; i < anims.length; i++) { try { anims[i].pause(); } catch (e) {} }
+    }
+    collect();
+    var last = performance.now();
+    function tick(now){
+      if (!anims.length) collect();
+      if (now - last >= frame) {
+        var dt = now - last; last = now;
+        for (var i = 0; i < anims.length; i++) {
+          try { anims[i].currentTime = (anims[i].currentTime || 0) + dt; } catch (e) {}
+        }
+      }
+      requestAnimationFrame(tick);
+    }
+    requestAnimationFrame(tick);
+  })();</script>`;
+  return heroHtml + graphHtml + statBarHtml + twoColHtml + decisionsHtml + panZoomScript + auroraScript;
 }
 
 export function escapeHtml(text: string): string {
@@ -824,7 +958,9 @@ a { color: var(--fg); text-decoration: none; }
 .hero-aurora-grain {
   position: absolute;
   pointer-events: none;
-  will-change: transform, opacity, border-radius;
+  /* Only transform/opacity are animated — both composite on the GPU without
+     re-rasterizing the (heavily blurred) layer each frame. */
+  will-change: transform, opacity;
   transform: translate3d(0, 0, 0);
 }
 .hero-aurora-band {
@@ -838,6 +974,7 @@ a { color: var(--fg); text-decoration: none; }
   left: -26vmax;
   top: -18vmax;
   opacity: 0.70;
+  border-radius: 58% 42% 56% 44% / 44% 60% 40% 56%;
   background:
     radial-gradient(circle at 52% 24%, rgba(221, 214, 254, 0.82) 0 12%, rgba(232, 121, 249, 0.68) 28%, rgba(139, 92, 246, 0.72) 48%, rgba(109, 40, 217, 0.55) 64%, transparent 78%);
   animation: heroBandMain 9s cubic-bezier(.5, .05, .2, 1) infinite alternate;
@@ -848,6 +985,7 @@ a { color: var(--fg); text-decoration: none; }
   right: -26vmax;
   top: 22vmax;
   opacity: 0.64;
+  border-radius: 60% 40% 47% 53% / 52% 49% 51% 48%;
   filter: blur(clamp(28px, 5vw, 88px));
   background:
     radial-gradient(ellipse at 40% 55%, rgba(221, 214, 254, 0.54) 0 8%, rgba(192, 38, 211, 0.70) 26%, rgba(109, 40, 217, 0.76) 48%, transparent 70%);
@@ -859,6 +997,7 @@ a { color: var(--fg); text-decoration: none; }
   right: -30vmax;
   bottom: -18vmax;
   opacity: 0.52;
+  border-radius: 55% 45% 50% 50% / 48% 52% 48% 52%;
   background:
     radial-gradient(circle at 42% 42%, rgba(232, 121, 249, 0.58) 0 16%, rgba(139, 92, 246, 0.62) 38%, rgba(91, 33, 182, 0.45) 60%, transparent 80%);
   animation: heroBandDepth 8s ease-in-out infinite alternate;
@@ -885,6 +1024,7 @@ a { color: var(--fg); text-decoration: none; }
   height: 32vmax;
   left: -20vmax;
   top: 30vmax;
+  border-radius: 48% 52% 52% 48% / 53% 47% 53% 47%;
   animation: heroShadowLeft 8.5s ease-in-out infinite alternate;
 }
 .hero-aurora-shadow-right {
@@ -933,48 +1073,24 @@ a { color: var(--fg); text-decoration: none; }
   100% { transform: rotate(360deg) scale(1); }
 }
 @keyframes heroBandMain {
-  0% {
-    transform: translate3d(-4vw, -2vh, 0) rotate(-9deg) scale(1);
-    border-radius: 55% 45% 60% 40% / 48% 58% 42% 52%;
-  }
-  100% {
-    transform: translate3d(12vw, 8vh, 0) rotate(8deg) scale(1.12);
-    border-radius: 62% 38% 51% 49% / 40% 62% 38% 60%;
-  }
+  0% { transform: translate3d(-4vw, -2vh, 0) rotate(-9deg) scale(1); }
+  100% { transform: translate3d(12vw, 8vh, 0) rotate(8deg) scale(1.12); }
 }
 @keyframes heroBandRibbon {
-  0% {
-    transform: translate3d(-4vw, 4vh, 0) rotate(-12deg) scaleX(1.05) scaleY(0.94);
-    border-radius: 58% 42% 48% 52% / 63% 36% 64% 37%;
-  }
-  100% {
-    transform: translate3d(-16vw, -6vh, 0) rotate(5deg) scaleX(1.22) scaleY(0.98);
-    border-radius: 63% 37% 45% 55% / 42% 62% 38% 58%;
-  }
+  0% { transform: translate3d(-4vw, 4vh, 0) rotate(-12deg) scaleX(1.05) scaleY(0.94); }
+  100% { transform: translate3d(-16vw, -6vh, 0) rotate(5deg) scaleX(1.22) scaleY(0.98); }
 }
 @keyframes heroBandDepth {
-  0% {
-    transform: translate3d(2vw, 2vh, 0) rotate(7deg) scale(1);
-    border-radius: 49% 51% 58% 42% / 44% 60% 40% 56%;
-  }
-  100% {
-    transform: translate3d(-12vw, -7vh, 0) rotate(-6deg) scale(1.14);
-    border-radius: 61% 39% 42% 58% / 52% 43% 57% 48%;
-  }
+  0% { transform: translate3d(2vw, 2vh, 0) rotate(7deg) scale(1); }
+  100% { transform: translate3d(-12vw, -7vh, 0) rotate(-6deg) scale(1.14); }
 }
 @keyframes heroBandCore {
   0% { transform: translate3d(-2vw, -1vh, 0) scale(0.94); opacity: 0.30; }
   100% { transform: translate3d(8vw, 7vh, 0) scale(1.22); opacity: 0.52; }
 }
 @keyframes heroShadowLeft {
-  0% {
-    transform: translate3d(-4vw, 1vh, 0) rotate(4deg) scale(1);
-    border-radius: 52% 48% 58% 42% / 48% 54% 46% 52%;
-  }
-  100% {
-    transform: translate3d(10vw, -7vh, 0) rotate(-4deg) scale(1.14);
-    border-radius: 43% 57% 45% 55% / 58% 41% 59% 42%;
-  }
+  0% { transform: translate3d(-4vw, 1vh, 0) rotate(4deg) scale(1); }
+  100% { transform: translate3d(10vw, -7vh, 0) rotate(-4deg) scale(1.14); }
 }
 @keyframes heroShadowRight {
   0% { transform: translate3d(0, 0, 0) rotate(-4deg) scale(1); }
@@ -1101,11 +1217,11 @@ a { color: var(--fg); text-decoration: none; }
 ::-webkit-scrollbar-corner { background: var(--bg); }
 
 /* STAT BAR */
-.statbar { display: grid; grid-template-columns: repeat(8, 1fr); border-bottom: 1px solid var(--border); }
-.statbar .cell { padding: 14px 18px; border-right: 1px solid var(--border); }
+.statbar { display: grid; grid-template-columns: repeat(9, 1fr); border-bottom: 1px solid var(--border); }
+.statbar .cell { padding: 14px clamp(8px, 1vw, 18px); border-right: 1px solid var(--border); min-width: 0; }
 .statbar .cell:last-child { border-right: none; }
-.statbar .cell .label { font-size: 9px; letter-spacing: 0.15em; color: var(--fg-faint); text-transform: uppercase; }
-.statbar .cell .value { font-family: var(--display); font-size: 28px; color: var(--fg); margin-top: 2px; }
+.statbar .cell .label { font-size: 9px; letter-spacing: 0.12em; color: var(--fg-faint); text-transform: uppercase; white-space: nowrap; }
+.statbar .cell .value { font-family: var(--display); font-size: clamp(18px, 2vw, 28px); color: var(--fg); margin-top: 2px; }
 .statbar .cell .value.zero { color: var(--fg-ghost); }
 
 /* TWO-COL: PROJECTS + ACTIVITY */
@@ -1130,20 +1246,39 @@ a { color: var(--fg); text-decoration: none; }
 .proj-row .num.entities { color: var(--accent); }
 .proj-row .num.entities.zero { color: var(--fg-ghost); }
 .proj-row .date { text-align: right; color: #777; font-size: 11px; }
-.activity { padding: 0 18px 18px; }
-.activity .item { padding: 10px 0; border-bottom: 1px solid var(--border-faint); font-size: 12px; }
-.activity .item:last-child { border-bottom: none; }
-.activity .meta { display: flex; gap: 8px; align-items: center; margin-bottom: 4px; }
-.activity .meta .date { color: var(--fg-faint); font-size: 10px; }
-.activity .meta .badge { font-size: 9px; padding: 2px 6px; letter-spacing: 0.1em; }
-.activity .meta .badge.approved { background: #0d2a1a; color: var(--ok); }
-.activity .meta .badge.proposed { background: #2a1a0d; color: var(--warn); }
-.activity .meta .project { color: var(--accent); font-size: 10px; }
-.activity .item .title { color: #c8c8c8; line-height: 1.5; }
+/* Activity = a feed of projects (project-as-profile, Twitter-style cards) */
+.activity { padding: 0 0 6px; }
+.feed-item {
+  display: grid; grid-template-columns: 38px 1fr; gap: 11px;
+  padding: 12px 18px; border-bottom: 1px solid var(--border-faint);
+  transition: background 0.12s ease;
+}
+.feed-item:last-child { border-bottom: none; }
+.feed-item:hover { background: var(--surface-hover); }
+.feed-avatar {
+  width: 38px; height: 38px; border-radius: 50%; flex: none;
+  display: flex; align-items: center; justify-content: center;
+  font-family: var(--display); font-size: 13px; color: #0a0a0a;
+  background: linear-gradient(140deg, hsl(var(--av) 80% 62%), hsl(var(--av) 72% 42%));
+}
+.feed-body { min-width: 0; }
+.feed-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 6px; font-size: 12px; }
+.feed-author { font-weight: 700; color: var(--fg); text-decoration: none; white-space: nowrap; }
+.feed-author:hover { text-decoration: underline; }
+.feed-handle { color: var(--fg-faint); font-size: 11px; max-width: 11rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.feed-dot { color: var(--fg-ghost); }
+.feed-date { color: var(--fg-faint); font-size: 11px; white-space: nowrap; }
+.feed-badge {
+  align-self: center; font-size: 8px; padding: 2px 7px; border-radius: 999px;
+  letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+}
+.feed-badge.approved { background: #0d2a1a; color: var(--ok); }
+.feed-badge.proposed { background: #2a1a0d; color: var(--warn); }
+.feed-text { margin-top: 3px; color: #cbc9c5; line-height: 1.5; font-size: 13px; overflow-wrap: anywhere; }
 .activity .cta {
-  margin-top: 12px; background: transparent; border: 1px solid var(--accent);
+  margin: 12px 18px 4px; background: transparent; border: 1px solid var(--accent);
   color: var(--accent); padding: 8px 14px; font-family: inherit; font-size: 11px;
-  letter-spacing: 0.1em; cursor: pointer; width: 100%; text-transform: uppercase;
+  letter-spacing: 0.1em; cursor: pointer; width: calc(100% - 36px); text-transform: uppercase;
 }
 .activity .cta:hover { background: var(--accent); color: #0a0a0a; }
 

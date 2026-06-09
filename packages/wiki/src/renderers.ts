@@ -347,9 +347,23 @@ export function renderPortalHomepage(data: PortalData): string {
   lines.push('# MemBerry Knowledge Portal');
   lines.push('');
 
-  // Stats bar
+  // Stats bar. Human-readable line for people reading the raw markdown, plus a
+  // machine-readable payload the viewer parses (robust, carries every counter so
+  // no tile is ever hardcoded or re-derived from prose).
   const s = data.stats;
-  lines.push(`> **${s.total_projects}** projects \u00b7 **${s.total_entities}** entities \u00b7 **${s.total_semantics}** semantic facts \u00b7 **${s.total_episodics}** session entries \u00b7 **${s.total_sources}** sources`);
+  lines.push(`> **${s.total_projects}** projects \u00b7 **${s.total_entities}** entities \u00b7 **${s.total_facts}** facts \u00b7 **${s.total_semantics}** semantics \u00b7 **${s.total_episodics}** sessions \u00b7 **${s.total_sources}** sources`);
+  lines.push('');
+  lines.push(`<!-- portal-stats: ${JSON.stringify({
+    projects: s.total_projects,
+    entities: s.total_entities,
+    facts: s.total_facts,
+    semantics: s.total_semantics,
+    sessions: s.total_episodics,
+    sources: s.total_sources,
+    decisions: s.total_decisions,
+    patterns: s.total_patterns,
+    topics: s.total_topics,
+  })} -->`);
   lines.push('');
 
   // Nav links
@@ -650,6 +664,36 @@ export function renderDecisionsPage(semantics: Array<{
 
 // ─── Patterns Page ───────────────────────────────────────────────────────────
 
+/** A semantic claim counts as a "decision" when its confidence clears this bar. */
+export const DECISION_CONFIDENCE_THRESHOLD = 0.7;
+
+/** A tag is a cross-project "pattern" when it appears in at least this many projects. */
+export const PATTERN_MIN_PROJECTS = 2;
+
+/**
+ * Cross-project pattern tags: non-`project:` tags carried by semantics in ≥ PATTERN_MIN_PROJECTS
+ * projects, returned as [tag, projectSet] sorted by project span (desc). Single source of truth
+ * for both the patterns page and the portal patterns count.
+ */
+export function crossProjectPatternTags(
+  semantics: Array<{ tags: string[] }>,
+): Array<[string, Set<string>]> {
+  const tagProjects = new Map<string, Set<string>>();
+  for (const sem of semantics) {
+    const projectTag = sem.tags.find((t) => t.startsWith('project:'));
+    const proj = projectTag ? projectTag.replace('project:', '') : 'unscoped';
+    for (const tag of sem.tags) {
+      if (tag.startsWith('project:')) continue;
+      const projects = tagProjects.get(tag) ?? new Set<string>();
+      projects.add(proj);
+      tagProjects.set(tag, projects);
+    }
+  }
+  return [...tagProjects.entries()]
+    .filter(([, projects]) => projects.size >= PATTERN_MIN_PROJECTS)
+    .sort(([, a], [, b]) => b.size - a.size);
+}
+
 export function renderPatternsPage(semantics: Array<{
   id: string; content: string; confidence: number; tags: string[]; entities: string[];
 }>): string {
@@ -666,23 +710,9 @@ export function renderPatternsPage(semantics: Array<{
   lines.push('Tags and patterns that appear across multiple projects.');
   lines.push('');
 
-  // Find tags that span multiple projects
-  const tagProjects = new Map<string, Set<string>>();
-  for (const sem of semantics) {
-    const projectTag = sem.tags.find((t) => t.startsWith('project:'));
-    const proj = projectTag ? projectTag.replace('project:', '') : 'unscoped';
-    for (const tag of sem.tags) {
-      if (tag.startsWith('project:')) continue;
-      const projects = tagProjects.get(tag) ?? new Set();
-      projects.add(proj);
-      tagProjects.set(tag, projects);
-    }
-  }
-
-  // Only keep tags appearing in 2+ projects
-  const crossProjectTags = [...tagProjects.entries()]
-    .filter(([, projects]) => projects.size >= 2)
-    .sort(([, a], [, b]) => b.size - a.size);
+  // Tags that span multiple projects (shared helper — keeps the page and the
+  // portal "PATTERNS" count in lockstep).
+  const crossProjectTags = crossProjectPatternTags(semantics);
 
   if (crossProjectTags.length === 0) {
     lines.push('*No cross-project patterns detected yet.*');

@@ -442,10 +442,14 @@ describe('renderPortalHomepage', () => {
       ],
       stats: {
         total_entities: 20,
+        total_facts: 4587,
         total_semantics: 10,
         total_episodics: 50,
         total_sources: 3,
         total_projects: 1,
+        total_decisions: 7,
+        total_patterns: 4,
+        total_topics: 9,
       },
     };
 
@@ -455,6 +459,17 @@ describe('renderPortalHomepage', () => {
     expect(result).toContain('mars-fps');
     expect(result).toContain('Use ECS architecture');
     expect(result).toContain('0.95');
+    // Human line distinguishes raw facts from consolidated semantics.
+    expect(result).toContain('**4587** facts');
+    expect(result).toContain('**10** semantics');
+    // Machine-readable payload carries every counter (no hardcoded tiles downstream).
+    const payload = result.match(/<!--\s*portal-stats:\s*(\{[^]*?\})\s*-->/);
+    expect(payload).not.toBeNull();
+    const stats = JSON.parse(payload![1]);
+    expect(stats).toMatchObject({
+      facts: 4587, semantics: 10, sessions: 50,
+      decisions: 7, patterns: 4, topics: 9,
+    });
   });
 });
 

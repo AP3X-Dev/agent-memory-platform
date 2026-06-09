@@ -2,8 +2,37 @@
 // Tests for WikiCompiler, slugify, and resolveInlineLinks.
 
 import { describe, it, expect, vi } from 'vitest';
-import { slugify, resolveInlineLinks, WikiCompiler } from '../compile.js';
+import { slugify, resolveInlineLinks, WikiCompiler, deriveEpisodicScope } from '../compile.js';
+import type { EpisodicEntry } from '../types.js';
 import type { Driver, Session, Result } from 'neo4j-driver';
+
+describe('deriveEpisodicScope', () => {
+  const known = ['agent-assist-cr', 'ag3ntic', 'mars-fps', 'amp']
+    .sort((a, b) => b.length - a.length);
+  const ep = (over: Partial<EpisodicEntry>): EpisodicEntry => ({
+    id: 'x', task: '', content: '', outcome: null, session_id: '', created_at: '', project_scope: null, ...over,
+  });
+
+  it('keeps an explicit task-prefix scope', () => {
+    expect(deriveEpisodicScope(ep({ project_scope: 'ag3ntic' }), known)).toBe('ag3ntic');
+  });
+
+  it('falls back to a [project:…] prefix in content', () => {
+    expect(deriveEpisodicScope(ep({ content: '[project:mars-fps] did a thing' }), known)).toBe('mars-fps');
+  });
+
+  it('infers the project from a known name in the session_id', () => {
+    expect(deriveEpisodicScope(ep({ session_id: 'session-20260608-ag3ntic-morph' }), known)).toBe('ag3ntic');
+  });
+
+  it('prefers the most specific (longest) known match', () => {
+    expect(deriveEpisodicScope(ep({ session_id: 'session-1-agent-assist-cr-review' }), known)).toBe('agent-assist-cr');
+  });
+
+  it('returns empty when nothing matches', () => {
+    expect(deriveEpisodicScope(ep({ session_id: 'session-20260608-2115' }), known)).toBe('');
+  });
+});
 
 // slugify tests
 

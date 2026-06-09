@@ -306,10 +306,18 @@ export interface PortalData {
   top_decisions: Array<{ content: string; confidence: number; project: string; entities: string[] }>;
   stats: {
     total_entities: number;
+    /** Raw temporal Fact nodes (distinct from consolidated Semantic nodes). */
+    total_facts: number;
     total_semantics: number;
     total_episodics: number;
     total_sources: number;
     total_projects: number;
+    /** High-confidence decisions (semantics ≥ threshold, non-internal projects). */
+    total_decisions: number;
+    /** Tags spanning ≥2 projects (cross-project patterns). */
+    total_patterns: number;
+    /** Topic pages generated. */
+    total_topics: number;
   };
 }
 
