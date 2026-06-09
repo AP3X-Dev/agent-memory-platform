@@ -31,6 +31,7 @@ export {
   loadSettings,
   saveSettings,
   getSettingsPath,
+  defaultExportPath,
   resolveNumber,
   readEnv,
   DEFAULT_SETTINGS,

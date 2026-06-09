@@ -11,7 +11,7 @@ Restart=always
 RestartSec=5
 EnvironmentFile=/etc/memberry/env
 Environment=NODE_ENV=production
-Environment=MEMBERRY_EXPORT_PATH=/home/cerebro/projects/amp/.amp
+Environment=MEMBERRY_EXPORT_PATH=/home/cerebro/projects/amp/.memberry
 Environment=MCP_PORT=3101
 Environment=HOST=0.0.0.0
 

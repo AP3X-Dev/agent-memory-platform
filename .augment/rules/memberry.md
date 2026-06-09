@@ -56,4 +56,4 @@ Recalling the right memory at the right moment without flooding the context wind
 - Facts carry an `inference_type`: `deductive` (explicit), `inductive` (consolidation-generalized), `abductive` (a dream-pass guess). Abductive facts rank lower and show as `[hypothesis]` — never treat a guess as a known fact
 - Session end → enable `memory` domain, promote working memory, archive session blocks; enable `admin` domain, check consolidation
 
-Full reference: `skills/amp/SKILL.md`
+Full reference: `skills/memberry/SKILL.md`

@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 // packages/core/src/cli.ts
 // MemBerry CLI — export, import, snapshot commands.
-// Usage: npx amp <command> [options]
+// Usage: npx memberry <command> [options]
 
 import { execFileSync } from 'child_process';
 import { createNeo4jDriver, TenantAdmin } from '@memberry/neo4j';
 import { writeFileSync } from 'fs';
 import { createRedisClient } from '@memberry/redis';
 import { exportAll, exportFiltered } from './export.js';
+import { defaultExportPath } from './config/settings.js';
 import { importFromPath, type ImportStrategy } from './import.js';
 import { runHookCommand } from './cli/hook.js';
 import { runContextCommand } from './cli/context.js';
@@ -64,7 +65,7 @@ function loadEnv(): {
 // ─── Commands ─────────────────────────────────────────────────────────────────
 
 async function runExport(flags: Record<string, string | boolean>): Promise<void> {
-  const exportPath = String(flags['path'] ?? './.amp');
+  const exportPath = String(flags['path'] ?? defaultExportPath());
   const entities = flags['entity'] ? [String(flags['entity'])] : [];
   const tags = flags['tag'] ? [String(flags['tag'])] : [];
 
@@ -89,7 +90,7 @@ async function runExport(flags: Record<string, string | boolean>): Promise<void>
 }
 
 async function runImport(flags: Record<string, string | boolean>): Promise<void> {
-  const importPath = String(flags['path'] ?? './.amp');
+  const importPath = String(flags['path'] ?? defaultExportPath());
   const strategy = (flags['strategy'] as ImportStrategy | undefined) ?? 'confidence-weighted';
   const dryRun = flags['dry-run'] === true;
 
@@ -113,7 +114,7 @@ async function runImport(flags: Record<string, string | boolean>): Promise<void>
 }
 
 async function runSnapshot(flags: Record<string, string | boolean>): Promise<void> {
-  const snapshotPath = String(flags['path'] ?? './.amp');
+  const snapshotPath = String(flags['path'] ?? defaultExportPath());
   const shouldCommit = flags['commit'] === true;
   const message =
     typeof flags['message'] === 'string'
@@ -125,7 +126,7 @@ async function runSnapshot(flags: Record<string, string | boolean>): Promise<voi
 
   if (!shouldCommit) return;
 
-  // 2. Stage snapshot changes. The default .amp path is intentionally ignored
+  // 2. Stage snapshot changes. The default .memberry path is intentionally ignored
   // in source worktrees, so snapshot commits must force-add this explicit path.
   try {
     execFileSync('git', ['add', '-f', snapshotPath], { stdio: 'inherit' });
@@ -283,12 +284,12 @@ async function main(): Promise<void> {
 
     default:
       console.error(`Unknown command: "${command}"`);
-      console.error('Usage: amp <command> [options]');
+      console.error('Usage: memberry <command> [options]');
       console.error('');
       console.error('Memory snapshot commands:');
-      console.error('  export    [--path ./.amp] [--entity Name] [--tag tag]');
-      console.error('  import    [--path ./.amp] [--strategy confidence-weighted|overwrite] [--dry-run]');
-      console.error('  snapshot  [--path ./.amp] [--commit] [--message "..."]');
+      console.error('  export    [--path ./.memberry] [--entity Name] [--tag tag]');
+      console.error('  import    [--path ./.memberry] [--strategy confidence-weighted|overwrite] [--dry-run]');
+      console.error('  snapshot  [--path ./.memberry] [--commit] [--message "..."]');
       console.error('');
       console.error('Background memory commands:');
       console.error('  dream      [--scope project:x] [--max-entities N] [--no-cards]');

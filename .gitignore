@@ -3,7 +3,9 @@ dist/
 .env
 *.tsbuildinfo
 
-# AMP data (user-specific memory exports)
+# MemBerry data (user-specific memory exports). Gitignored from casual adds but
+# force-tracked by the snapshot service (git add -f). Legacy .amp/ kept ignored.
+.memberry/
 .amp/
 
 # Compiled wiki output (generated, not source)

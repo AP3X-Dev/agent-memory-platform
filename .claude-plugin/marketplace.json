@@ -1,17 +1,17 @@
 {
-  "name": "amp-memory",
+  "name": "memberry",
   "owner": { "name": "AP3X-Dev" },
   "metadata": {
-    "description": "Agent Memory Platform — persistent memory, architecture, code intelligence, research, and graph analytics via Neo4j knowledge graph",
-    "version": "1.0.0"
+    "description": "MemBerry — persistent memory for AI agents: architecture, code intelligence, research, and graph analytics via a Neo4j knowledge graph",
+    "version": "2.0.0"
   },
   "plugins": [
     {
-      "name": "amp",
+      "name": "memberry",
       "description": "Persistent memory with autonomous workflows: load context, store decisions, architectural understanding, code search, experiment tracking, and graph analytics (audit/export, PR impact)",
       "source": "./",
       "strict": false,
-      "skills": ["./skills/amp"]
+      "skills": ["./skills/memberry"]
     }
   ]
 }

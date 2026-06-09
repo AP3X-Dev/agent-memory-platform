@@ -178,7 +178,7 @@ Each project needs an `## MemBerry Memory` section in its agent config with: pro
 | `berry_pr_impact` | graph | Blast radius of a GitHub PR over the code graph (changed files → symbols → dependent files, plus knowledge areas + high-centrality nodes touched); requires the `gh` CLI |
 | `berry_pr_conflicts` | graph | PR pairs whose impact overlaps (likely merge/review conflicts); requires the `gh` CLI |
 
-For full tool documentation with parameters and examples, see `CLAUDE.md` or `.claude/skills/amp/SKILL.md`.
+For full tool documentation with parameters and examples, see `CLAUDE.md` or `.claude/skills/memberry/SKILL.md`.
 
 
 ## MemBerry Memory

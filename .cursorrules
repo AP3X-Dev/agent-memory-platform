@@ -176,4 +176,4 @@ Each project needs an `## MemBerry Memory` section in its agent config with: pro
 | `berry_pr_impact` | graph | Blast radius of a GitHub PR over the code graph (requires gh CLI) |
 | `berry_pr_conflicts` | graph | PR pairs whose impact overlaps — likely merge/review conflicts (requires gh CLI) |
 
-For full tool documentation with parameters and examples, see `skills/amp/SKILL.md`.
+For full tool documentation with parameters and examples, see `skills/memberry/SKILL.md`.

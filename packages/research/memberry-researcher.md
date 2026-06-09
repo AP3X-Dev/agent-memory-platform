@@ -2,7 +2,7 @@
 
 | name | version | author |
 |------|---------|--------|
-| amp-researcher | 1.0.0 | MemBerry / AP3X-Dev |
+| memberry-researcher | 1.0.0 | MemBerry / AP3X-Dev |
 
 > Drop this file into Claude Code (or any agent) pointed at any repo.
 > The agent will interview you, scaffold MemBerry memory infrastructure, then work autonomously —
@@ -130,7 +130,7 @@ PENDING
 ## Active Campaign
 - Campaign ID: <YYYYMMDD>-<slug>
 - Started: <date>
-- Agent: amp-researcher v1.0.0
+- Agent: memberry-researcher v1.0.0
 - MemBerry Mode: <mcp | filesystem>
 
 ## Constraints (never violate)
@@ -807,22 +807,22 @@ When in MCP mode, these tools are available. Use them at the indicated points in
 
 **Starting fresh on a new repo:**
 ```
-Read amp-researcher.md and let's kick off a new research session on this codebase.
+Read memberry-researcher.md and let's kick off a new research session on this codebase.
 ```
 
 **Resuming across sessions:**
 ```
-Read amp-researcher.md — load the MemBerry memory and resume our research campaign.
+Read memberry-researcher.md — load the MemBerry memory and resume our research campaign.
 ```
 
 **Targeting a specific objective:**
 ```
-Read amp-researcher.md — we want to reduce p99 API latency below 100ms.
+Read memberry-researcher.md — we want to reduce p99 API latency below 100ms.
 ```
 
 **Running overnight:**
 ```
-Read amp-researcher.md, load MemBerry, and run the experiment loop indefinitely. I'll check in the morning.
+Read memberry-researcher.md, load MemBerry, and run the experiment loop indefinitely. I'll check in the morning.
 ```
 
 ---

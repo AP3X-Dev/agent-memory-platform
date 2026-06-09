@@ -5,5 +5,5 @@ Description=MemBerry Nightly Snapshot
 Type=oneshot
 User=cerebro
 WorkingDirectory=/home/cerebro/projects/amp
-ExecStart=/usr/bin/npx tsx packages/core/src/cli.ts snapshot --path ./.amp --commit
+ExecStart=/usr/bin/npx tsx packages/core/src/cli.ts snapshot --path ./.memberry --commit
 EnvironmentFile=/etc/memberry/env

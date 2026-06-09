@@ -1,5 +1,5 @@
 ---
-name: amp
+name: memberry
 description: "MemBerry — persistent memory for AI agents with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via a Neo4j knowledge graph. 8 always-visible tools + 9 on-demand domains. Use autonomously during all coding work: load memory at session start, recall context before modifying code, store decisions and learnings, use architectural context when planning."
 ---
 
@@ -704,7 +704,7 @@ Returns: responsibility, interface, internals, hierarchy, children, dependencies
 
 > **Requires:** `berry_tools(action: "enable", domain: "research")`
 
-For autonomous experiment campaigns. See the amp-researcher skill for the full protocol.
+For autonomous experiment campaigns. See the memberry-researcher skill for the full protocol.
 
 ### berry_research_init
 

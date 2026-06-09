@@ -19,7 +19,7 @@ Load MemBerry memory relevant to the current context.
 4. **Present results:**
    - Semantic knowledge with confidence scores (0.8+ = established, 0.3 = seed)
    - Episodic records with decisions and outcomes
-   - No results? Suggest storing via `/amp remember`
+   - No results? Suggest storing via `/memberry remember`
 
 `recall` returns the raw assembled context. If the user instead asked a **question**
 that needs an answer synthesized across several memories, use `ask` (below).

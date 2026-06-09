@@ -1,5 +1,5 @@
 ---
-name: amp-setup
+name: memberry-setup
 description: "Bootstrap MemBerry persistent memory for the current project. Analyzes the repo, discovers entities and domain tags, writes MemBerry Memory config to CLAUDE.md, and calls berry_bootstrap to scaffold the knowledge graph. Run once per project. Trigger: user says 'set up memberry', 'bootstrap memberry', 'init memberry', 'configure memberry memory'."
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, Agent, AskUserQuestion, mcp__memberry__berry_load, mcp__memberry__berry_store, mcp__memberry__berry_query, mcp__memberry__berry_bootstrap
 argument-hint: "[project name] or auto"

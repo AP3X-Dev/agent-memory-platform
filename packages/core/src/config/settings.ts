@@ -4,7 +4,8 @@
 // the wiki settings UI writes. Hooks run as fresh short-lived processes, so a
 // file is the only way the UI can influence them without a restart.
 //
-// File: $AMP_SETTINGS_PATH or ~/.config/amp/settings.json
+// File: $MEMBERRY_SETTINGS_PATH (legacy $AMP_SETTINGS_PATH) or
+//       ~/.config/memberry/settings.json (legacy ~/.config/amp/settings.json)
 //
 // Resolution precedence for any tunable: explicit env var > settings file >
 // built-in default. Env still wins so ops can override per-process; the file is
@@ -64,7 +65,26 @@ export function readEnv(canonical: string): string | undefined {
 export function getSettingsPath(): string {
   const override = readEnv('MEMBERRY_SETTINGS_PATH');
   if (override && override.trim() !== '') return override;
-  return path.join(os.homedir(), '.config', 'amp', 'settings.json');
+  const home = os.homedir();
+  const canonical = path.join(home, '.config', 'memberry', 'settings.json');
+  // Dual-read: prefer the canonical ~/.config/memberry path, fall back to the
+  // legacy ~/.config/amp location so machines that haven't migrated keep
+  // reading their existing settings. New writes always go to the canonical path.
+  if (!fs.existsSync(canonical)) {
+    const legacy = path.join(home, '.config', 'amp', 'settings.json');
+    if (fs.existsSync(legacy)) return legacy;
+  }
+  return canonical;
+}
+
+/**
+ * Default on-disk memory-export directory. Prefers the canonical `./.memberry`
+ * when present, falling back to the legacy `./.amp` for checkouts that predate
+ * the rename. Relative to the process CWD — services set WorkingDirectory to
+ * the repo root, so this resolves against the project directory.
+ */
+export function defaultExportPath(): string {
+  return fs.existsSync('./.memberry') ? './.memberry' : './.amp';
 }
 
 /** Deep-merge a partial onto the defaults (one level deep — our schema is shallow). */

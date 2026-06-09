@@ -1,5 +1,5 @@
 ---
-name: amp
+name: memberry
 description: "MemBerry — persistent memory for AI agents with progressive tool disclosure, temporal facts, memory tiers, architectural understanding, code intelligence, and unified retrieval via MCP tools."
 ---
 
@@ -87,4 +87,4 @@ At session end: enable `memory` domain, then promote valuable working memory (`b
 
 When facts are contradicted, they get invalidated (not just overwritten). Facts also carry an `inference_type` — `deductive` (explicit, default), `inductive` (consolidation-generalized), or `abductive` (a guess from the background "dream" pass); abductive facts rank lower and render as `[hypothesis]`. The dream pass runs via `berry_consolidate(action: "dream", scope: "project:<tag>")` (enable `admin`) or the `memberry dream` CLI / nightly timer — it only adds low-confidence hypotheses, never overwrites known facts.
 
-For full documentation: see `skills/amp/SKILL.md` in the MemBerry repository root.
+For full documentation: see `skills/memberry/SKILL.md` in the MemBerry repository root.

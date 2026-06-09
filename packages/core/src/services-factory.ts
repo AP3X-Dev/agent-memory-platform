@@ -37,7 +37,7 @@ import { KeyedSerialQueue } from './serial-queue.js';
 import { DreamEngine, type DreamGraphLayer, type DreamBlockLayer } from './dream.js';
 import { ExtractionConsumer } from './extraction-consumer.js';
 import { EMBEDDING_DIM, type EmbeddingProvider, type AMPConfig } from './types.js';
-import { readEnv } from './config/settings.js';
+import { readEnv, defaultExportPath } from './config/settings.js';
 
 export interface CoreServicesEnv {
   neo4jUri?: string;
@@ -87,7 +87,7 @@ function resolveEnv(env: CoreServicesEnv = {}): Required<CoreServicesEnv> {
     neo4jPassword: env.neo4jPassword ?? process.env['NEO4J_PASSWORD'] ?? '',
     redisUrl: env.redisUrl ?? process.env['REDIS_URL'] ?? 'redis://localhost:6379',
     openaiKey: env.openaiKey ?? process.env['OPENAI_API_KEY'] ?? '',
-    exportPath: env.exportPath ?? readEnv('MEMBERRY_EXPORT_PATH') ?? './.amp',
+    exportPath: env.exportPath ?? readEnv('MEMBERRY_EXPORT_PATH') ?? defaultExportPath(),
   };
 }
 
